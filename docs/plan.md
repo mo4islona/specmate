@@ -8,12 +8,12 @@
 ## 1. Goals & Non-Goals
 
 ### Goals
-1. **One-click task launch** — feature or bugfix, described in natural language, optionally pointing at a repo/branch.
+1. **One-click task launch** — feature, bugfix, or (in a later phase) a production incident, described in natural language, optionally pointing at a repo/branch. Task types are a growing catalog, not a closed pair.
 2. **Research agent** produces an OpenSpec change (`proposal.md`, `specs/`, `design.md`, `tasks.md`) describing *how* to do the fix.
 3. **Reviewer agent** critiques the research/implementation at the end of each cycle.
 4. **Bounded research↔review loop** — iterate until the reviewer approves or the iteration budget is exhausted; **every decision the agents cannot make alone is escalated to the human and highlighted in the UI**.
 5. **Final summary artifact** — a concise "what was done and how" document with diagrams (D2, Mermaid where GitHub renders natively), plus the ability to send the task back for rework **without context bloat**: agent context is reconstructed from task-scoped OpenSpec artifacts, not from a growing chat transcript.
-6. **Human approval gate** — after final approval, the spec is exported to the shared spec wiki and archived (`openspec/changes/archive/…`).
+6. **Human approval gate** — after final approval, the spec is archived in its repo (`openspec/changes/archive/…`) and published on the shared wiki site, rendered straight from that archive.
 7. **Chat-style UI** — sidebar with all running tasks; opening a task shows the planned agent graph (DAG) and which stage is active.
 8. **24/7 remote operation** on a server, single-user: everything runs on the owner's own subscriptions/accounts.
 9. **Provider-agnostic agents** — Claude Code, Codex, Copilot CLI (and future CLIs) are interchangeable executors behind fixed *roles*. Input and output of every role is always SDD (OpenSpec) artifacts.
@@ -32,15 +32,17 @@
 
 | Concept | Description |
 |---|---|
-| **Task** | The unit of work: "add dark mode", "fix reorg bug in ingester". Has a lifecycle, a target repo, and a type (feature/bugfix). |
+| **Task** | The unit of work: "add dark mode", "fix reorg bug in ingester", "API p99 is 30s, find out why". Has a lifecycle, a target repo, and a type (feature/bugfix; incident in a later phase). The type selects the pipeline. |
 | **Change** | The OpenSpec change folder for the task (`openspec/changes/<task-slug>/`). This is the *stateful context* — the single place agents read from and write to. |
-| **Run graph** | The planned DAG of agent stages for this task (planner output). Rendered in the UI. |
+| **Pipeline definition** | A versioned, declarative graph for one task type: stages, loop edges with caps, human gates, terminal outcome. Pipelines are data interpreted by one generic engine; the Planner parameterizes them but cannot invent nodes. |
+| **Run graph** | The task's pinned copy of its pipeline: the DAG of agent stages actually run, instantiated from the pipeline definition at creation. Rendered in the UI. |
 | **Stage** | One node in the graph: role + provider + input artifacts + output artifacts. |
 | **Agent role** | Abstract responsibility (Researcher, Spec Writer, Implementer, Reviewer, Summarizer). |
 | **Provider** | Concrete executor: `claude-code`, `codex`, `copilot`. A role binds to a provider per stage. |
 | **Decision** | A question agents cannot resolve (ambiguous requirement, destructive action, trade-off). Blocks the stage, surfaces in UI, answer is written back into the change folder. |
 | **Summary artifact** | Human-facing report: what/how/why, D2 diagrams (SVG), links to diffs and spec. |
 | **Workspace** | An isolated checkout (git worktree or container volume) where a stage runs. |
+| **Context sources** | Versioned knowledge injected into stages, revision recorded: the spec standard (how to write specs), the system map (`wiki/system/` — how the application works across repos: services, contracts, mutual expectations), the ops map (`wiki/ops/` — how it is run: environments, dashboards, access pointers, incident policy; secret material stays on the host). The maps live in the single `wiki` repo (arrives in Phase 4); published specs are not copied there — the wiki site renders them straight from each product repo's archive (Phase 6). |
 
 ### Why "context lives with the task" works
 Every stage starts with a **fresh agent context**. The prompt is assembled from:
@@ -75,8 +77,8 @@ Nothing else is carried over. Rework = edit the artifacts + append a rework note
 │              └─────────── git worktrees / task workspaces ──┘                    │
 │                                     │                                            │
 │                          ┌──────────▼─────────┐     ┌──────────────────┐         │
-│                          │  Git host (GitHub) │     │  Spec Wiki       │         │
-│                          │  branches + PRs    │     │ (repo/Notion/…)  │         │
+│                          │  Git host (GitHub) │     │  Wiki repo       │         │
+│                          │  branches + PRs    │     │ system/ + ops/   │         │
 │                          └────────────────────┘     └──────────────────┘         │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -88,7 +90,7 @@ Nothing else is carried over. Rework = edit the artifacts + append a rework note
 4. **Workspace manager** — clones target repo, creates `task/<slug>` branch, mounts it into runner containers; one worktree per task, wiped on archive.
 5. **Postgres** — durability: tasks survive restarts, crashed stages are retried, event log is replayable.
 6. **UI** — Next.js chat-style app (details in §7).
-7. **Wiki publisher** — pluggable sink: git repo of specs (recommended v1: a `specs-wiki` repo rendered by MkDocs/Docusaurus), later Notion/Confluence adapters.
+7. **Wiki publisher** — v1 triggers the archive in the product repo and rebuilds the wiki site (MkDocs/Docusaurus), which renders every repo's archived specs together with the `wiki` repo's `system/` and `ops/` maps (§14 Phase 4); no spec copies leave their repos. Later: Notion/Confluence adapters behind a sink interface.
 
 ---
 
@@ -109,6 +111,7 @@ Nothing else is carried over. Rework = edit the artifacts + append a rework note
 Rules:
 - **Cross-provider review by default** — if Claude wrote, Codex reviews (and vice versa). Cheap way to reduce shared blind spots.
 - Role prompts live in versioned files (`roles/researcher.md`, …) in the SpecMate repo — themselves managed via OpenSpec.
+- Roles carry capability bits enforced mechanically by the runner, not by prompt: "may modify product code" (implementer and verifier only) and — only if incident *mitigation* ever lands (Phase 8+) — "may act on production" (**Operator**, a deferred role, the only one that would ever hold production credentials; every action gated and audited). Incident *investigation* (Phase 4) needs no production credentials: its diagnosis tools are read-only.
 - Provider adapters implement one interface:
   ```ts
   interface AgentProvider {
@@ -122,7 +125,11 @@ Rules:
 
 ## 5. The Loop (research ↔ review) — bounded, decision-aware
 
-State machine per task:
+The orchestrator is a generic engine that walks a **pipeline definition** — pipelines are data,
+not code. The engine owns the type-independent invariants: loops are capped, gates block, cap
+exhaustion escalates instead of looping, budgets pause instead of failing, and an interrupted
+task resumes where it stopped. What follows is the **feature/bugfix pipeline**, the first
+definition in the catalog (the incident-investigation pipeline is Phase 4):
 
 ```
  DRAFT ──► PLANNING ──► KICKOFF_BRIEF ──► HUMAN_KICKOFF_GATE ──► RESEARCH ──► SPEC_REVIEW ─┬─► approve ──► HUMAN_SPEC_GATE ──► IMPLEMENT ──► VERIFY ──► CODE_REVIEW ─┬─► approve ──► SUMMARIZE ──► HUMAN_FINAL_GATE ──► PUBLISH ──► ARCHIVED
@@ -267,10 +274,11 @@ Stack: Next.js + React Flow (DAG) + D2 renderer (WASM or Kroki sidecar) + shadcn
 
 ## 10. Wiki Publishing (post-approval)
 
-v1: a dedicated **`specs-wiki` git repo**:
-- On final approval: Summarizer's `summary.md` + the archived spec deltas are committed to `specs-wiki/<project>/<date>-<slug>/`, index regenerated, site rebuilt (MkDocs Material or Docusaurus via CI). D2 sources are committed alongside **pre-rendered SVGs** (d2 CLI in the publish job); PR descriptions get Mermaid, since that's what GitHub renders natively in markdown.
-- Simultaneously run `openspec archive` semantics in the product repo (change folder → `openspec/changes/archive/…`, `specs/` updated) so the repo's living specs stay canonical.
-- Phase 2: adapters for Notion/Confluence behind a `WikiSink` interface.
+No copies: archived specs stay canonical in their product repos, and the wiki **site** renders
+them from there. The `wiki` repo (created in Phase 4) holds only the system and ops maps; the
+service catalog in `wiki/system/` names the repos the site build pulls archives from.
+- On final approval: run `openspec archive` semantics in the product repo (change folder → `openspec/changes/archive/…`, `specs/` updated), then trigger the site rebuild (MkDocs Material or Docusaurus via CI) — it renders each repo's archived changes (`summary.md` + spec deltas) together with the wiki maps into one browsable site. D2 sources live in the archived change; the site build **pre-renders SVGs** (d2 CLI); PR descriptions get Mermaid, since that's what GitHub renders natively in markdown.
+- Later: adapters for Notion/Confluence behind a `WikiSink` interface, exporting the same rendered material.
 
 ---
 
@@ -280,7 +288,7 @@ SpecMate uses OpenSpec as the **process/transport** and a house **spec standard*
 
 - OpenSpec `spec.md` files adopt the house ID discipline (REQ-n/INV-n with traces) via a **custom OpenSpec schema** — OpenSpec supports this natively (customization/community schemas).
 - The Verifier's scenario→assertion traceability is the automated form of the standard's conformance module.
-- On archive, the wiki publisher generates an **ADR record** from `proposal.md` + `design.md` (a change is nearly isomorphic to an ADR).
+- On archive, the publisher generates a one-page **ADR record** from `proposal.md` + `design.md` (a change is nearly isomorphic to an ADR) and commits it to the repo's append-only `openspec/decisions/`, continuing the numbering of any pre-existing hand-written ADRs. The canonical source stays the archived change; the ADR file is a frozen render, safe because it is never edited.
 
 ### The skill is part of the system — and must stay consistent
 The house standard is described by an existing **skill** (its own repo; URL is a config value). Rules:
@@ -334,7 +342,7 @@ This makes the human comments the training signal — which is why UI delivery i
 **UI is not a later phase — it ships with the first pipeline, because human comments are the self-learning signal.**
 - Workspace manager (clone, branch, worktree).
 - Claude runner container + headless invocation + `RESULT.json` contract.
-- Orchestrator state machine: DRAFT→RESEARCH→SPEC_REVIEW→IMPLEMENT→VERIFY→CODE_REVIEW→SUMMARIZE, iteration caps, retries.
+- Orchestrator loop: a generic engine walking a pinned pipeline definition (pipelines are data — §5); ships the feature/bugfix definition DRAFT→RESEARCH→SPEC_REVIEW→IMPLEMENT→VERIFY→CODE_REVIEW→SUMMARIZE with iteration caps, stage retries, resume after restart.
 - Verifier stage v0: run the repo's existing harness/integration suite headless (docker-in-docker in runners), scenario→test traceability check, `verification.md` output.
 - **UI v0 (deliberately ugly, 3–4 screens)**: **Attention Inbox** (even a crude list of open items), task list sidebar, chat timeline from the events table, "new task" input, rendered markdown artifacts. No DAG, no diffs, no polish — just enough to launch tasks and *comment on everything* from the browser/phone.
 - Feedback capture from day one: every comment/answer lands in the `feedback` table even before the Retro agent exists.
@@ -355,22 +363,100 @@ This makes the human comments the training signal — which is why UI delivery i
 - **Self-hosting milestone**: start running SpecMate's own OpenSpec changes through SpecMate — including the Retro agent's improvement changes.
 - **Exit**: full task lifecycle in the browser incl. rework-after-summary; first Retro-proposed improvement approved and merged through the pipeline itself.
 
-### Phase 4 — Multi-provider (week 7)
+### Phase 4 — The wiki & incident investigation, read-only (week 7)
+Knowledge about the target system moves up front because it pays off in *every* task type:
+fixing one service means knowing what its neighbours expect of it. One knowledge home — the
+**`wiki`** repo — holding two maps that must not be conflated (how the application *works* and
+how it *is run*), plus the first pipeline that consumes them:
+
+```
+wiki (git repo; the Phase-6 MkDocs site renders this + every repo's archived specs)
+├── system/    ← system map: services, contracts, mutual expectations
+└── ops/       ← ops map: environments, dashboards, access pointers, runbooks, incident policy
+```
+
+- **`wiki/system/` — the system map** — how the multi-service application works across its
+  repositories: the service catalog with responsibilities and owning repos, the contracts
+  between services (APIs, events, queues, schemas), and the expectations each service has of
+  its neighbours — ordering, idempotency, retries, invariants. Consumed by researcher, spec
+  writer, implementer, and reviewer on *ordinary feature/bugfix tasks* — this, not incidents,
+  is the main payoff: an agent fixing service A must know what service B expects of it.
+  Bootstrapped by hand or by a dedicated mapping task per service — services that already
+  carry a spec suite in the house standard seed the map from it (their dependencies module is
+  nearly a map page). The partition against per-repo specs is strict, so there is nothing to
+  desync: anything one service owns lives in that repo's spec; the map owns only the pair-wise
+  expectations no single repo can own, and references per-repo requirements by their stable
+  IDs — a lint catches dangling references. Research findings keep it current through the
+  pipeline. A fix that spans two repos stays two tasks linked by `blocked_by`.
+  **One spec per service, always** — and that spec is the repo's `openspec/specs/`, the home
+  the pipeline's machinery (delta validation, archive folding, scenario→test traceability)
+  already operates on. An existing house-standard suite migrates into it once: functional
+  requirement bands become capabilities, cross-cutting modules (invariants, liveness, failure
+  model, performance, observability) stay whole as capabilities of their own, every REQ-n /
+  INV-n keeps its ID in the requirement title, and the old `spec/` directory disappears.
+  Existing hand-written ADRs move once into the repo's append-only `openspec/decisions/`; new
+  decisions are born as changes, and the publish job commits a generated one-page ADR into the
+  same log, continuing the numbering (§11) — the canonical source is the archived change, the
+  ADR file a frozen render, safe because it is immutable. The remaining lints are
+  format-against-standard (§11.3) and the map's dangling-ID check — both check one source
+  against a ruler, not two sources against each other.
+- **`wiki/ops/` — the ops map** — how it is run: environments and what is deployed where,
+  dashboards, runbooks, the incident policy, and access *pointers*. The wiki is a git repo, so
+  secret material never enters it: an access entry names the endpoint and the local secret
+  reference that unlocks it (an env name, a file under the server's secrets directory, a
+  volume), and the orchestrator resolves the reference on the host when configuring tools —
+  the same pattern as the provider auth volume. Consumed by triage and diagnosis, and by any
+  stage that reasons about production. Postmortems update it through the pipeline (the
+  self-learning flywheel applied to ops).
+- **Delivery**: the maps are injected through the existing skill-source mechanism — path-scoped
+  sources into one repo, next to the spec standard, revision recorded per stage. Agents receive
+  curated map pages, not the repo root. Published specs are deliberately *not* copied here:
+  they stay canonical in each product repo's archive, and the wiki site renders them from
+  there (§10) — the wiki repo holds only knowledge that has no other home, so it stays bounded
+  by construction. Both sections change only through pipeline tasks, so updates are reviewed
+  like everything else. Nothing stops the owner from hand-writing the first maps the moment
+  skill sync lands in Phase 2 — Phase 4 makes the wiki first-class and self-updating.
+- **Read-only access** — per-deployment observability endpoints (Grafana, logs, metrics) as
+  read-only tooling in the runner for diagnose-capable roles, configured by the orchestrator
+  from the ops map's pointers and the host's secrets — the raw credential is not part of the
+  prompt. Plus read-only checkouts of neighbour repos for research when the system map is not
+  enough (the workspace manager already mirrors repos; a read-only worktree of a dependency is
+  the same machinery). No write credential to any production system exists anywhere in
+  SpecMate.
+- **`incident-investigation`** — a new task type as a catalog entry (no engine change, per the
+  orchestrator-loop change): INTAKE → TRIAGE → DIAGNOSE ⇄ REVIEW → REPORT. Output is a
+  diagnosis report and a draft postmortem, plus optionally a spawned ordinary bugfix task for
+  the fix. The human mitigates and closes the incident — SpecMate investigates, it does not
+  touch prod. Artifact trail stays OpenSpec-shaped: `incident.md` (timeline), `diagnosis.md`,
+  `postmortem.md`. Triage reuses Planner, diagnosis reuses Researcher with the observability
+  toolset, postmortem reuses Summarizer.
+- **Exit**: an ordinary feature task's research stage cites the system-map revision it ran
+  with; a synthetic incident on a staging service is triaged and diagnosed end to end from the
+  ops map and the read tools; the spawned fix task passes the Phase-1 e2e.
+
+### Phase 5 — Multi-provider (week 8)
 - Codex + Copilot runner images, `AgentProvider` adapters, cross-provider review policy, provider presets in the New-task form, per-provider cost accounting.
 - **Exit**: "Claude writes / Codex reviews" and the inverse both pass the Phase-1 e2e task.
 
-### Phase 5 — Publishing & summary polish (week 8)
+### Phase 6 — Publishing & summary polish (week 9)
 - Summarizer role with D2 diagram generation (SVG pre-render in publish job; Mermaid variant for PR descriptions), PR description autogen.
-- `specs-wiki` repo + MkDocs pipeline + `openspec archive` integration on final approval.
+- Wiki site: MkDocs render over the wiki maps and every product repo's archived specs (no copies — the system map's service catalog names the repos to pull) + `openspec archive` integration on final approval.
 - **Exit**: approved task appears on the wiki within a minute, repo specs archived.
 
-### Phase 6 — Hardening & mobile notifications (week 9)
+### Phase 7 — Hardening & mobile notifications (week 10)
 - Auth watchdog, backups, egress allowlist, secret handling audit, load test with 5–10 concurrent tasks.
 - iPhone push: ntfy/Pushover sink (or PWA web push) wired to open Decisions and budget-exhaustion events.
 - Subscription-credit accounting in budget caps: pause tasks (with a push) when the monthly Agent SDK credit pool nears exhaustion, never fail silently.
 - **Exit**: kill -9 anything and the system recovers; an open Decision buzzes the phone within seconds.
 
-### Phase 7+ — Later
+### Phase 8+ — Later
+- **Incident mitigation & the Operator role** — acting on production, not just reading it:
+  MITIGATE/VERIFY_RECOVERY/RESOLVE stages, gates on production-affecting actions (auto-approval
+  classes per severity from the incident policy), and **Operator** — the only role ever holding
+  production credentials, with an action allowlist and a full audit trail in `actions.md`.
+  Deliberately deferred until the read-only investigation flow (Phase 4) proves itself and
+  hardening (Phase 7) lands: it breaks the "runners get nothing but the worktree" security model
+  and deserves its own risk review.
 - Temporal migration if DAGs get complex; parallel stage fan-out (multiple researchers → judge); spec search across the wiki; metrics dashboard (cost/time per task, loop counts, approval rates); GitHub Issues/Linear intake ("label = auto-spec").
 
 ---
@@ -387,6 +473,7 @@ This makes the human comments the training signal — which is why UI delivery i
 | Agents doing destructive things | No creds beyond deploy key; worktree isolation; protected branches; human gates before publish |
 | One provider outage stalls everything | Role→provider binding is per-stage; orchestrator can fail over to alt provider per role policy |
 | Agents "green-washing" tests (weak asserts to pass) | Mechanical spec-scenario→assertion traceability; cross-provider reviewer explicitly audits harness diffs; harness code reviewed like product code |
+| Operator role would hold production credentials (Phase 8+) | Deferred until after hardening, and only if mitigation is pursued at all; action allowlist; per-action human gates scaled by severity; read tools separated from write tools; full audit trail |
 
 ---
 
