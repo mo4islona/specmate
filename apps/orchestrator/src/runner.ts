@@ -1,3 +1,4 @@
+import type { ExecutionEnvironment } from '@specmate/core'
 import {
   ClaudeCodeProvider,
   DockerBackend,
@@ -17,6 +18,7 @@ export const RunnerEnv = z.object({
   RUNNER_CLI: optionalString,
   RUNNER_MODEL: optionalString,
   RUNNER_AUTH_VOLUME: optionalString,
+  RUNNER_TOOLCHAINS_VOLUME: optionalString,
   RUNNER_CPUS: optionalString,
   RUNNER_MEMORY: optionalString,
   ROLES_DIR: z.string().min(1).default('roles'),
@@ -40,6 +42,13 @@ export class UnsafeBackendError extends Error {
   }
 }
 
+export class TaskEnvironmentMissingError extends Error {
+  constructor() {
+    super('task has no pinned execution environment after workspace provisioning')
+    this.name = 'TaskEnvironmentMissingError'
+  }
+}
+
 export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string): RunnerConfig {
   // The in-process backend shares this process's filesystem and machine with an
   // agent that runs a foreign repository's code. In production that is not a
@@ -52,6 +61,7 @@ export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string): RunnerConfig 
     cli: env.RUNNER_CLI,
     model: env.RUNNER_MODEL,
     authVolume: env.RUNNER_AUTH_VOLUME,
+    toolchainsVolume: env.RUNNER_TOOLCHAINS_VOLUME,
     cpus: env.RUNNER_CPUS,
     memory: env.RUNNER_MEMORY,
     rolesDir: env.ROLES_DIR,
@@ -64,6 +74,17 @@ export function backendFor(config: RunnerConfig): ExecBackend {
   return config.backend === 'docker' ? new DockerBackend(config) : new LocalBackend(config)
 }
 
-export function providerFor(config: RunnerConfig): ClaudeCodeProvider {
-  return new ClaudeCodeProvider({ config, backend: backendFor(config) })
+export function providerFor(
+  config: RunnerConfig,
+  backend: ExecBackend = backendFor(config),
+): ClaudeCodeProvider {
+  return new ClaudeCodeProvider({ config, backend })
+}
+
+export function taskRunnerEnvironment(
+  environment: ExecutionEnvironment | null,
+): ExecutionEnvironment {
+  if (!environment) throw new TaskEnvironmentMissingError()
+
+  return environment
 }

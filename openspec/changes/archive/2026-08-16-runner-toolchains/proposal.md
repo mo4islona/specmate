@@ -14,11 +14,12 @@ it completes the runner the walking skeleton depends on.
   through its own idiomatic files (`.nvmrc`, `rust-toolchain.toml`, `.tool-versions`, …); no
   SpecMate-specific manifest is introduced.
 - Toolchain needs are detected mechanically — plain code reading committed files at workspace
-  provision, no agent involved — and the resolved execution environment (image by digest,
-  declared toolchains) is pinned on the task. Every stage of a task runs in the pinned
-  environment; changing it mid-task is an explicit re-pin, never silent drift.
-- Toolchain installs are cached in a shared volume, so a version is downloaded once and reused
-  across stages and tasks.
+  provision, no agent involved — and every declaration is resolved then to an exact version.
+  The complete execution environment (image by immutable reference, exact toolchains) is pinned
+  on the task. Every stage receives that pin; later repository edits cannot silently change it.
+- Exact toolchain installations are populated during provisioning and cached for reuse across
+  stages and tasks. Agent stages receive the shared installations read-only, while their
+  mutable toolchain-manager state remains isolated.
 - Container-runtime access (the harness's docker socket) stops being a per-stage judgment call:
   it is derived from the role catalog — exactly the roles permitted to modify product code
   receive it, and artifact-only roles never do, regardless of repo or task. The per-stage
@@ -47,13 +48,15 @@ it completes the runner the walking skeleton depends on.
 
 - `runner/Dockerfile`: base image moves from Alpine (musl) to Debian slim (glibc — prebuilt
   toolchain binaries assume it), adds a pinned toolchain manager and an entrypoint that
-  provisions declared toolchains before the provider CLI starts.
-- `packages/workspace` (or `packages/core`): a mechanical toolchain detector run at provision.
+  activates only the task's exact pinned toolchains before the provider CLI starts.
+- `packages/workspace` and `packages/runner`: a mechanical detector plus exact-version and
+  immutable-image resolution during workspace provisioning.
 - `packages/db`: `tasks` gains the environment pin; one generated migration.
-- `packages/runner`: `DockerBackend` mounts the toolchain cache volume; the executor derives
-  the container-runtime flag from `ROLE_CONTRACTS[role].writesCode` instead of taking it as a
-  per-request input; `StageRequest.image` is now fed from the task pin.
-- `docker-compose.yml`: the toolchain cache volume joins the auth volume.
+- `packages/runner`: `DockerBackend` resolves and populates a task environment before stages,
+  mounts exact installations read-only for stage execution, and the executor derives the
+  container-runtime flag from `ROLE_CONTRACTS[role].writesCode`; `StageRequest.environment`
+  carries the complete task pin.
+- `docker-compose.yml`: the reusable toolchain-installation volume joins the runner volumes.
 - Sequencing: builds directly on the `claude-runner` change (same packages, and the
   `agent-execution` capability this composes with is still a delta there). `claude-runner`
   should archive first.

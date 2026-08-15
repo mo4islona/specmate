@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { artifacts, createDb, type Database, tasks } from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
 import { Git, type StageRef, WorkspaceManager, WorkspaceService } from '../src/index.ts'
-import { cleanupTempDirs, FAST_LOCKS, makeOrigin, tempDir, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  FAST_LOCKS,
+  makeOrigin,
+  resolveTestEnvironment,
+  tempDir,
+  writeFiles,
+} from './fixtures.ts'
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -49,9 +56,19 @@ describeDb('a task from provisioning to release', () => {
     // every step builds its own manager, as a restarted orchestrator would.
     const restart = () => {
       const manager = new WorkspaceManager({ config: { root, ...FAST_LOCKS } })
-      return { manager, service: new WorkspaceService(manager, db), git: new Git(manager.config) }
+      return {
+        manager,
+        service: new WorkspaceService(manager, db, resolveTestEnvironment),
+        git: new Git(manager.config),
+      }
     }
-    const request = { slug, repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      taskId: task.id,
+      slug,
+      repoUrl: origin.url,
+      baseBranch: 'main',
+      image: 'specmate/runner-universal@sha256:e2e-fixture',
+    }
 
     const provisioned = await restart().service.provision(request)
     expect(provisioned.branch).toBe(`task/${slug}`)

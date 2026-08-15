@@ -1,3 +1,4 @@
+import type { ExecutionEnvironment } from '@specmate/core'
 import { type ExecBackend, type ExecResult, type ExecSpec, spawnBounded } from './backend.ts'
 import type { RunnerConfig } from './config.ts'
 
@@ -16,6 +17,10 @@ export class LocalBackend implements ExecBackend {
     if (!found) throw new Error(`provider CLI "${this.config.cli}" is not on PATH`)
 
     return `local backend: ${found}`
+  }
+
+  async resolveEnvironment(_workspacePath: string, _image: string): Promise<ExecutionEnvironment> {
+    return { image: 'local://host', toolchains: [] }
   }
 
   run(spec: ExecSpec): Promise<ExecResult> {

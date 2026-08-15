@@ -69,9 +69,10 @@ services:
       # Empty unless a key is configured, so git falls back to no identity file.
       REPO_SSH_KEY_PATH: ${REPO_SSH_KEY_PATH:+/etc/specmate/repo_key}
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
-      RUNNER_IMAGE: ${RUNNER_IMAGE:-specmate/runner-claude:local}
+      RUNNER_IMAGE: ${RUNNER_IMAGE:-specmate/runner-universal:local}
       RUNNER_MODEL: ${RUNNER_MODEL:-claude-opus-5}
       RUNNER_AUTH_VOLUME: ${RUNNER_AUTH_VOLUME:-specmate_claude-auth}
+      RUNNER_TOOLCHAINS_VOLUME: ${RUNNER_TOOLCHAINS_VOLUME:-specmate_toolchains}
       RUNNER_CPUS: ${RUNNER_CPUS:-2}
       RUNNER_MEMORY: ${RUNNER_MEMORY:-4g}
       STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-1800000}
@@ -114,10 +115,14 @@ services:
         # Empty fails the build with a message from the Dockerfile; a `:?` here
         # would instead break every compose command, including `up postgres`.
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
-    image: ${RUNNER_IMAGE:-specmate/runner-claude:local}
+        MISE_VERSION: ${MISE_VERSION:-}
+    image: ${RUNNER_IMAGE:-specmate/runner-universal:local}
     volumes:
       - claude-auth:/home/agent
+      - specmate_toolchains:/mise/shared:ro
 
 volumes:
   pgdata:
   claude-auth:
+  specmate_toolchains:
+    name: ${RUNNER_TOOLCHAINS_VOLUME:-specmate_toolchains}

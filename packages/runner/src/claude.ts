@@ -79,7 +79,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       timeoutMs: job.timeoutMs || config.stageTimeoutMs,
       limits: { cpus: config.cpus, memory: config.memory },
       containerRuntime: job.needsContainerRuntime ?? false,
-      image: job.image,
+      environment: job.environment,
       label,
     })
 

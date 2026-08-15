@@ -5,7 +5,7 @@ export type BackendId = 'docker' | 'local'
 export interface RunnerConfig {
   /** Where a stage's process runs. `local` is for development only. */
   readonly backend: BackendId
-  /** Runner image, pinned by tag. Providers are targets of one Dockerfile. */
+  /** Default runner image; provisioning records the task's immutable reference. */
   readonly image: string
   /** Provider CLI, as invoked inside the image and on a developer's PATH. */
   readonly cli: string
@@ -16,6 +16,8 @@ export interface RunnerConfig {
   readonly rolesDir: string
   /** Named volume carrying the provider session; mounted read-write, it refreshes itself. */
   readonly authVolume: string
+  /** Shared named volume carrying mise installs across stages and tasks. */
+  readonly toolchainsVolume: string
   /** HOME inside the container — where the provider CLI keeps that session. */
   readonly homeDir: string
   /** uid:gid inside the container; matches the image's unprivileged user. */
@@ -38,12 +40,13 @@ export interface RunnerConfig {
 
 export const DEFAULT_RUNNER_CONFIG = {
   backend: 'local',
-  image: 'specmate/runner-claude:latest',
+  image: 'specmate/runner-universal:latest',
   cli: 'claude',
   dockerCli: 'docker',
   model: 'claude-opus-5',
   rolesDir: 'roles',
   authVolume: 'specmate_claude-auth',
+  toolchainsVolume: 'specmate_toolchains',
   homeDir: '/home/agent',
   user: '10001:10001',
   forwardEnv: [],

@@ -3,6 +3,7 @@ import {
   type Caps,
   DEFAULT_BUDGETS,
   DEFAULT_CAPS,
+  type ExecutionEnvironment,
   type ReviewFinding,
   type StageResult,
   type TaskState,
@@ -143,6 +144,7 @@ export const tasks = pgTable(
       .$type<Caps>()
       .notNull()
       .default({ ...DEFAULT_CAPS }),
+    environment: jsonb().$type<ExecutionEnvironment>(),
     ...timestamps,
   },
   (t) => [uniqueIndex('tasks_slug_idx').on(t.slug), index('tasks_status_idx').on(t.status)],

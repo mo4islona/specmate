@@ -1,4 +1,10 @@
-import type { AgentProvider, AgentRole, StageJob, StageResult } from '@specmate/core'
+import {
+  type AgentProvider,
+  type AgentRole,
+  ROLE_CONTRACTS,
+  type StageJob,
+  type StageResult,
+} from '@specmate/core'
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
 import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
@@ -19,9 +25,8 @@ export interface StageRequest {
   readonly role: AgentRole
   readonly workspace: Workspace
   readonly baseBranch: string
-  readonly needsContainerRuntime?: boolean
-  /** Runner image for this task, when its toolchain is not the default one. */
-  readonly image?: string
+  /** Immutable runner image and exact toolchains pinned for this task. */
+  readonly environment: StageJob['environment']
   /** Attempt number of the first try; a retry records the next one. */
   readonly attempt?: number
 }
@@ -117,8 +122,8 @@ export class StageExecutor {
       workspacePath: request.workspace.path,
       changeDir: request.workspace.changeDir,
       prompt,
-      needsContainerRuntime: request.needsContainerRuntime ?? false,
-      image: request.image,
+      needsContainerRuntime: roleNeedsContainerRuntime(request.role),
+      environment: request.environment,
       timeoutMs: config.stageTimeoutMs,
       attempt,
     }
@@ -169,3 +174,7 @@ export class StageExecutor {
 }
 
 export { stageLabel }
+
+export function roleNeedsContainerRuntime(role: AgentRole): boolean {
+  return ROLE_CONTRACTS[role].writesCode
+}
