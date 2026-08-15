@@ -16,5 +16,4 @@ workspaces/
 *.tsbuildinfo
 .claude/settings.local.json
 
-openspec/changes/
 deploy/
