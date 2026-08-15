@@ -1,0 +1,81 @@
+name: specmate
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-specmate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-specmate}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      # Postgres 18 images declare the volume one level up from PGDATA.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-specmate} -d ${POSTGRES_DB:-specmate}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: applies drizzle migrations, then exits. Everything else waits on it.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: 'no'
+    command: ['bun', 'packages/db/src/migrate.ts']
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      API_PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
+      SPECMATE_PASSWORD: ${SPECMATE_PASSWORD}
+    expose:
+      - '4000'
+    ports:
+      - '127.0.0.1:${API_PORT:-4000}:4000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: apps/orchestrator/Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      ORCHESTRATOR_PORT: 4100
+      DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
+    ports:
+      - '127.0.0.1:${ORCHESTRATOR_PORT:-4100}:4100'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: always
+    environment:
+      API_UPSTREAM: api:4000
+    ports:
+      - '127.0.0.1:${WEB_PORT:-5173}:8080'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

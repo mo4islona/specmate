@@ -1,0 +1,32 @@
+schema: spec-driven
+githubCopilot:
+  cloudAgent: false
+
+context: |
+  SpecMate — a single-owner, self-hosted service that runs a graph of AI agents
+  (planner → researcher → spec writer → implementer → verifier → reviewer → summarizer)
+  over OpenSpec artifacts, surfacing every human decision in a chat UI.
+
+  Tech stack: Bun 1.3 + TypeScript, Hono (API), Drizzle ORM + drizzle-kit (Postgres 18),
+  Vite + React 19 + Tailwind 4 (web), Biome (lint/format), Docker Compose, GitHub Actions.
+  Monorepo: apps/{api,orchestrator,web}, packages/{core,db}.
+
+  Conventions:
+  - English everywhere in committed artifacts, code, and comments.
+  - Comments explain constraints and "why not the obvious thing", never restate code.
+  - Conventional commits, scoped (e.g. `feat(db): ...`).
+  - Roles are fixed, providers (claude-code/codex/copilot) are interchangeable; every
+    role consumes and produces OpenSpec artifacts and ends with a RESULT.json.
+  - Postgres is the durable source of truth; git is the artifact store.
+  - SpecMate is built with OpenSpec from day 0 (dogfooding): every phase is one or
+    more changes that get proposed, implemented, and archived.
+
+  The long-form plan lives in docs/plan.md; specs must not contradict it silently —
+  if a change diverges, say so in the proposal.
+
+rules:
+  proposal:
+    - State the phase of the roadmap this change belongs to.
+    - Always include a "Non-goals" section that names what is deliberately deferred.
+  tasks:
+    - Every task must be independently verifiable (a command to run or a file to inspect).

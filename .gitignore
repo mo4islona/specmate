@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+
+# runtime state
+workspaces/
+.data/
+
+# tooling
+.DS_Store
+.vscode/
+.idea/
+*.tsbuildinfo
+.claude/settings.local.json
+
+openspec/changes/
+deploy/
