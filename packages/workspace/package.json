@@ -1,17 +1,17 @@
 {
-  "name": "@specmate/orchestrator",
+  "name": "@specmate/workspace",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@specmate/core": "workspace:*",
     "@specmate/db": "workspace:*",
-    "@specmate/workspace": "workspace:*",
-    "zod": "^4.4.3"
+    "drizzle-orm": "^0.45.2"
   }
 }
