@@ -14,6 +14,18 @@ export interface StageJob {
   readonly prompt: string
   /** SHA of the house spec-standard skill copy injected, when any (§11). */
   readonly skillSha?: string
+  /**
+   * Whether this role needs to start containers of its own — a repository's own
+   * harness, typically. Off by default: a stage that has not asked for a
+   * container runtime cannot reach one.
+   */
+  readonly needsContainerRuntime?: boolean
+  /**
+   * Runner image for this stage. The provider CLI is ours; the toolchain that
+   * builds and tests the target repository is the repository's, so the image is
+   * a per-task choice rather than one global default.
+   */
+  readonly image?: string
   readonly timeoutMs: number
   readonly attempt: number
 }

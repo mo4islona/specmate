@@ -1,0 +1,75 @@
+/**
+ * Runs one stage end to end, without the loop. This is how a change to prompts,
+ * to the runner image, or to a provider is verified against a real repository
+ * before the state machine exists to schedule it.
+ *
+ *   bun apps/orchestrator/src/run-stage.ts --task <uuid> --role researcher
+ */
+
+import { AgentRole } from '@specmate/core'
+import { createDb, databaseUrl, tasks } from '@specmate/db'
+import { renderLedgerForTask, StageExecutor } from '@specmate/runner'
+import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
+import { eq } from 'drizzle-orm'
+import { z } from 'zod'
+import { providerFor, RunnerEnv, runnerConfigFrom } from './runner.ts'
+
+function flag(name: string): string | undefined {
+  const at = process.argv.indexOf(`--${name}`)
+
+  return at === -1 ? undefined : process.argv[at + 1]
+}
+
+const taskId = flag('task')
+const role = AgentRole.safeParse(flag('role'))
+if (!taskId || !role.success) {
+  console.error('usage: run-stage.ts --task <uuid> --role <agent role>')
+  process.exit(2)
+}
+
+const env = RunnerEnv.extend({
+  WORKSPACE_ROOT: z.string().min(1).default('workspaces'),
+  GIT_AUTHOR_NAME: z.string().min(1).default('SpecMate'),
+  GIT_AUTHOR_EMAIL: z.string().min(1).default('specmate@localhost'),
+  NODE_ENV: z.string().min(1).default('development'),
+}).parse(process.env)
+
+const db = createDb(databaseUrl())
+const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+if (!task) {
+  console.error(`task ${taskId} does not exist`)
+  process.exit(1)
+}
+
+const manager = new WorkspaceManager({
+  config: {
+    root: env.WORKSPACE_ROOT,
+    authorName: env.GIT_AUTHOR_NAME,
+    authorEmail: env.GIT_AUTHOR_EMAIL,
+  },
+})
+const workspace = await manager.provision({
+  slug: task.slug,
+  repoUrl: task.repoUrl,
+  baseBranch: task.baseBranch,
+})
+
+const config = runnerConfigFrom(env, env.NODE_ENV)
+const executor = new StageExecutor({
+  config,
+  provider: providerFor(config),
+  git: new Git(manager.config),
+  workspaces: new WorkspaceService(manager, db),
+  ledger: (id) => renderLedgerForTask(db, config, id),
+})
+
+const execution = await executor.execute({
+  taskId: task.id,
+  stageId: crypto.randomUUID(),
+  role: role.data,
+  workspace,
+  baseBranch: task.baseBranch,
+})
+
+console.info(JSON.stringify(execution, null, 2))
+process.exit(execution.status === 'succeeded' ? 0 : 1)

@@ -1,0 +1,174 @@
+import { afterAll, describe, expect, test } from 'bun:test'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { StageJob } from '@specmate/core'
+import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
+import { ClaudeCodeProvider, readTelemetry, type StageRunError } from '../src/claude.ts'
+import { LocalBackend } from '../src/local-backend.ts'
+import {
+  cleanupTempDirs,
+  type Harness,
+  makeConfig,
+  makeHarness,
+  STUB_ENV,
+  setStubEnv,
+} from './fixtures.ts'
+
+afterAll(cleanupTempDirs)
+
+function provider(mode: string, harness: Harness, extra: Record<string, string> = {}) {
+  const config = makeConfig({ forwardEnv: STUB_ENV })
+  setStubEnv({
+    SPECMATE_STUB_MODE: mode,
+    SPECMATE_STUB_SLUG: harness.workspace.slug,
+    ...extra,
+  })
+
+  return new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
+}
+
+function job(harness: Harness, overrides: Partial<StageJob> = {}): StageJob {
+  return {
+    taskId: '11111111-1111-4111-8111-111111111111',
+    stageId: '22222222-2222-4222-8222-222222222222',
+    role: 'researcher',
+    provider: 'claude-code',
+    workspacePath: harness.workspace.path,
+    changeDir: harness.workspace.changeDir,
+    prompt: 'PROMPT-BODY-MARKER',
+    timeoutMs: 20_000,
+    attempt: 0,
+    ...overrides,
+  }
+}
+
+describe('provider invocation', () => {
+  test('withholds the shell from a role that may not modify product code', () => {
+    const harness = { workspace: { slug: 'x' } } as Harness
+    const claude = provider('ok', harness)
+
+    expect(claude.argv('researcher')).toContain('--disallowedTools')
+    expect(claude.argv('researcher')).toContain('Bash')
+    expect(claude.argv('implementer')).not.toContain('--disallowedTools')
+  })
+
+  test('pins the model and runs headless', () => {
+    const harness = { workspace: { slug: 'x' } } as Harness
+    const argv = provider('ok', harness).argv('researcher')
+
+    expect(argv).toContain('-p')
+    expect(argv[argv.indexOf('--model') + 1]).toBe('claude-opus-5')
+    expect(argv[argv.indexOf('--output-format') + 1]).toBe('json')
+  })
+
+  test('delivers the prompt on stdin and keeps it in the scratch directory', async () => {
+    const harness = await makeHarness('stdin')
+    const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
+    const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
+
+    await claude.run(job(harness))
+
+    const seen = (await Bun.file(record).json()) as { prompt: string }
+    expect(seen.prompt).toBe('PROMPT-BODY-MARKER')
+    const kept = join(harness.workspace.path, SCRATCH_DIR, '22222222-2222-4222-8222-222222222222-0')
+    expect(await readFile(join(kept, 'prompt.md'), 'utf8')).toBe('PROMPT-BODY-MARKER')
+  })
+
+  test('parses the result and folds in the provider’s telemetry', async () => {
+    const harness = await makeHarness('telemetry')
+    const claude = provider('ok', harness)
+
+    const outcome = await claude.run(job(harness))
+
+    expect(outcome.result.status).toBe('ok')
+    expect(outcome.result.usage.input_tokens).toBe(1200)
+    expect(outcome.result.usage.cost_usd).toBe(0.42)
+  })
+
+  test('does not fail a good stage on a garbled telemetry envelope', async () => {
+    const harness = await makeHarness('garbled')
+    const claude = provider('garbled-telemetry', harness)
+
+    const outcome = await claude.run(job(harness))
+
+    expect(outcome.result.status).toBe('ok')
+    expect(outcome.result.usage.input_tokens).toBeUndefined()
+  })
+
+  test('retains the log of a failed run', async () => {
+    const harness = await makeHarness('failed-log')
+    const claude = provider('nonzero-exit', harness)
+
+    const error = (await claude.run(job(harness)).catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('provider_error')
+    const log = join(
+      harness.workspace.path,
+      SCRATCH_DIR,
+      '22222222-2222-4222-8222-222222222222-0',
+      'run.log',
+    )
+    expect(await readFile(log, 'utf8')).toContain('stub failed on purpose')
+  })
+
+  test('reports a run that left no result', async () => {
+    const harness = await makeHarness('no-result')
+    const claude = provider('no-result', harness)
+
+    const error = (await claude.run(job(harness)).catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('no_result')
+  })
+
+  test('reports a malformed result by naming the problem', async () => {
+    const harness = await makeHarness('malformed')
+    const claude = provider('invalid-result', harness)
+
+    const error = (await claude.run(job(harness)).catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('invalid_result')
+    expect(error.message).toMatch(/JSON|invalid/i)
+  })
+
+  test('does not accept an earlier attempt’s result as this attempt’s', async () => {
+    const harness = await makeHarness('stale')
+    const stale = JSON.stringify({ schema_version: 1, role: 'researcher', status: 'ok' })
+    await writeFile(join(harness.workspace.path, RESULT_FILE), stale)
+    const claude = provider('no-result', harness)
+
+    const error = (await claude.run(job(harness)).catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('no_result')
+  })
+
+  test('reports a run killed by its deadline as timed out', async () => {
+    const harness = await makeHarness('timeout')
+    const claude = provider('hang', harness)
+
+    const error = (await claude
+      .run(job(harness, { timeoutMs: 300 }))
+      .catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('timeout')
+  })
+})
+
+describe('telemetry parsing', () => {
+  test('reads a transcript array whose last entry is the result', () => {
+    const stdout = JSON.stringify([
+      { type: 'assistant' },
+      { type: 'result', total_cost_usd: 1.5, usage: { input_tokens: 10, output_tokens: 20 } },
+    ])
+
+    expect(readTelemetry(stdout)).toEqual({
+      input_tokens: 10,
+      output_tokens: 20,
+      cost_usd: 1.5,
+    })
+  })
+
+  test('returns nothing for output that is not JSON', () => {
+    expect(readTelemetry('welcome to the CLI')).toEqual({})
+    expect(readTelemetry('')).toEqual({})
+  })
+})

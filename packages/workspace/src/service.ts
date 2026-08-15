@@ -58,6 +58,10 @@ export class WorkspaceService {
     return { ...outcome, indexed }
   }
 
+  discard(workspace: Workspace): Promise<void> {
+    return this.manager.discard(workspace)
+  }
+
   async release(taskId: string): Promise<void> {
     const [task] = await this.db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
     if (!task) throw new TaskNotFoundError(taskId)

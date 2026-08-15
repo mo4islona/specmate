@@ -8,8 +8,9 @@ spec is published to a shared wiki.
 The long-form plan is [`docs/plan.md`](docs/plan.md). SpecMate is developed through OpenSpec
 from day 0 — each roadmap phase ships as one or more changes under `openspec/changes/`.
 
-**Status: Phase 0.** The skeleton boots, the database migrates, the contracts are written.
-No agent runs yet.
+**Status: Phase 1, in progress.** Workspaces are provisioned per task and committed per stage;
+a stage can now be executed against a real repository. The state machine that decides which
+stage runs is the next change.
 
 ## Layout
 
@@ -21,6 +22,10 @@ apps/
 packages/
   core/          role catalog, RESULT.json contract, provider interface, state machine
   db/            Drizzle schema, generated migrations, connection factory
+  workspace/     one git worktree per task, a commit per stage, artifact index
+  runner/        prompt assembly, provider invocation, result capture, isolation
+roles/           the role prompts, read by the orchestrator when it assembles a prompt
+runner/          the runner image: a provider CLI and nothing of SpecMate
 openspec/        the changes this repo is built from
 docs/plan.md     the full architecture and roadmap
 ```
@@ -72,6 +77,44 @@ bunx openspec archive <change>            # after it ships
 ```
 
 In Claude Code, `/opsx:propose`, `/opsx:apply`, and `/opsx:archive` drive the same flow.
+
+## The agent runner
+
+A stage runs in its own container, started for that stage and discarded when it ends. The
+container gets the task's worktree and the provider's stored session — not the database
+credential, not the repository key, not another task's files. It is an image, never a
+long-lived service: `docker compose up` starts no runner.
+
+Two settings decide how a stage runs:
+
+- `RUNNER_BACKEND=docker` isolates it. This is the production setting, and it needs the
+  container runtime socket mounted into the orchestrator — which is effectively root on the
+  host. That is accepted for a single-owner deployment on a private network; it is what keeps
+  an agent that runs a foreign repository's code away from this process.
+- `RUNNER_BACKEND=local` runs the provider as a child of the orchestrator, for development on a
+  laptop. It provides no isolation, so the orchestrator refuses to start with it when
+  `NODE_ENV=production`.
+
+`WORKSPACE_ROOT` must be one absolute path that means the same thing on the host and inside the
+orchestrator — see the note in `.env.example`. Startup probes it and refuses to run if the two
+disagree, because the alternative is an agent silently seeing an empty repository.
+
+### One-time provider login
+
+```bash
+docker compose build runner                  # needs CLAUDE_CODE_VERSION set in .env
+docker compose run --rm runner claude        # log in; the session persists in a named volume
+```
+
+### Running a single stage by hand
+
+```bash
+bun apps/orchestrator/src/run-stage.ts --task <task-uuid> --role researcher
+```
+
+Assembles the prompt, runs the provider, checks what it wrote against the role's contract, and
+commits on success. This is how a prompt or image change is verified before the loop exists to
+schedule it.
 
 ## Authentication
 

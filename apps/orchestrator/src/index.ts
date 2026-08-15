@@ -1,6 +1,7 @@
 import { createDb, databaseUrl, ping } from '@specmate/db'
 import { WorkspaceManager } from '@specmate/workspace'
 import { z } from 'zod'
+import { backendFor, RunnerEnv, runnerConfigFrom } from './runner.ts'
 
 /** Docker/`.env` supply unset variables as empty strings; treat those as absent. */
 const optionalString = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional())
@@ -16,6 +17,8 @@ const Env = z.object({
   GIT_AUTHOR_EMAIL: z.string().min(1).default('specmate@localhost'),
   /** Read-only key for target repositories; absent is legal for public origins. */
   REPO_SSH_KEY_PATH: optionalString,
+  NODE_ENV: z.string().min(1).default('development'),
+  ...RunnerEnv.shape,
 })
 
 const parsed = Env.safeParse(process.env)
@@ -42,6 +45,18 @@ try {
   console.info(`workspaces ready at ${root} (${gitVersion})`)
 } catch (e) {
   console.error(`workspace preflight failed: ${(e as Error).message}`)
+  process.exit(1)
+}
+
+// The same reasoning for the executor: no isolation runtime, no stages. This
+// also proves that a path means the same thing here and on the host, which is
+// the failure that would otherwise show up as an agent seeing an empty repository.
+try {
+  const runner = runnerConfigFrom(env, env.NODE_ENV)
+  const report = await backendFor(runner).preflight(workspaces.config.root)
+  console.info(`runner ready — ${report}`)
+} catch (e) {
+  console.error(`runner preflight failed: ${(e as Error).message}`)
   process.exit(1)
 }
 
