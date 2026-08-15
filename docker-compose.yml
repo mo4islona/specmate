@@ -59,6 +59,15 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       ORCHESTRATOR_PORT: 4100
       DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
+      WORKSPACE_ROOT: /var/lib/specmate/workspaces
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-SpecMate}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-specmate@localhost}
+      # Empty unless a key is configured, so git falls back to no identity file.
+      REPO_SSH_KEY_PATH: ${REPO_SSH_KEY_PATH:+/etc/specmate/repo_key}
+    volumes:
+      - workspaces:/var/lib/specmate/workspaces
+      # Inert when REPO_SSH_KEY_PATH is unset: nothing points the runtime at it.
+      - ${REPO_SSH_KEY_PATH:-/dev/null}:/etc/specmate/repo_key:ro
     ports:
       - '127.0.0.1:${ORCHESTRATOR_PORT:-4100}:4100'
     depends_on:
@@ -79,3 +88,4 @@ services:
 
 volumes:
   pgdata:
+  workspaces:
