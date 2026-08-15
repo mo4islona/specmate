@@ -291,16 +291,25 @@ SpecMate uses OpenSpec as the **process/transport** and a house **spec standard*
 - On archive, the publisher generates a one-page **ADR record** from `proposal.md` + `design.md` (a change is nearly isomorphic to an ADR) and commits it to the repo's append-only `openspec/decisions/`, continuing the numbering of any pre-existing hand-written ADRs. The canonical source stays the archived change; the ADR file is a frozen render, safe because it is never edited.
 
 ### The skill is part of the system — and must stay consistent
-The house standard is described by an existing **skill** (its own repo; URL is a config value). Rules:
+The house standard is described by two **skills** with different homes:
+**`openspec-standard`** — the injectable everyday discipline for writing OpenSpec specs (IDs in
+requirement titles, cross-reference by ID, RENAMED semantics, ADR-via-changes, lint rules) —
+lives in this repo at `.claude/skills/openspec-standard/`; and **`product-tech-spec`** — the
+deep suite methodology it builds on (an external skills repo), used by suite-scale tasks
+(e.g. the Phase-4 mapping task) and never injected per stage. Rules:
 
-1. **Single source of truth**: the skill repo. SpecMate never forks the content — it holds a **pinned, auto-refreshed copy**; a sync job pulls on schedule and on webhook, records the SHA. Concrete config:
+1. **Single source of truth per skill.** `openspec-standard` is injected from the
+   orchestrator's own checkout, and the recorded SHA is this repo's revision — no sync job
+   involved. External skills come through `skill_sources`: SpecMate never forks their content —
+   it holds a **pinned, auto-refreshed copy**; a sync job pulls on schedule and on webhook,
+   records the SHA. Concrete config:
    ```yaml
    skill_sources:
      - name: product-tech-spec
-       repo: github.com/<org>/<spec-standard-skill>
+       repo: github.com/subsquid/ai-coding-skills
        ref: main
        path: product-tech-spec/
-       inject_into: [researcher, spec_writer, reviewer, summarizer]
+       inject_into: []   # opted into by suite-scale task types, not per stage
    ```
    The repo is **private** → the sync job needs its own read-only credential (fine-grained PAT or deploy key, contents:read only), separate from the per-repo deploy keys used by workspaces.
 2. **Injection**: every role that reads or writes specs (Researcher, Spec Writer, Reviewer, Summarizer) gets the current skill copy in its context assembly, alongside the OpenSpec artifacts. The skill SHA a stage ran with is recorded in `stages.result` — full reproducibility of "which standard was in force".
