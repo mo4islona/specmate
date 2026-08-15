@@ -111,6 +111,17 @@ export class WorkspaceManager {
     return { committed: true, commit: head.stdout.trim(), files }
   }
 
+  /**
+   * Restores the working tree to the last stage commit. `clean` runs without
+   * `-x` on purpose: the scratch an attempt left behind — its log and its
+   * result — is the evidence a human is shown, and excluded paths are exactly
+   * what `-x` would delete.
+   */
+  async discard(workspace: Workspace): Promise<void> {
+    await this.git.run(['reset', '--hard', '--quiet', 'HEAD'], { cwd: workspace.path })
+    await this.git.run(['clean', '-fdq'], { cwd: workspace.path })
+  }
+
   /** Removes the working tree; the branch and its commits stay in the cache. */
   async release(slug: string, repoUrl: string): Promise<void> {
     const mirror = mirrorPath(this.config, repoUrl)

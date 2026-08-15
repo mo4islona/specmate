@@ -59,13 +59,28 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       ORCHESTRATOR_PORT: 4100
       DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
-      WORKSPACE_ROOT: /var/lib/specmate/workspaces
+      # One absolute path, used on both sides of the mount below. A stage's
+      # worktree is mounted into the runner by the path the orchestrator names,
+      # and the runtime resolves that path on the host — so host and container
+      # have to agree on what it means.
+      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-SpecMate}
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-specmate@localhost}
       # Empty unless a key is configured, so git falls back to no identity file.
       REPO_SSH_KEY_PATH: ${REPO_SSH_KEY_PATH:+/etc/specmate/repo_key}
+      RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
+      RUNNER_IMAGE: ${RUNNER_IMAGE:-specmate/runner-claude:local}
+      RUNNER_MODEL: ${RUNNER_MODEL:-claude-opus-5}
+      RUNNER_AUTH_VOLUME: ${RUNNER_AUTH_VOLUME:-specmate_claude-auth}
+      RUNNER_CPUS: ${RUNNER_CPUS:-2}
+      RUNNER_MEMORY: ${RUNNER_MEMORY:-4g}
+      STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-1800000}
+      RUNNER_FORWARD_ENV: ${RUNNER_FORWARD_ENV:-}
     volumes:
-      - workspaces:/var/lib/specmate/workspaces
+      - ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}:${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
+      # Effectively root on the host. Accepted for a single-owner deployment on
+      # a private network; it is what isolates a stage from this process.
+      - /var/run/docker.sock:/var/run/docker.sock
       # Inert when REPO_SSH_KEY_PATH is unset: nothing points the runtime at it.
       - ${REPO_SSH_KEY_PATH:-/dev/null}:/etc/specmate/repo_key:ro
     ports:
@@ -86,6 +101,23 @@ services:
     depends_on:
       - api
 
+  # Built by `docker compose build`, never started by `up`: the orchestrator
+  # starts one container per stage and discards it. The service exists so the
+  # image has a build definition and so the one-time interactive login has
+  # something to run: `docker compose run --rm runner claude`.
+  runner:
+    profiles: ['tools']
+    build:
+      context: .
+      dockerfile: runner/Dockerfile
+      args:
+        # Empty fails the build with a message from the Dockerfile; a `:?` here
+        # would instead break every compose command, including `up postgres`.
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+    image: ${RUNNER_IMAGE:-specmate/runner-claude:local}
+    volumes:
+      - claude-auth:/home/agent
+
 volumes:
   pgdata:
-  workspaces:
+  claude-auth:

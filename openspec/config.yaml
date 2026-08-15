@@ -14,6 +14,9 @@ context: |
   Conventions:
   - English everywhere in committed artifacts, code, and comments.
   - Comments explain constraints and "why not the obvious thing", never restate code.
+  - Blank line after an early return (or early throw), and a blank line before the
+    final return of a function. Guard clauses read as guards; the result reads as
+    the result.
   - Conventional commits, scoped (e.g. `feat(db): ...`).
   - Roles are fixed, providers (claude-code/codex/copilot) are interchangeable; every
     role consumes and produces OpenSpec artifacts and ends with a RESULT.json.
