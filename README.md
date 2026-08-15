@@ -102,7 +102,7 @@ disagree, because the alternative is an agent silently seeing an empty repositor
 ### One-time provider login
 
 ```bash
-docker compose build runner                  # needs CLAUDE_CODE_VERSION set in .env
+docker compose build runner                  # needs CLAUDE_CODE_VERSION and MISE_VERSION
 docker compose run --rm runner claude        # log in; the session persists in a named volume
 ```
 

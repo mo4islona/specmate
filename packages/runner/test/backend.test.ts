@@ -1,6 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import type { ExecSpec } from '../src/backend.ts'
-import { DOCKER_SOCKET, DockerBackend } from '../src/docker-backend.ts'
+import {
+  DOCKER_SOCKET,
+  DockerBackend,
+  immutableImageFromInspection,
+  isImmutableImageReference,
+  MISE_SHARED_ROOT,
+  SPECMATE_TOOLCHAINS_ENV,
+} from '../src/docker-backend.ts'
 import { LocalBackend } from '../src/local-backend.ts'
 import { cleanupTempDirs, makeConfig, STUB, tempDir } from './fixtures.ts'
 
@@ -75,7 +82,7 @@ describe('local backend', () => {
 describe('docker backend', () => {
   const backend = new DockerBackend(makeConfig({ backend: 'docker' }))
 
-  test('mounts the task worktree at its own path and the auth volume, and nothing else', () => {
+  test('mounts the worktree, auth, and shared toolchains volumes', () => {
     const argv = backend.argv(spec())
 
     expect(argv.slice(0, 3)).toEqual(['docker', 'run', '--rm'])
@@ -83,11 +90,13 @@ describe('docker backend', () => {
     expect(mounts).toEqual([
       '/var/lib/specmate/workspaces/tasks/demo:/var/lib/specmate/workspaces/tasks/demo',
       'specmate_claude-auth:/home/agent',
+      `specmate_toolchains:${MISE_SHARED_ROOT}:ro`,
     ])
     expect(argv).toContain('--user')
     expect(argv).toContain('10001:10001')
     expect(argv.join(' ')).not.toContain('DATABASE_URL')
     expect(argv.join(' ')).not.toContain(DOCKER_SOCKET)
+    expect(argv).toContain(`${SPECMATE_TOOLCHAINS_ENV}=[]`)
   })
 
   test('caps cpu and memory and runs in the workspace', () => {
@@ -96,6 +105,21 @@ describe('docker backend', () => {
     expect(argv[argv.indexOf('--cpus') + 1]).toBe('2')
     expect(argv[argv.indexOf('--memory') + 1]).toBe('4g')
     expect(argv[argv.indexOf('--workdir') + 1]).toBe('/var/lib/specmate/workspaces/tasks/demo')
+  })
+
+  test('passes the complete pinned environment into a stage', () => {
+    const digest = `sha256:${'a'.repeat(64)}`
+    const argv = backend.argv(
+      spec({
+        environment: {
+          image: digest,
+          toolchains: [{ name: 'node', version: '22.14.0' }],
+        },
+      }),
+    )
+
+    expect(argv).toContain(digest)
+    expect(argv).toContain(`${SPECMATE_TOOLCHAINS_ENV}=[{"name":"node","version":"22.14.0"}]`)
   })
 
   test('grants no container runtime unless the stage declared it', () => {
@@ -121,6 +145,48 @@ describe('docker backend', () => {
     const argv = backend.argv(spec({ label: 'stage/1:2' }))
 
     expect(argv[argv.indexOf('--name') + 1]).toBe('specmate-stage-1-2')
+  })
+})
+
+describe('runner image pinning', () => {
+  const digest = 'a'.repeat(64)
+
+  test('recognises repository digests and image IDs as immutable', () => {
+    expect(isImmutableImageReference(`registry.example/runner@sha256:${digest}`)).toBe(true)
+    expect(isImmutableImageReference(`sha256:${digest}`)).toBe(true)
+    expect(isImmutableImageReference('registry.example/runner:latest')).toBe(false)
+  })
+
+  test('prefers the requested repository digest from image inspection', () => {
+    const other = 'b'.repeat(64)
+    const raw = JSON.stringify([
+      {
+        Id: `sha256:${other}`,
+        RepoDigests: [
+          `mirror.example/runner@sha256:${other}`,
+          `registry.example/runner@sha256:${digest}`,
+        ],
+      },
+    ])
+
+    expect(immutableImageFromInspection('registry.example/runner:local', raw)).toBe(
+      `registry.example/runner@sha256:${digest}`,
+    )
+  })
+
+  test('falls back to the immutable local image ID', () => {
+    const other = 'b'.repeat(64)
+    expect(
+      immutableImageFromInspection(
+        'specmate/runner-universal:local',
+        JSON.stringify([
+          {
+            Id: `sha256:${digest}`,
+            RepoDigests: [`mirror.example/runner@sha256:${other}`],
+          },
+        ]),
+      ),
+    ).toBe(`sha256:${digest}`)
   })
 })
 

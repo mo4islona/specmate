@@ -36,6 +36,7 @@ function job(harness: Harness, overrides: Partial<StageJob> = {}): StageJob {
     workspacePath: harness.workspace.path,
     changeDir: harness.workspace.changeDir,
     prompt: 'PROMPT-BODY-MARKER',
+    environment: { image: 'local://host', toolchains: [] },
     timeoutMs: 20_000,
     attempt: 0,
     ...overrides,

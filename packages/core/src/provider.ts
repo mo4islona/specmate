@@ -1,3 +1,4 @@
+import type { ExecutionEnvironment } from './environment.ts'
 import type { StageResult } from './result.ts'
 import type { AgentRole, ProviderId } from './roles.ts'
 
@@ -15,17 +16,12 @@ export interface StageJob {
   /** SHA of the house spec-standard skill copy injected, when any (§11). */
   readonly skillSha?: string
   /**
-   * Whether this role needs to start containers of its own — a repository's own
-   * harness, typically. Off by default: a stage that has not asked for a
-   * container runtime cannot reach one.
+   * Whether this role may start containers for the repository's own harness.
+   * The executor derives it from the fixed role contract; callers cannot grant it.
    */
   readonly needsContainerRuntime?: boolean
-  /**
-   * Runner image for this stage. The provider CLI is ours; the toolchain that
-   * builds and tests the target repository is the repository's, so the image is
-   * a per-task choice rather than one global default.
-   */
-  readonly image?: string
+  /** Immutable runner image and exact toolchains pinned when the task was provisioned. */
+  readonly environment: ExecutionEnvironment
   readonly timeoutMs: number
   readonly attempt: number
 }

@@ -2,11 +2,22 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
+  detectToolchains,
+  type EnvironmentResolver,
   Git,
   resolveWorkspaceConfig,
   WorkspaceManager,
   type WorkspaceOptions,
 } from '../src/index.ts'
+
+export const resolveTestEnvironment: EnvironmentResolver = async (workspace, image) => ({
+  image,
+  toolchains: (await detectToolchains(workspace.path)).map((toolchain) => {
+    if (!toolchain.version) throw new Error(`test toolchain ${toolchain.name} has no version`)
+
+    return { name: toolchain.name, version: toolchain.version }
+  }),
+})
 
 /** Locks tuned down so takeover tests finish in milliseconds, not minutes. */
 export const FAST_LOCKS = {

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { RunnerEnv, runnerConfigFrom, UnsafeBackendError } from '../src/runner.ts'
+import {
+  RunnerEnv,
+  runnerConfigFrom,
+  TaskEnvironmentMissingError,
+  taskRunnerEnvironment,
+  UnsafeBackendError,
+} from '../src/runner.ts'
 
 function env(overrides: Record<string, string> = {}) {
   return RunnerEnv.parse({ RUNNER_BACKEND: 'docker', ...overrides })
@@ -22,7 +28,7 @@ describe('runner configuration', () => {
   test('treats an empty variable as unset rather than invalid', () => {
     const config = runnerConfigFrom(env({ RUNNER_IMAGE: '', RUNNER_MODEL: '' }), 'production')
 
-    expect(config.image).toBe('specmate/runner-claude:latest')
+    expect(config.image).toBe('specmate/runner-universal:latest')
     expect(config.model).toBe('claude-opus-5')
   })
 
@@ -37,5 +43,15 @@ describe('runner configuration', () => {
 
   test('rejects a non-positive stage timeout', () => {
     expect(() => env({ STAGE_TIMEOUT_MS: '0' })).toThrow()
+  })
+
+  test('returns the complete task pin after provisioning', () => {
+    const environment = {
+      image: `runner@sha256:${'a'.repeat(64)}`,
+      toolchains: [{ name: 'bun', version: '1.3.9' }],
+    }
+
+    expect(taskRunnerEnvironment(environment)).toEqual(environment)
+    expect(() => taskRunnerEnvironment(null)).toThrow(TaskEnvironmentMissingError)
   })
 })

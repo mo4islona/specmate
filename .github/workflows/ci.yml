@@ -78,3 +78,31 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  runner:
+    name: runner image · toolchains
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runner/Dockerfile
+          push: false
+          load: true
+          tags: specmate/runner-universal:ci
+          build-args: |
+            CLAUDE_CODE_VERSION=2.1.212
+            MISE_VERSION=2026.7.13
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+      - name: Pinned toolchain end to end
+        env:
+          RUNNER_IMAGE: specmate/runner-universal:ci
+          SPECMATE_RUN_DOCKER_TESTS: '1'
+        run: bun test packages/runner/test/toolchains.e2e.test.ts

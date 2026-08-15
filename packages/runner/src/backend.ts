@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import type { ExecutionEnvironment } from '@specmate/core'
 import type { BackendId } from './config.ts'
 
 export interface ExecLimits {
@@ -18,12 +19,8 @@ export interface ExecSpec {
   readonly limits: ExecLimits
   /** Whether the stage's role needs to start containers of its own. */
   readonly containerRuntime: boolean
-  /**
-   * Overrides the configured runner image. A stage runs against someone else's
-   * repository, and that repository's toolchain — not ours — decides what has
-   * to be installed to build and test it.
-   */
-  readonly image?: string
+  /** Overrides the configured runner with the task's immutable execution pin. */
+  readonly environment?: ExecutionEnvironment
   /** Names the container so a deadline has something to kill. */
   readonly label: string
 }
@@ -39,6 +36,7 @@ export interface ExecResult {
 export interface ExecBackend {
   readonly id: BackendId
   run(spec: ExecSpec): Promise<ExecResult>
+  resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment>
   /**
    * Asserts at startup that this backend can actually execute a stage. A
    * process that cannot run one can only fail every task it picks up.

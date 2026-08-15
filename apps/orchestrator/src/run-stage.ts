@@ -12,7 +12,13 @@ import { renderLedgerForTask, StageExecutor } from '@specmate/runner'
 import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { providerFor, RunnerEnv, runnerConfigFrom } from './runner.ts'
+import {
+  backendFor,
+  providerFor,
+  RunnerEnv,
+  runnerConfigFrom,
+  taskRunnerEnvironment,
+} from './runner.ts'
 
 function flag(name: string): string | undefined {
   const at = process.argv.indexOf(`--${name}`)
@@ -48,18 +54,29 @@ const manager = new WorkspaceManager({
     authorEmail: env.GIT_AUTHOR_EMAIL,
   },
 })
-const workspace = await manager.provision({
+const config = runnerConfigFrom(env, env.NODE_ENV)
+const backend = backendFor(config)
+const workspaces = new WorkspaceService(manager, db, (workspace, image) =>
+  backend.resolveEnvironment(workspace.path, image),
+)
+const workspace = await workspaces.provision({
+  taskId: task.id,
   slug: task.slug,
   repoUrl: task.repoUrl,
   baseBranch: task.baseBranch,
+  image: config.image,
 })
+const [provisionedTask] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+if (!provisionedTask) {
+  console.error(`task ${task.id} disappeared during workspace provision`)
+  process.exit(1)
+}
 
-const config = runnerConfigFrom(env, env.NODE_ENV)
 const executor = new StageExecutor({
   config,
-  provider: providerFor(config),
+  provider: providerFor(config, backend),
   git: new Git(manager.config),
-  workspaces: new WorkspaceService(manager, db),
+  workspaces,
   ledger: (id) => renderLedgerForTask(db, config, id),
 })
 
@@ -69,6 +86,7 @@ const execution = await executor.execute({
   role: role.data,
   workspace,
   baseBranch: task.baseBranch,
+  environment: taskRunnerEnvironment(provisionedTask.environment),
 })
 
 console.info(JSON.stringify(execution, null, 2))

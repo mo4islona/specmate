@@ -5,7 +5,13 @@ import { join } from 'node:path'
 import { artifacts, createDb, type Database, tasks } from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
 import { type StageRef, WorkspaceBusyError, WorkspaceService } from '../src/index.ts'
-import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeManager,
+  makeOrigin,
+  resolveTestEnvironment,
+  writeFiles,
+} from './fixtures.ts'
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000003',
@@ -49,11 +55,13 @@ describeDb('artifact index', () => {
     if (!task) throw new Error('task insert returned no row')
     createdTaskIds.push(task.id)
 
-    const service = new WorkspaceService(manager, db)
+    const service = new WorkspaceService(manager, db, resolveTestEnvironment)
     const workspace = await service.provision({
+      taskId: task.id,
       slug,
       repoUrl: origin.url,
       baseBranch: 'main',
+      image: 'specmate/runner-universal@sha256:index-fixture',
     })
     const rows = () => db.select().from(artifacts).where(eq(artifacts.taskId, task.id))
     return { task, service, workspace, rows }
