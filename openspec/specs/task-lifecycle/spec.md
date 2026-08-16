@@ -7,149 +7,217 @@ The orchestrator owns these transitions; agents never set state.
 
 ## Requirements
 
-### Requirement: Task states and legal transitions
+### Requirement: REQ-601 — Task states and legal transitions
 
-The system SHALL define the set of task states and, for each, the states it may move to. A
-transition outside that set MUST be rejected. State SHALL be changed only by the orchestrator,
-never by an agent's output.
+The system SHALL derive a task's legal transitions from its pinned pipeline — its forward
+edges, loop edges, and gate resolutions — together with the type-independent interrupt states,
+which MAY be entered from any active state and SHALL return the task to the state they
+interrupted. A transition outside that derived set MUST be rejected. State SHALL be changed only
+by the orchestrator, never by an agent's output.
 
-#### Scenario: Illegal transition attempted
+#### Scenario: AC-601 — Illegal transition attempted
 
-- **WHEN** a transition not listed for the current state is attempted
+- **WHEN** a transition not derivable from the task's pinned pipeline or the interrupt rules is attempted
 - **THEN** it SHALL be rejected and the task SHALL remain in its current state
 
-#### Scenario: Agent result implies a state
+#### Scenario: AC-602 — Agent result implies a state
 
 - **WHEN** an agent's result suggests the task should advance
 - **THEN** the orchestrator SHALL decide the transition; the agent's output alone SHALL NOT change state
 
-### Requirement: The happy path reaches archive
+#### Scenario: AC-603 — Two tasks with different pipelines
+
+- **WHEN** two tasks pinned to different pipeline definitions are inspected
+- **THEN** each SHALL accept only the transitions its own pinned graph derives, under one and the same engine
+
+### Requirement: REQ-602 — The happy path reaches archive
 
 There SHALL be a legal path from a drafted task through planning, kickoff brief, research,
 spec review, implementation, verification, code review, summarisation, and publication to
 archive.
 
-#### Scenario: Nothing needs revision
+#### Scenario: AC-604 — Nothing needs revision
 
 - **WHEN** every review approves and every gate is approved
 - **THEN** the task SHALL be able to walk from draft to archived using only legal transitions
 
-### Requirement: Review loops go backwards, never forwards
+### Requirement: REQ-603 — Review loops go backwards, never forwards
 
 A review that requests changes SHALL return the task to the stage that produces the artifacts
 under review. A review MUST NOT be able to skip the stages between itself and publication.
 
-#### Scenario: Spec review requests changes
+#### Scenario: AC-605 — Spec review requests changes
 
 - **WHEN** spec review returns a revise verdict
 - **THEN** the task SHALL return to research
 
-#### Scenario: Code review requests changes
+#### Scenario: AC-606 — Code review requests changes
 
 - **WHEN** code review returns a revise verdict
 - **THEN** the task SHALL return to implementation
 
-#### Scenario: Code review cannot publish
+#### Scenario: AC-607 — Code review cannot publish
 
 - **WHEN** a transition directly from code review to publication is attempted
 - **THEN** it SHALL be rejected
 
-### Requirement: Three mandatory human gates
+### Requirement: REQ-604 — Three mandatory human gates
 
 The system SHALL require explicit human approval at exactly three points: the kickoff brief
 before research begins, the specification before code is written, and the final summary before
 publication. All other transitions MAY proceed without the human.
 
-#### Scenario: Gate inventory
+#### Scenario: AC-608 — Gate inventory
 
 - **WHEN** the states are inspected
 - **THEN** exactly the kickoff, specification, and final states SHALL be marked as human gates
 
-#### Scenario: Research before approval
+#### Scenario: AC-609 — Research before approval
 
 - **WHEN** a task's kickoff brief has not been approved
 - **THEN** research SHALL NOT begin
 
-### Requirement: Kickoff redirect is bounded
+### Requirement: REQ-605 — Kickoff redirect is bounded
 
 At the kickoff gate the human SHALL be able to approve, redirect with a comment, or cancel. A
 redirect SHALL return the task to planning to regenerate the brief, and the number of
 regenerations SHALL be capped.
 
-#### Scenario: Redirect at kickoff
+#### Scenario: AC-610 — Redirect at kickoff
 
 - **WHEN** the human redirects a kickoff brief
 - **THEN** the task SHALL return to planning and the comment SHALL be recorded as feedback
 
-#### Scenario: Redirect cap reached
+#### Scenario: AC-611 — Redirect cap reached
 
 - **WHEN** the configured number of regenerations has been used
 - **THEN** the task SHALL stop regenerating and require a decision from the human
 
-### Requirement: Loops are bounded by caps
+### Requirement: REQ-606 — Loops are bounded by caps
 
 Each review loop SHALL have a maximum number of iterations, configurable per task and stored
 with the task. Exhausting a cap SHALL escalate to the human rather than continuing to loop or
 failing silently.
 
-#### Scenario: Iteration cap exhausted
+#### Scenario: AC-612 — Iteration cap exhausted
 
 - **WHEN** a loop reaches its configured maximum iterations without approval
 - **THEN** the task SHALL await a human decision
 
-### Requirement: Repeated findings escalate
+### Requirement: REQ-607 — Repeated findings escalate
 
 When a reviewer returns the same finding identifier in consecutive rounds up to the configured
 threshold, the orchestrator SHALL escalate to the human instead of running another round.
 
-#### Scenario: Reviewer repeats itself
+#### Scenario: AC-613 — Reviewer repeats itself
 
 - **WHEN** the same finding identifier is returned in consecutive rounds up to the threshold
 - **THEN** the task SHALL await a human decision rather than starting another round
 
-### Requirement: Budgets pause rather than fail
+### Requirement: REQ-608 — Budgets pause rather than fail
 
 Each task SHALL carry a wall-clock and a cost budget. Exceeding either SHALL pause the task and
 raise it to the human, and MUST NOT discard work already done.
 
-#### Scenario: Cost budget exceeded mid-run
+#### Scenario: AC-614 — Cost budget exceeded mid-run
 
 - **WHEN** a task's cost budget is exhausted
 - **THEN** the task SHALL pause with its artifacts intact and the human SHALL be notified
 
-### Requirement: Interruptions remember where to resume
+### Requirement: REQ-609 — Interruptions remember where to resume
 
 A task interrupted to wait for a human, or paused, SHALL record the state it was interrupted in
 so it can resume exactly there once resolved.
 
-#### Scenario: Decision answered
+#### Scenario: AC-615 — Decision answered
 
 - **WHEN** the human answers the decision that blocked a task
 - **THEN** the task SHALL resume in the state it was interrupted in
 
-### Requirement: Terminal states are terminal
+### Requirement: REQ-610 — Terminal states are terminal
 
 An archived or cancelled task SHALL have no outgoing transitions and MUST NOT be pausable,
 cancellable, or resumable. A failed task MAY be restarted from an earlier stage, because
 failure is recoverable while completion is not.
 
-#### Scenario: Cancelling an archived task
+#### Scenario: AC-616 — Cancelling an archived task
 
 - **WHEN** cancellation is attempted on an archived task
 - **THEN** it SHALL be rejected
 
-#### Scenario: Restarting a failed task
+#### Scenario: AC-617 — Restarting a failed task
 
 - **WHEN** a failed task is restarted
 - **THEN** it SHALL be allowed to re-enter an earlier stage
 
-### Requirement: Rework re-enters at the affected stage
+### Requirement: REQ-611 — Rework re-enters at the affected stage
 
 After the final gate the human SHALL be able to send a task back for rework, and the task SHALL
 re-enter only the affected stages rather than restarting the pipeline. Iteration counters for
 the new round SHALL start again under their own cap.
 
-#### Scenario: Rework touches only code
+#### Scenario: AC-618 — Rework touches only code
 
 - **WHEN** the human sends a summarised task back with implementation-level comments
 - **THEN** the task SHALL return to implementation rather than to research
+
+### Requirement: REQ-612 — The engine advances a task from stored state alone
+
+After a stage completes, the next transition SHALL be determined solely by the pinned graph,
+the recorded outcome, the stored rounds, and the task's caps: success on a non-review stage
+advances along the forward edge, an approve verdict advances, a revise verdict records the round
+and follows the loop edge when the round fits the cap, and an escalate verdict or an exhausted
+cap parks the task awaiting a human. The engine MUST NOT branch on task type, role, or node
+identity beyond what the pinned graph declares.
+
+#### Scenario: AC-619 — Revise within the cap
+
+- **WHEN** a review stage returns revise and the loop's used rounds are below its cap
+- **THEN** the round SHALL be recorded with its verdict and findings and the task SHALL follow the loop edge
+
+#### Scenario: AC-620 — Revise at the cap
+
+- **WHEN** a review stage returns revise and another round would exceed the loop's cap
+- **THEN** the task SHALL park awaiting a human and no further stage SHALL be dispatched
+
+#### Scenario: AC-621 — Approval advances
+
+- **WHEN** a review stage returns approve
+- **THEN** the task SHALL move to the pinned graph's forward target of that stage
+
+### Requirement: REQ-613 — Stage failure is retried up to a cap, then fails the task
+
+A stage attempt that fails for any reason — timeout, invalid result after the runner's own
+retry, scope violation, or a crash — SHALL have its uncommitted work discarded and SHALL be
+re-dispatched with an incremented attempt number, up to a configured per-stage attempt cap.
+Exhausting the cap SHALL move the task to failed, recording the stage and the final reason.
+Every failed attempt SHALL be recorded; failure MUST NOT be silent.
+
+#### Scenario: AC-622 — Retry starts from committed state
+
+- **WHEN** an attempt fails after half-rewriting artifacts and a retry is dispatched
+- **THEN** the retry SHALL read the artifacts as last committed, not as the failed attempt left them
+
+#### Scenario: AC-623 — Attempt cap exhausted
+
+- **WHEN** a stage's attempt cap is spent without a successful attempt
+- **THEN** the task SHALL move to failed and the record SHALL name the stage and the last failure reason
+
+### Requirement: REQ-614 — A restart recovers every task from the store
+
+After an orchestrator restart, every non-terminal task SHALL resume from persisted state alone.
+A stage recorded as running with no live execution behind it SHALL be treated as a failed
+attempt: its execution SHALL be terminated if still present, its workspace discarded, and the
+stage re-dispatched under the same attempt cap, updating the interrupted attempt's record rather
+than duplicating it. A task parked at a gate or awaiting a human SHALL remain parked across the
+restart.
+
+#### Scenario: AC-624 — Killed mid-stage
+
+- **WHEN** the orchestrator is killed while a stage runs and is then restarted
+- **THEN** the interrupted attempt SHALL be recorded as failed and the stage SHALL run again as the next attempt, and the task SHALL continue from its outcome
+
+#### Scenario: AC-625 — Restart while parked
+
+- **WHEN** the orchestrator restarts while a task waits at a human gate
+- **THEN** the task SHALL still be parked at that gate and nothing SHALL be dispatched for it

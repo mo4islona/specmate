@@ -14,7 +14,11 @@ export async function checkWriteScope(
 ): Promise<string[]> {
   if (ROLE_CONTRACTS[role].writesCode) return []
 
-  const status = await git.run(['status', '--porcelain=v1', '-z'], { cwd: workspace.path })
+  // `-uall`: a fully untracked directory otherwise collapses to `dir/`, which
+  // would flag a fresh change folder as product code on a task's first stage.
+  const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+    cwd: workspace.path,
+  })
   const prefix = `${workspace.changeDir}/`
 
   return parseStatus(status.stdout).filter((path) => !path.startsWith(prefix))

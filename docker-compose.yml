@@ -77,6 +77,9 @@ services:
       RUNNER_MEMORY: ${RUNNER_MEMORY:-4g}
       STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-1800000}
       RUNNER_FORWARD_ENV: ${RUNNER_FORWARD_ENV:-}
+      TICK_INTERVAL_MS: ${TICK_INTERVAL_MS:-5000}
+      STAGE_CONCURRENCY: ${STAGE_CONCURRENCY:-1}
+      STAGE_ATTEMPT_CAP: ${STAGE_ATTEMPT_CAP:-2}
     volumes:
       - ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}:${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
       # Effectively root on the host. Accepted for a single-owner deployment on

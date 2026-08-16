@@ -146,6 +146,21 @@ describe('docker backend', () => {
 
     expect(argv[argv.indexOf('--name') + 1]).toBe('specmate-stage-1-2')
   })
+
+  test('labels the container with task, node, and attempt for the restart sweep', () => {
+    const argv = backend.argv(
+      spec({
+        labels: {
+          'specmate.task': 'task-1',
+          'specmate.node': 'research',
+          'specmate.attempt': '0',
+        },
+      }),
+    )
+
+    const labels = argv.filter((_, i) => argv[i - 1] === '--label')
+    expect(labels).toEqual(['specmate.task=task-1', 'specmate.node=research', 'specmate.attempt=0'])
+  })
 })
 
 describe('runner image pinning', () => {

@@ -4,6 +4,7 @@ import {
   DEFAULT_BUDGETS,
   DEFAULT_CAPS,
   type ExecutionEnvironment,
+  type PinnedGraph,
   type ReviewFinding,
   type StageResult,
   type TaskState,
@@ -12,9 +13,9 @@ import { sql } from 'drizzle-orm'
 import {
   bigserial,
   boolean,
+  customType,
   index,
   integer,
-  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -22,6 +23,26 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+
+/**
+ * Not drizzle's jsonb: that one pre-stringifies values and bun's SQL driver
+ * stringifies again, landing a JSON *string* in the column and breaking every
+ * `->` query. Handing the driver the raw value stores a real object; reads
+ * still unwrap rows the double-encoding era left behind.
+ */
+const jsonb = customType<{ data: unknown; driverData: unknown }>({
+  dataType: () => 'jsonb',
+  toDriver: (value) => value,
+  fromDriver: (value) => {
+    if (typeof value !== 'string') return value
+
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  },
+})
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -160,20 +181,24 @@ export const runGraphs = pgTable(
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
     version: integer().notNull().default(1),
-    dag: jsonb().$type<RunGraphDag>().notNull(),
+    /** The task's own copy of its pipeline definition; the engine consults nothing else. */
+    dag: jsonb().$type<PinnedGraph>().notNull(),
     createdAt: timestamps.createdAt,
   },
   (t) => [uniqueIndex('run_graphs_task_version_idx').on(t.taskId, t.version)],
 )
 
-export interface RunGraphNode {
-  key: string
-  role: string
-  provider: string
-  dependsOn: string[]
-}
-export interface RunGraphDag {
-  nodes: RunGraphNode[]
+/**
+ * Execution telemetry per attempt (persistence spec). Absent values are null —
+ * never zero — so "no data" stays distinguishable from "free".
+ */
+export interface StageUsage {
+  model?: string | null
+  tokens?: Record<string, number> | null
+  costUsd?: number | null
+  /** The provider's raw envelope, for what the normalized fields missed. */
+  raw?: unknown
+  failure?: { reason: string; detail?: string } | null
 }
 
 export const stages = pgTable(
@@ -195,7 +220,7 @@ export const stages = pgTable(
     skillSha: text('skill_sha'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
-    cost: jsonb().$type<Record<string, number>>().notNull().default({}),
+    cost: jsonb().$type<StageUsage>().notNull().default({}),
     result: jsonb().$type<StageResult>(),
     ...timestamps,
   },

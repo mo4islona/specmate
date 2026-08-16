@@ -9,6 +9,7 @@ import {
   ROLE_CONTRACTS,
   type StageJob,
   type StageOutcome,
+  type StageTelemetry,
 } from '@specmate/core'
 import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
 import type { ExecBackend, ExecResult } from './backend.ts'
@@ -81,6 +82,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       containerRuntime: job.needsContainerRuntime ?? false,
       environment: job.environment,
       label,
+      labels: stageContainerLabels(job),
     })
 
     const log = `$ ${this.argv(job.role).join(' ')}\n\n${run.stdout}\n${run.stderr}`
@@ -126,6 +128,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       log,
       exitCode: run.exitCode,
       durationMs: run.durationMs,
+      telemetry: readStageTelemetry(run.stdout),
     }
   }
 
@@ -202,6 +205,21 @@ export function stageLabel(job: StageJob): string {
   return `${job.stageId}-${job.attempt}`
 }
 
+/** Label prefix for stage containers; the restart sweep filters on these keys. */
+export const CONTAINER_LABELS = {
+  task: 'specmate.task',
+  node: 'specmate.node',
+  attempt: 'specmate.attempt',
+} as const
+
+export function stageContainerLabels(job: StageJob): Record<string, string> {
+  return {
+    [CONTAINER_LABELS.task]: job.taskId,
+    [CONTAINER_LABELS.node]: job.node ?? job.role,
+    [CONTAINER_LABELS.attempt]: String(job.attempt),
+  }
+}
+
 /**
  * Defence in depth only. A role that may not touch product code keeps its file
  * tools — its artifacts are files — but loses the shell, which is the tool that
@@ -223,6 +241,40 @@ export function readTelemetry(stdout: string): Record<string, number> {
   if (typeof envelope.total_cost_usd === 'number') telemetry.cost_usd = envelope.total_cost_usd
 
   return telemetry
+}
+
+/**
+ * The full execution record the loop persists per attempt: the model that
+ * actually answered, token counts under the CLI's own keys, the reported cost,
+ * and the raw envelope. Null — not zero — when the envelope is unreadable.
+ */
+export function readStageTelemetry(stdout: string): StageTelemetry | null {
+  const envelope = parseEnvelope(stdout)
+  if (!envelope) return null
+
+  const usage = isRecord(envelope.usage) ? envelope.usage : {}
+  const tokens: Record<string, number> = {}
+  for (const [key, value] of Object.entries(usage)) {
+    if (typeof value === 'number') tokens[key] = value
+  }
+
+  return {
+    model: readModel(envelope),
+    tokens: Object.keys(tokens).length > 0 ? tokens : null,
+    costUsd: typeof envelope.total_cost_usd === 'number' ? envelope.total_cost_usd : null,
+    raw: envelope,
+  }
+}
+
+/** Recent CLIs report per-model usage keyed by the model that served the run. */
+function readModel(envelope: Record<string, unknown>): string | null {
+  if (isRecord(envelope.modelUsage)) {
+    const [model] = Object.keys(envelope.modelUsage)
+    if (model) return model
+  }
+  if (typeof envelope.model === 'string' && envelope.model.length > 0) return envelope.model
+
+  return null
 }
 
 function parseEnvelope(stdout: string): Record<string, unknown> | null {

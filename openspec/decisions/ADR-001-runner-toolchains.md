@@ -14,13 +14,13 @@ correctness.
 ## Decision
 
 Workspace provisioning detects repository-native declarations and resolves them once to the
-complete environment defined by REQ-2 through REQ-5: an immutable runner image reference and
+complete environment defined by REQ-801 through REQ-804: an immutable runner image reference and
 exact toolchain versions. The task stores that pin, every stage receives it, and the runner
 activates only those exact versions.
 
 Exact installations may be reused across tasks, but agent stages receive them read-only and keep
 mutable toolchain-manager state local to the stage. Container-runtime access remains derived
-from the fixed role contract defined by REQ-1.
+from the fixed role contract defined by REQ-109.
 
 ## Consequences
 
