@@ -75,8 +75,12 @@ export interface PinnedGraph {
 
 // ─── validation ───────────────────────────────────────────────────────────────
 
-/** Statuses a pipeline node may never claim: the engine owns them for every pipeline. */
-const RESERVED_STATES: readonly TaskState[] = [
+/**
+ * Statuses a pipeline node may never claim: the engine owns them for every
+ * pipeline. Also the poll's exclusion list (`engine.ts`'s NOT_RUNNABLE) — one
+ * list, so a new interrupt or terminal state can't drift between the two.
+ */
+export const RESERVED_STATES: readonly TaskState[] = [
   'draft',
   'waiting_human',
   'paused',
@@ -118,6 +122,15 @@ export function validateDefinition(def: PipelineDefinition): string[] {
     }
     if (node.kind === 'stage' && !(node.role in ROLE_CONTRACTS)) {
       at(`node ${node.key}`, `role "${node.role}" is not in the role catalog`)
+    }
+    // The cross-provider rule reads the writer off the loop edge's target; a
+    // cross_review stage without one would silently fall back to the default
+    // provider instead of ever excluding the writer.
+    if (node.kind === 'stage' && node.binding === 'cross_review' && !node.loopEdge) {
+      at(
+        `node ${node.key}`,
+        'binding "cross_review" requires a loopEdge to know whose work to exclude',
+      )
     }
   }
 
@@ -357,6 +370,21 @@ function dedupe(states: readonly TaskState[]): TaskState[] {
 }
 
 /**
+ * A restart may re-enter the node that failed or any stage strictly earlier
+ * in the pinned graph's walking order — never a stage the task has not yet
+ * earned its way to. `canTransition` stays permissive about *that* a restart
+ * may target any stage; this is the "earlier stage" business rule the old
+ * hand-written transition table used to carry.
+ */
+export function isRestartable(graph: PinnedGraph, target: TaskState, failedAt: TaskState): boolean {
+  const order = stageNodeKeys(graph)
+  const targetIndex = order.indexOf(target)
+  const failedIndex = order.indexOf(failedAt)
+
+  return targetIndex !== -1 && failedIndex !== -1 && targetIndex <= failedIndex
+}
+
+/**
  * Legal moves are the pinned graph's edges plus the type-independent interrupt
  * rules. State is changed only by the orchestrator; this is the check it runs.
  */
@@ -410,6 +438,8 @@ export interface RecordedRound {
   readonly loop: LoopKind
   readonly round: number
   readonly verdict: ReviewVerdict
+  /** Absent for rounds recorded before this store learned to carry findings. */
+  readonly findings?: readonly ReviewFinding[]
   /**
    * Rounds recorded before a rework re-entry keep their numbers but stop
    * counting against the cap — rework starts fresh counters.
@@ -424,7 +454,7 @@ export interface RoundToRecord {
   readonly findings: readonly ReviewFinding[]
 }
 
-export type ParkCause = 'escalate' | 'cap_exhausted' | 'needs_decision'
+export type ParkCause = 'escalate' | 'repeated_finding' | 'cap_exhausted' | 'needs_decision'
 
 export type AdvanceDecision =
   | { readonly kind: 'advance'; readonly to: TaskState; readonly record?: RoundToRecord }
@@ -483,8 +513,31 @@ export function advance(
     return { kind: 'park', reason: 'escalate', resume: nodeKey, record }
   }
 
-  const used = loopRounds.filter((r) => r.counted !== false && r.verdict === 'revise').length
+  // REQ-607: the same finding id surviving `repeated_finding_threshold`
+  // consecutive counted rounds means the loop is not converging — escalate
+  // instead of spending another round on it.
+  const countedRounds = loopRounds.filter((r) => r.counted !== false)
+  const stalled = (outcome.findings ?? []).some(
+    (finding) => repeatedRoundStreak(finding.id, countedRounds) >= caps.repeated_finding_threshold,
+  )
+  if (stalled) {
+    return { kind: 'park', reason: 'repeated_finding', resume: nodeKey, record }
+  }
+
+  const used = countedRounds.filter((r) => r.verdict === 'revise').length
   if (used < caps[LOOP_CAPS[edge.loop]]) return { kind: 'loop', to: edge.target, record }
 
   return { kind: 'park', reason: 'cap_exhausted', resume: nodeKey, record }
+}
+
+/** How many trailing counted rounds (most recent first), plus the current one, carried this finding id. */
+function repeatedRoundStreak(id: string, trailingRounds: readonly RecordedRound[]): number {
+  let streak = 1
+  for (let i = trailingRounds.length - 1; i >= 0; i--) {
+    if (!(trailingRounds[i]?.findings ?? []).some((finding) => finding.id === id)) break
+
+    streak += 1
+  }
+
+  return streak
 }

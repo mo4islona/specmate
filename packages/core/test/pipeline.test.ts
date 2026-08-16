@@ -8,6 +8,7 @@ import {
   graphTransitions,
   HUMAN_GATES,
   instantiateDefinition,
+  isRestartable,
   loadPipelineCatalog,
   PIPELINE_CATALOG,
   type PinnedGraph,
@@ -81,6 +82,17 @@ describe('definition validation', () => {
     })
 
     expect(validateDefinition(broken).join('\n')).toMatch(/research.*"chef".*role catalog/)
+  })
+
+  test('cross_review without a loop edge is rejected naming the node', () => {
+    const broken = def({
+      nodes: [
+        { kind: 'stage', key: 'research', role: 'researcher', binding: 'role_default' },
+        { kind: 'stage', key: 'spec_review', role: 'reviewer', binding: 'cross_review' },
+      ],
+    })
+
+    expect(validateDefinition(broken).join('\n')).toMatch(/spec_review.*cross_review.*loopEdge/)
   })
 
   test('a forward loop edge is rejected naming the edge', () => {
@@ -315,6 +327,24 @@ describe('graph-derived legality', () => {
   })
 })
 
+describe('restart eligibility', () => {
+  test('the failed stage itself is always restartable', () => {
+    expect(isRestartable(graph, 'implement', 'implement')).toBe(true)
+  })
+
+  test('an earlier stage is restartable', () => {
+    expect(isRestartable(graph, 'research', 'implement')).toBe(true)
+  })
+
+  test('a later stage is not restartable — it may assume artifacts never produced', () => {
+    expect(isRestartable(graph, 'code_review', 'implement')).toBe(false)
+  })
+
+  test('a gate is never a restart target', () => {
+    expect(isRestartable(graph, 'human_spec_gate', 'implement')).toBe(false)
+  })
+})
+
 describe('instantiation', () => {
   test('the pinned copy carries exactly the definition nodes and edges', () => {
     expect(graph.pipeline).toBe('feature-bugfix')
@@ -459,6 +489,83 @@ describe('advance', () => {
         findings: [{ id: 'f1', severity: 'blocking', title: 'stuck', detail_md: '' }],
       },
     })
+  })
+
+  test('the same finding id twice in a row escalates instead of looping', () => {
+    const priorRound: RecordedRound = {
+      loop: 'impl',
+      round: 1,
+      verdict: 'revise',
+      findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+    }
+    const decision = advance(
+      graph,
+      'code_review',
+      {
+        status: 'ok',
+        verdict: 'revise',
+        findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+      },
+      [priorRound],
+      caps,
+    )
+
+    expect(decision).toEqual({
+      kind: 'park',
+      reason: 'repeated_finding',
+      resume: 'code_review',
+      record: {
+        loop: 'impl',
+        round: 2,
+        verdict: 'revise',
+        findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+      },
+    })
+  })
+
+  test('a different finding id does not trip the repeat streak', () => {
+    const priorRound: RecordedRound = {
+      loop: 'impl',
+      round: 1,
+      verdict: 'revise',
+      findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+    }
+    const decision = advance(
+      graph,
+      'code_review',
+      {
+        status: 'ok',
+        verdict: 'revise',
+        findings: [{ id: 'f2', severity: 'major', title: 'a new issue', detail_md: '' }],
+      },
+      [priorRound],
+      caps,
+    )
+
+    expect(decision.kind).toBe('loop')
+  })
+
+  test('a finding repeated before a rework does not count toward escalation', () => {
+    const priorRound: RecordedRound = {
+      loop: 'impl',
+      round: 1,
+      verdict: 'revise',
+      findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+      counted: false,
+    }
+    const decision = advance(
+      graph,
+      'code_review',
+      {
+        status: 'ok',
+        verdict: 'revise',
+        findings: [{ id: 'f1', severity: 'major', title: 'still broken', detail_md: '' }],
+      },
+      [priorRound],
+      caps,
+    )
+
+    expect(decision.kind).toBe('loop')
   })
 
   test('a result that needs a decision parks without recording a round', () => {

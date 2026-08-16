@@ -120,7 +120,8 @@ export class ClaudeCodeProvider implements AgentProvider {
       throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, parsed.error)
     }
 
-    const usage = { ...parsed.value.usage, ...readTelemetry(run.stdout) }
+    const telemetry = readStageTelemetry(run.stdout)
+    const usage = { ...parsed.value.usage, ...legacyUsage(telemetry) }
     await writeFile(join(scratch, 'telemetry.json'), JSON.stringify(usage, null, 2))
 
     return {
@@ -128,7 +129,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       log,
       exitCode: run.exitCode,
       durationMs: run.durationMs,
-      telemetry: readStageTelemetry(run.stdout),
+      telemetry,
     }
   }
 
@@ -229,18 +230,33 @@ export function disallowedTools(role: AgentRole): string[] {
   return ROLE_CONTRACTS[role].writesCode ? [] : ['Bash']
 }
 
-/** Telemetry is best-effort: a garbled envelope must not fail a good stage. */
+/**
+ * Telemetry is best-effort: a garbled envelope must not fail a good stage.
+ * The CLI's own usage keys, projected from `readStageTelemetry`'s generic
+ * token map — one parse of the envelope, one place that knows its shape.
+ */
 export function readTelemetry(stdout: string): Record<string, number> {
-  const envelope = parseEnvelope(stdout)
-  if (!envelope) return {}
+  return legacyUsage(readStageTelemetry(stdout))
+}
 
-  const usage = isRecord(envelope.usage) ? envelope.usage : {}
-  const telemetry: Record<string, number> = {}
-  if (typeof usage.input_tokens === 'number') telemetry.input_tokens = usage.input_tokens
-  if (typeof usage.output_tokens === 'number') telemetry.output_tokens = usage.output_tokens
-  if (typeof envelope.total_cost_usd === 'number') telemetry.cost_usd = envelope.total_cost_usd
+function legacyUsage(telemetry: StageTelemetry | null): Record<string, number> {
+  const usage: Record<string, number> = {}
 
-  return telemetry
+  const inputTokens = telemetry?.tokens?.input_tokens
+  if (typeof inputTokens === 'number') {
+    usage.input_tokens = inputTokens
+  }
+
+  const outputTokens = telemetry?.tokens?.output_tokens
+  if (typeof outputTokens === 'number') {
+    usage.output_tokens = outputTokens
+  }
+
+  if (typeof telemetry?.costUsd === 'number') {
+    usage.cost_usd = telemetry.costUsd
+  }
+
+  return usage
 }
 
 /**
