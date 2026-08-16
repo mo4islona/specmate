@@ -19,7 +19,7 @@ import {
   type Task,
   tasks,
 } from '@specmate/db'
-import { asc, desc, eq, sql } from 'drizzle-orm'
+import { asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
   constructor(type: string) {
@@ -124,19 +124,31 @@ export async function replanTask(db: Database, taskId: string): Promise<RunGraph
   const definition = PIPELINE_CATALOG[task.type]
   if (!definition) throw new UnknownTaskTypeError(task.type)
 
-  const [latest] = await db
-    .select({ version: runGraphs.version })
-    .from(runGraphs)
-    .where(eq(runGraphs.taskId, taskId))
-    .orderBy(desc(runGraphs.version))
-    .limit(1)
-  const [graph] = await db
-    .insert(runGraphs)
-    .values({ taskId, version: (latest?.version ?? 0) + 1, dag: instantiateDefinition(definition) })
-    .returning()
-  if (!graph) throw new Error(`run graph v${(latest?.version ?? 0) + 1} could not be created`)
+  // The read of the current version and the insert of the next one must not
+  // interleave with a concurrent replan of the same task: the advisory lock
+  // (the same key claim() and the engine's gate ops take) serializes them, so
+  // the version read is never stale by the time its insert commits.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${taskId}, 0))`)
 
-  return graph
+    const [latest] = await tx
+      .select({ version: runGraphs.version })
+      .from(runGraphs)
+      .where(eq(runGraphs.taskId, taskId))
+      .orderBy(desc(runGraphs.version))
+      .limit(1)
+    const [graph] = await tx
+      .insert(runGraphs)
+      .values({
+        taskId,
+        version: (latest?.version ?? 0) + 1,
+        dag: instantiateDefinition(definition),
+      })
+      .returning()
+    if (!graph) throw new Error(`run graph v${(latest?.version ?? 0) + 1} could not be created`)
+
+    return graph
+  })
 }
 
 export async function latestGraph(db: DbClient, taskId: string): Promise<RunGraphRow | null> {
@@ -148,6 +160,32 @@ export async function latestGraph(db: DbClient, taskId: string): Promise<RunGrap
     .limit(1)
 
   return graph ?? null
+}
+
+/**
+ * One round trip for a whole poll instead of one per candidate task. Rows
+ * come back ordered by version across every task at once; a task's first
+ * appearance while walking that order is necessarily its highest version.
+ */
+export async function latestGraphsFor(
+  db: DbClient,
+  taskIds: readonly string[],
+): Promise<Map<string, RunGraphRow>> {
+  const graphs = new Map<string, RunGraphRow>()
+  if (taskIds.length === 0) return graphs
+
+  const rows = await db
+    .select()
+    .from(runGraphs)
+    .where(inArray(runGraphs.taskId, taskIds))
+    .orderBy(desc(runGraphs.version))
+  for (const row of rows) {
+    if (!graphs.has(row.taskId)) {
+      graphs.set(row.taskId, row)
+    }
+  }
+
+  return graphs
 }
 
 /**
@@ -170,6 +208,7 @@ export async function roundsFor(
     loop: row.loop,
     round: row.round,
     verdict: row.reviewerVerdict,
+    findings: row.findings,
     counted: countedAfter ? row.createdAt > countedAfter : true,
   }))
 }
@@ -197,6 +236,18 @@ export async function lastReworkAt(db: DbClient, taskId: string): Promise<Date |
     .select({ createdAt: events.createdAt })
     .from(events)
     .where(sql`${events.taskId} = ${taskId} and ${events.type} = 'gate.reworked'`)
+    .orderBy(desc(events.seq))
+    .limit(1)
+
+  return row?.createdAt ?? null
+}
+
+/** A restart's watermark for the attempt-cap streak — see `Engine.capSpent`. */
+export async function lastRestartAt(db: DbClient, taskId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ createdAt: events.createdAt })
+    .from(events)
+    .where(sql`${events.taskId} = ${taskId} and ${events.type} = 'task.restarted'`)
     .orderBy(desc(events.seq))
     .limit(1)
 

@@ -3,9 +3,11 @@ import {
   bindStageProvider,
   canTransition,
   type GateNode,
+  isRestartable,
   nodeAt,
   type PinnedGraph,
   type ProviderId,
+  RESERVED_STATES,
   type StageNode,
   type StageTelemetry,
   type TaskState,
@@ -26,8 +28,10 @@ import { and, asc, count, desc, eq, notInArray, sql } from 'drizzle-orm'
 import {
   countRedirects,
   emitEvent,
+  lastRestartAt,
   lastReworkAt,
   latestGraph,
+  latestGraphsFor,
   type RunGraphRow,
   recordRound,
   roundsFor,
@@ -73,6 +77,13 @@ export class NotRestartableError extends Error {
   constructor(taskId: string, status: TaskState) {
     super(`task ${taskId} is ${status}; only a failed task can be restarted`)
     this.name = 'NotRestartableError'
+  }
+}
+
+export class RestartTargetError extends Error {
+  constructor(taskId: string, target: TaskState, failedAt: TaskState) {
+    super(`task ${taskId} failed at ${failedAt}; ${target} is not that stage or an earlier one`)
+    this.name = 'RestartTargetError'
   }
 }
 
@@ -148,16 +159,12 @@ export interface EngineDeps {
   readonly log?: (message: string) => void
 }
 
-/** Statuses the poll never dispatches from: interrupts, terminals, and the drafting board. */
-const NOT_RUNNABLE: TaskState[] = [
-  'draft',
-  'waiting_human',
-  'paused',
-  'blocked',
-  'archived',
-  'cancelled',
-  'failed',
-]
+/**
+ * Statuses the poll never dispatches from: interrupts, terminals, and the
+ * drafting board — the same reserved list `validateDefinition` uses to keep a
+ * pipeline node from claiming one of these statuses as its own key.
+ */
+const NOT_RUNNABLE: TaskState[] = [...RESERVED_STATES]
 
 /**
  * The loop. Picks up runnable tasks, walks each along its pinned graph through
@@ -196,15 +203,37 @@ export class Engine {
       .from(tasks)
       .where(notInArray(tasks.status, NOT_RUNNABLE))
       .orderBy(asc(tasks.updatedAt))
+    if (candidates.length === 0) return 0
 
-    let dispatched = 0
+    // One round trip for every candidate's graph, and the read-only provider
+    // resolution overlapped across candidates — claim() alone stays serial,
+    // since it is the actual dispatch decision and must respect `slots`.
+    const graphs = await latestGraphsFor(
+      db,
+      candidates.map((task) => task.id),
+    )
+
+    const runnable: { task: Task; graph: RunGraphRow; node: StageNode }[] = []
     for (const task of candidates) {
-      if (dispatched >= slots) break
-      const graph = await latestGraph(db, task.id)
+      const graph = graphs.get(task.id)
       if (!graph) continue
+
       const node = nodeAt(graph.dag, task.status)
       if (node?.kind !== 'stage') continue
-      const provider = await this.resolveProvider(graph, node)
+
+      runnable.push({ task, graph, node })
+    }
+
+    const dispatchable = await Promise.all(
+      runnable.map(async (candidate) => ({
+        ...candidate,
+        provider: await this.resolveProvider(candidate.graph, candidate.node),
+      })),
+    )
+
+    let dispatched = 0
+    for (const { task, graph, node, provider } of dispatchable) {
+      if (dispatched >= slots) break
       const claimed = await this.claim(task, graph, node, provider)
       if (!claimed) continue
 
@@ -227,7 +256,10 @@ export class Engine {
   /**
    * The claim is transactional: the advisory lock makes an accidental second
    * orchestrator skip rather than double-dispatch, and the (graph, node,
-   * attempt) unique index is the arbiter if even that fails.
+   * attempt) unique index is the arbiter if even that fails. The attempt cap
+   * is checked here too, in the same transaction as the insert — a stage that
+   * just failed its last attempt must not be re-dispatched by a tick that
+   * beats `failAttempt`'s own cap check to the punch.
    */
   private async claim(
     task: Task,
@@ -259,12 +291,9 @@ export class Engine {
         .limit(1)
       if (inFlight.length > 0) return null
 
-      const [prior] = await tx
-        .select({ attempt: stages.attempt })
-        .from(stages)
-        .where(and(eq(stages.graphId, graph.id), eq(stages.nodeKey, node.key)))
-        .orderBy(desc(stages.attempt))
-        .limit(1)
+      const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
+      if (history.streak >= this.deps.settings.stageAttemptCap) return null
+
       const [row] = await tx
         .insert(stages)
         .values({
@@ -274,7 +303,7 @@ export class Engine {
           role: node.role,
           provider,
           status: 'running',
-          attempt: (prior?.attempt ?? -1) + 1,
+          attempt: history.lastAttempt + 1,
           startedAt: new Date(),
         })
         .returning()
@@ -419,20 +448,29 @@ export class Engine {
       task.caps,
     )
 
-    if (decision.record) await recordRound(db, task.id, decision.record)
+    // The round and the transition it drove commit together: a crash or a
+    // concurrent cancel between them must not leave a recorded round with no
+    // matching transition (it would double-count against the loop's cap the
+    // next time this node is entered).
     if (decision.kind === 'park') {
-      await this.applyTransition(db, task, graph.dag, 'waiting_human', {
-        cause: decision.reason,
-        resume: decision.resume,
-        stageId: row.id,
+      await db.transaction(async (tx) => {
+        if (decision.record) await recordRound(tx, task.id, decision.record)
+        await this.applyTransition(tx, task, graph.dag, 'waiting_human', {
+          cause: decision.reason,
+          resume: decision.resume,
+          stageId: row.id,
+        })
       })
 
       return
     }
 
-    await this.applyTransition(db, task, graph.dag, decision.to, {
-      cause: decision.kind === 'loop' ? 'revise' : 'advance',
-      stageId: row.id,
+    await db.transaction(async (tx) => {
+      if (decision.record) await recordRound(tx, task.id, decision.record)
+      await this.applyTransition(tx, task, graph.dag, decision.to, {
+        cause: decision.kind === 'loop' ? 'revise' : 'advance',
+        stageId: row.id,
+      })
     })
     await this.releaseIfTerminal(task, graph.dag, decision.to)
   }
@@ -469,7 +507,7 @@ export class Engine {
       payload: { node: node.key, attempt: row.attempt, reason, detail: detail ?? null },
     })
 
-    if (await this.capSpent(graph.id, node.key)) {
+    if (await this.capSpent(task.id, graph.id, node.key)) {
       await this.applyTransition(db, task, graph.dag, 'failed', {
         cause: reason,
         resume: node.key,
@@ -491,20 +529,42 @@ export class Engine {
 
   /**
    * The cap counts consecutive trailing failures of this node: a loop edge
-   * revisiting the node starts a fresh streak at its success, so prior rounds
-   * do not eat the retry budget.
+   * revisiting the node starts a fresh streak at its success, and a human
+   * restart starts one at its watermark — so neither prior rounds nor a
+   * pre-restart failure eat the fresh attempt budget a restart is meant to
+   * grant. Bounded to the cap itself: once that many trailing rows are seen,
+   * the streak either already meets it or has broken, so nothing past that
+   * row can change the answer.
    */
-  private async capSpent(graphId: string, nodeKey: string): Promise<boolean> {
-    const rows = await this.deps.db
-      .select({ status: stages.status })
+  private async attemptHistory(
+    db: DbClient,
+    taskId: string,
+    graphId: string,
+    nodeKey: string,
+  ): Promise<{ streak: number; lastAttempt: number }> {
+    const restartedAt = await lastRestartAt(db, taskId)
+    const rows = await db
+      .select({ status: stages.status, startedAt: stages.startedAt, attempt: stages.attempt })
       .from(stages)
       .where(and(eq(stages.graphId, graphId), eq(stages.nodeKey, nodeKey)))
       .orderBy(desc(stages.attempt))
+      .limit(this.deps.settings.stageAttemptCap)
+
     let streak = 0
     for (const row of rows) {
+      // No timestamp is not evidence of "before the restart" — treat it like
+      // one to be safe, since undercounting the streak is the safe direction.
+      if (restartedAt && (!row.startedAt || row.startedAt <= restartedAt)) break
       if (row.status !== 'failed') break
+
       streak += 1
     }
+
+    return { streak, lastAttempt: rows[0]?.attempt ?? -1 }
+  }
+
+  private async capSpent(taskId: string, graphId: string, nodeKey: string): Promise<boolean> {
+    const { streak } = await this.attemptHistory(this.deps.db, taskId, graphId, nodeKey)
 
     return streak >= this.deps.settings.stageAttemptCap
   }
@@ -523,12 +583,21 @@ export class Engine {
       .innerJoin(tasks, eq(stages.taskId, tasks.id))
       .where(eq(stages.status, 'running'))
 
-    for (const { stage: row, task } of orphans) {
-      try {
-        await this.settleOrphan(task, row)
-      } catch (e) {
-        log?.(`sweep: settling ${task.id}/${row.nodeKey} failed: ${(e as Error).message}`)
-      }
+    // Each orphan belongs to a different task, so settling them has nothing to
+    // serialize on; running them concurrently keeps /readyz from waiting on
+    // N sequential kill-and-discard round trips after a crash.
+    const settled = await Promise.allSettled(
+      orphans.map(({ stage: row, task }) => this.settleOrphan(task, row)),
+    )
+    for (const [i, outcome] of settled.entries()) {
+      if (outcome.status !== 'rejected') continue
+
+      const orphan = orphans[i]
+      if (!orphan) continue
+
+      log?.(
+        `sweep: settling ${orphan.task.id}/${orphan.stage.nodeKey} failed: ${(outcome.reason as Error).message}`,
+      )
     }
 
     return orphans.length
@@ -564,7 +633,7 @@ export class Engine {
 
     // The cap is judged against the orphaned row's own graph and node — the
     // latest graph and task.status may have diverged from it (a replan).
-    if (await this.capSpent(row.graphId, row.nodeKey)) {
+    if (await this.capSpent(task.id, row.graphId, row.nodeKey)) {
       const graph = await latestGraph(db, task.id)
       if (graph && canTransition(graph.dag, task.status, 'failed')) {
         await this.applyTransition(db, task, graph.dag, 'failed', {
@@ -672,13 +741,23 @@ export class Engine {
     })
   }
 
-  /** Failure is recoverable: re-enter the failed stage, or any stage named explicitly. */
+  /**
+   * Failure is recoverable: re-enter the failed stage, or an earlier one
+   * named explicitly. A later stage is refused — it may bind cross_review or
+   * otherwise assume artifacts the task never produced on this run.
+   */
   async restart(taskId: string, actor: string, to?: TaskState): Promise<void> {
     await this.withTaskLock(taskId, async (tx) => {
       const { task, graph } = await this.taskWithGraph(taskId, tx)
       if (task.status !== 'failed') throw new NotRestartableError(taskId, task.status)
-      const target = to ?? task.resumeStatus
-      if (!target) throw new NoResumeStateError(taskId)
+
+      const failedAt = task.resumeStatus
+      if (!failedAt) throw new NoResumeStateError(taskId)
+
+      const target = to ?? failedAt
+      if (!isRestartable(graph.dag, target, failedAt)) {
+        throw new RestartTargetError(taskId, target, failedAt)
+      }
 
       await emitEvent(tx, { taskId, type: 'task.restarted', payload: { to: target, actor } })
       await this.applyTransition(tx, task, graph.dag, target, { cause: 'restart', actor })
@@ -805,6 +884,16 @@ interface StageDefectRecord {
 function stageDefect(node: StageNode, execution: StageExecution): StageDefectRecord | null {
   if (execution.status !== 'succeeded') {
     return { reason: execution.failure ?? 'unknown', detail: execution.detail }
+  }
+
+  // A dispatcher contract violation, not a bookkeeping failure: caught here it
+  // retries or fails the task like any other defect; caught downstream in
+  // `completeStage` it would leave the stage stuck at 'running' forever.
+  if (!execution.result) {
+    return {
+      reason: 'missing_result',
+      detail: `dispatcher reported success for ${node.key} with no result`,
+    }
   }
 
   // An agent that reports failure in a valid RESULT.json failed the stage;

@@ -352,8 +352,9 @@ export async function killContainersByLabels(
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
 
+  const killed: string[] = []
   for (const id of ids) {
-    await spawnBounded({
+    const result = await spawnBounded({
       argv: [config.dockerCli, 'kill', id],
       stdin: '',
       cwd: process.cwd(),
@@ -361,9 +362,12 @@ export async function killContainersByLabels(
       timeoutMs: 30_000,
       outputLimitBytes: 16 * 1024,
     }).catch(() => null)
+    if (result?.exitCode === 0) {
+      killed.push(id)
+    }
   }
 
-  return ids
+  return killed
 }
 
 function killContainer(dockerCli: string, name: string): void {

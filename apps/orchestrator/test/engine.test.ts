@@ -8,6 +8,7 @@ import {
   NotAtGateError,
   NotRestartableError,
   RedirectCapExhaustedError,
+  RestartTargetError,
   ReworkTargetError,
 } from '../src/engine.ts'
 import { recordRound } from '../src/store.ts'
@@ -490,6 +491,51 @@ describeDb('the loop', () => {
     const explicit = await seed({ at: 'implement', status: 'failed', resume: 'implement' })
     await engine.restart(explicit.task.id, 'evgeny', 'research')
     expect((await reload(db, explicit.task.id)).status).toBe('research')
+  })
+
+  test('restart refuses a stage later than the one that failed', async () => {
+    const { engine } = makeEngine()
+    const { task } = await seed({ at: 'implement', status: 'failed', resume: 'implement' })
+
+    await expect(engine.restart(task.id, 'evgeny', 'code_review')).rejects.toThrow(
+      RestartTargetError,
+    )
+    expect((await reload(db, task.id)).status).toBe('failed')
+  })
+
+  test('restart grants a fresh attempt budget instead of one extra try', async () => {
+    const { engine, disp } = makeEngine({ stageAttemptCap: 2 })
+    const { task } = await seed({ at: 'implement' })
+    disp.plan(() => failedExecution())
+
+    await engine.tick()
+    await engine.idle()
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('failed')
+
+    await engine.restart(task.id, 'evgeny')
+    expect((await reload(db, task.id)).status).toBe('implement')
+
+    // One post-restart failure must not immediately re-spend the cap: the two
+    // failures before the restart no longer count toward the streak.
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('implement')
+
+    // The second post-restart failure does spend the (full, fresh) cap.
+    await engine.tick()
+    await engine.idle()
+    const refailed = await reload(db, task.id)
+    expect(refailed.status).toBe('failed')
+
+    const rows = await db
+      .select()
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+      .orderBy(asc(stages.attempt))
+    expect(rows.map((row) => row.attempt)).toEqual([0, 1, 2, 3])
+    expect(rows.every((row) => row.status === 'failed')).toBe(true)
   })
 
   test('a loop-edged stage that returns no verdict is a failed attempt, not an approval', async () => {
