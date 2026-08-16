@@ -1,10 +1,30 @@
 import { createDb } from '@specmate/db'
+import { Engine } from '@specmate/orchestrator/engine'
+import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { createApp } from './app.ts'
 import { loadConfig } from './config.ts'
 
 const config = loadConfig()
 const db = createDb(config.DATABASE_URL)
-const app = createApp({ db, config })
+const workspaceManager = new WorkspaceManager({ config: { root: config.WORKSPACE_ROOT } })
+const workspaceService = new WorkspaceService(workspaceManager, db, () =>
+  Promise.reject(new Error('the API never provisions workspaces')),
+)
+const gates = new Engine({
+  db,
+  workspaces: {
+    provision: () => Promise.reject(new Error('the API never provisions workspaces')),
+    discard: () => Promise.reject(new Error('the API never discards workspaces')),
+    release: (taskId) => workspaceService.release(taskId),
+  },
+  settings: {
+    stageConcurrency: 1,
+    stageAttemptCap: 1,
+    availableProviders: [],
+  },
+  log: (message) => console.info(message),
+})
+const app = createApp({ db, config, gates })
 
 const server = Bun.serve({
   port: config.API_PORT,

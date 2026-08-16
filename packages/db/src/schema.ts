@@ -126,6 +126,7 @@ export const feedbackKindEnum = pgEnum('feedback_kind', [
   'spec_edit',
   'rework',
   'overrule',
+  'comment',
 ])
 
 // ─── providers (single owner: no accounts table) ──────────────────────────────

@@ -11,7 +11,8 @@ from day 0 — each roadmap phase ships as one or more changes under `openspec/c
 **Status: Phase 1, in progress.** Workspaces are provisioned per task and committed per stage,
 stages execute against real repositories, and the orchestrator loop walks a task along its
 pipeline: dispatch, record the outcome, advance, park at human gates, recover after a restart.
-Task intake beyond the admin entry point, decision cards, and the UI are upcoming changes.
+Task intake and the operator UI cover task launch, live progress, gates, comments, and
+artifacts. Richer decision cards remain a future change.
 
 ## Layout
 
@@ -19,7 +20,7 @@ Task intake beyond the admin entry point, decision cards, and the UI are upcomin
 apps/
   api/           control plane — Hono on Bun; probes, auth, task surface
   orchestrator/  the loop: poll, dispatch, advance, recover; plus the admin entry point
-  web/           Vite + React SPA; served by Caddy, proxied to the API
+  web/           Vite + React SPA; served by nginx, proxied to the API
 packages/
   core/          role catalog, RESULT.json contract, provider interface, pipeline catalog
   db/            Drizzle schema, generated migrations, connection factory
@@ -97,8 +98,8 @@ Two settings decide how a stage runs:
   `NODE_ENV=production`.
 
 `WORKSPACE_ROOT` must be one absolute path that means the same thing on the host and inside the
-orchestrator — see the note in `.env.example`. Startup probes it and refuses to run if the two
-disagree, because the alternative is an agent silently seeing an empty repository.
+services that manage task workspaces — see the note in `.env.example`. Startup probes it and
+refuses to run if the paths disagree.
 
 ### One-time provider login
 
@@ -156,8 +157,8 @@ bun apps/orchestrator/src/admin.ts restart  --task <uuid> [--to research]  # fai
 bun apps/orchestrator/src/admin.ts show     --task <uuid>
 ```
 
-These are the same operations the Phase-2 decision cards will call — the UI adds callers, not
-transitions. The admin entry requires `WORKSPACE_ROOT` set to the same root the daemon uses:
+These are the same operations the API and UI call — the surface adds callers, not transitions.
+The admin entry requires `WORKSPACE_ROOT` set to the same root the daemon uses:
 terminal operations release worktrees there, and a guessed default would silently miss them.
 
 ## Authentication

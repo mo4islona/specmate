@@ -7,6 +7,8 @@ const Env = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
+  WORKSPACE_ROOT: z.string().min(1).default('workspaces'),
+  SPECMATE_STALL_HOURS: z.coerce.number().positive().default(4),
   /** Single-owner auth (§9.3). Unset is allowed only outside production. */
   SPECMATE_PASSWORD: optionalString,
 })

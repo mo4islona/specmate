@@ -15,5 +15,6 @@ workspaces/
 .idea/
 *.tsbuildinfo
 .claude/settings.local.json
+.claude/worktrees/
 
 deploy/

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createMiddleware } from 'hono/factory'
-import { HTTPException } from 'hono/http-exception'
+import { ApiError } from './errors.ts'
 
 function constantTimeEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a)
@@ -15,12 +15,18 @@ function constantTimeEquals(a: string, b: string): boolean {
  */
 export function passwordAuth(password: string | undefined) {
   return createMiddleware(async (c, next) => {
-    if (!password) return next()
+    if (!password) {
+      return next()
+    }
+
     const header = c.req.header('authorization') ?? ''
     const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : ''
     if (!constantTimeEquals(token, password)) {
-      throw new HTTPException(401, { message: 'unauthorized' })
+      throw new ApiError('unauthenticated', 'owner credential is missing or invalid', {
+        status: 401,
+      })
     }
+
     return next()
   })
 }

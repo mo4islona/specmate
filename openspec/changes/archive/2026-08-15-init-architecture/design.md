@@ -36,7 +36,7 @@ is closed mechanically in CI: regenerating must produce no diff.
 
 **Vite SPA over Next.js.** The plan said Next.js. A single-owner internal tool has no SEO, no
 public traffic, and no need for SSR; a static bundle removes a Node server from the deployment.
-Caddy serves the bundle and reverse-proxies `/api` so the SPA is same-origin and needs no CORS.
+nginx serves the bundle and reverse-proxies `/api` so the SPA is same-origin and needs no CORS.
 This diverges from `docs/plan.md` §8 deliberately.
 
 **Migrations as a one-shot Compose service.** Running migrations from the API's entrypoint

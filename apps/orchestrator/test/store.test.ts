@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition } from '@specmate/core'
-import { createDb, type Database, iterations, runGraphs, stages, tasks } from '@specmate/db'
+import { createDb, type Database, events, iterations, runGraphs, stages, tasks } from '@specmate/db'
 import { asc, eq, inArray } from 'drizzle-orm'
 import {
   createTask,
@@ -48,6 +48,9 @@ describeDb('task store', () => {
     expect(graph.dag).toEqual(instantiateDefinition(FEATURE_BUGFIX_PIPELINE))
     expect(task.caps.max_spec_iterations).toBe(3)
     expect(task.budgets.max_cost_usd).toBe(20)
+    const createdEvents = await db.select().from(events).where(eq(events.taskId, task.id))
+    expect(createdEvents).toHaveLength(1)
+    expect(createdEvents[0]).toMatchObject({ type: 'task.created', payload: { title: task.title } })
   })
 
   test('an uncataloged type is rejected naming the type', async () => {

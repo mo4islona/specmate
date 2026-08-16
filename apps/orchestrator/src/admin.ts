@@ -108,7 +108,12 @@ try {
       break
     }
     case 'rework': {
-      await engine.rework(required('task'), actor, TaskState.parse(required('to')))
+      await engine.rework({
+        taskId: required('task'),
+        actor,
+        target: TaskState.parse(required('to')),
+        comment: flag('comment'),
+      })
       break
     }
     case 'resume': {

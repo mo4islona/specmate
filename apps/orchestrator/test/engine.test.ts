@@ -124,6 +124,7 @@ describeDb('the loop', () => {
     expect(after.status).toBe('spec_review')
     expect(ws.calls.provisioned).toContain(task.slug)
     expect(await eventTypes(task.id)).toEqual([
+      'task.created',
       'stage.dispatched',
       'stage.completed',
       'task.transitioned',
@@ -376,7 +377,9 @@ describeDb('the loop', () => {
     const { task } = await seed({ at: 'research' })
 
     await expect(engine.approve(task.id, 'evgeny')).rejects.toThrow(NotAtGateError)
-    await expect(engine.rework(task.id, 'evgeny', 'research')).rejects.toThrow(NotAtGateError)
+    await expect(
+      engine.rework({ taskId: task.id, actor: 'evgeny', target: 'research' }),
+    ).rejects.toThrow(NotAtGateError)
   })
 
   test('redirect follows its edge, records feedback, and counts against its cap', async () => {
@@ -405,8 +408,10 @@ describeDb('the loop', () => {
       await recordRound(db, task.id, { loop: 'spec', round, verdict: 'revise', findings: [] })
     }
 
-    await expect(engine.rework(task.id, 'evgeny', 'implement')).rejects.toThrow(ReworkTargetError)
-    await engine.rework(task.id, 'evgeny', 'research')
+    await expect(
+      engine.rework({ taskId: task.id, actor: 'evgeny', target: 'implement' }),
+    ).rejects.toThrow(ReworkTargetError)
+    await engine.rework({ taskId: task.id, actor: 'evgeny', target: 'research' })
 
     expect((await reload(db, task.id)).status).toBe('research')
 

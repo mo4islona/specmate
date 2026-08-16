@@ -102,6 +102,12 @@ export async function createTask(
       .returning()
     if (!graph) throw new Error(`run graph for ${input.slug} could not be created`)
 
+    await emitEvent(tx, {
+      taskId: task.id,
+      type: 'task.created',
+      payload: { title: task.title },
+    })
+
     return { task, graph }
   })
 }
