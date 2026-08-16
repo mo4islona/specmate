@@ -65,8 +65,8 @@ dogfooding it here is exactly the kind of real-world exercise the library needs.
   concern). Gate endpoints call operations from `packages/core`/`@specmate/db` shared with
   the orchestrator; the API never mutates task state through a side channel.
 - `apps/web`: from placeholder to a real client — router, API client with the SSE consumer,
-  the four screens, the theme. New dependencies: `@wick-charts/react`, a markdown renderer,
-  a client-side router.
+  the four screens, the theme, and an nginx runtime for static assets plus the same-origin
+  API proxy. New dependencies: `@wick-charts/react`, a markdown renderer, a client-side router.
 - `packages/db`: one enum migration (`feedback_kind` + `comment`); no table changes — every
   table this surface reads and writes already exists.
 - Depends on the `orchestrator-loop` change for gate operations and stage telemetry; degrades

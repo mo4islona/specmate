@@ -1,0 +1,18 @@
+# Capability -> REQ/AC ID band (blocks of 100; REQ and AC share the band start
+# and count independently, sequential in document order).
+# Bands are never renumbered or reused; gaps stay reserved. New capabilities
+# claim the next free block. `bun scripts/lint-spec-ids.ts --next` prints the
+# next free number per capability and the next free band.
+bandSize: 100
+bands:
+  agent-contracts: 100
+  agent-execution: 200
+  persistence: 300
+  pipeline-definitions: 400
+  service-topology: 500
+  task-lifecycle: 600
+  workspace-lifecycle: 700
+  execution-environment: 800
+  operator-ui: 900
+  task-surface: 1000
+  verification: 1100

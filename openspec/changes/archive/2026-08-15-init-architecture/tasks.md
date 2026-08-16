@@ -24,7 +24,7 @@
 
 - [x] 4.1 Scaffold the Vite + React + Tailwind SPA (verify: `bun run --cwd apps/web build` succeeds)
 - [x] 4.2 Report API readiness on the single screen and state that the pipeline arrives in Phase 1 (verify: open the built page against a live API)
-- [x] 4.3 Proxy `/api` and `/readyz` to the API in dev (Vite) and in production (Caddy) so the SPA is same-origin
+- [x] 4.3 Proxy `/api` and `/readyz` to the API in dev (Vite) and in production (nginx) so the SPA is same-origin
 
 ## 5. Deployment skeleton
 

@@ -93,9 +93,11 @@ carry null role/provider; they still name the task.
 
 ### Single origin via the web container's proxy
 
-The web container's static server (Caddy) proxies `/api/*` to the api service. Browser and
-API share one origin: no CORS surface, no preflight on the SSE fetch, the secret never
-crosses origins. Vite's dev server proxies the same path, so dev and prod agree.
+The web container's nginx server proxies `/api/*` to the api service. Browser and API share
+one origin: no CORS surface, no preflight on the SSE fetch, the secret never crosses origins.
+Vite's dev server proxies the same path, so dev and prod agree. nginx is used here because
+the runtime needs only mature static-file, SPA fallback, compression, and reverse-proxy
+behavior; no server-specific application features are required.
 Alternative: CORS headers on the API — more configuration expressing less.
 
 ### The telemetry chart dogfoods wick-charts

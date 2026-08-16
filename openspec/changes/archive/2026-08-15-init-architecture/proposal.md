@@ -41,5 +41,5 @@ This is Phase 0 of `docs/plan.md` — it deliberately ships no agent behaviour.
 - No agent execution, no provider CLIs, no runner containers (Phase 1 and Phase 4).
 - No workspace/worktree management, no git integration (Phase 1).
 - No decisions, human gates, or Attention Inbox (Phase 2).
-- No TLS termination or public exposure — Caddy in front of the SPA proxies to the API only
+- No TLS termination or public exposure — nginx serves the SPA and proxies to the API only
   inside the compose network; production TLS is Phase 6.
