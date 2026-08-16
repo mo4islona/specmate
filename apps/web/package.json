@@ -10,8 +10,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@specmate/api": "workspace:*",
+    "@specmate/core": "workspace:*",
+    "@tanstack/react-query": "^5.101.4",
+    "@wick-charts/react": "0.1.2",
+    "hono": "^4.13.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "wouter": "^3.10.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

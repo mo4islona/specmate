@@ -47,7 +47,16 @@ OpenSpec's file format and scopes it to everyday spec writing; it does not resta
    committed to the repo's append-only `openspec/decisions/`, continuing the numbering of
    any hand-written predecessors. An ADR file is never edited, only superseded.
 
-7. **Lint one source against a ruler.** The checkable properties are: every referenced ID
+7. **Allocation is banded and mechanical.** REQ/AC numbers are allocated in per-capability
+   bands (blocks of 100 by default); the band registry lives with the suite (e.g.
+   `openspec/id-bands.yaml`) and the lint enforces membership. The next number in a band is
+   one greater than the highest ever used there anywhere in the suite — archive included.
+   Gaps are normal: requirements disappear, and their IDs stay reserved forever. Allocate at
+   proposal time, in the delta; when two parallel changes pick the same number, the lint's
+   duplicate check is the tripwire, and the change that merges second renumbers its fresh,
+   still-unreferenced IDs before sync. A new capability claims the next free band.
+
+8. **Lint one source against a ruler.** The checkable properties are: every referenced ID
    exists (no dangling references), and no ID is defined twice. External documents that
    point into a suite (a cross-service map, an ADR, a review finding) are held to the same
    dangling-ID check. What is never acceptable is two normative sources reconciled against

@@ -1,45 +1,33 @@
-import { useEffect, useState } from 'react'
-
-type Health = { ok: boolean; db?: string; detail?: string }
+import { Route, Switch } from 'wouter'
+import { AppShell } from './components/app-shell.tsx'
+import { SecretGate } from './components/secret-gate.tsx'
+import { ArtifactsScreen } from './screens/artifacts-screen.tsx'
+import { AttentionScreen } from './screens/attention-screen.tsx'
+import { NewTaskScreen } from './screens/new-task-screen.tsx'
+import { TaskScreen } from './screens/task-screen.tsx'
 
 export function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('/readyz', { signal: controller.signal })
-      .then((r) => r.json() as Promise<Health>)
-      .then(setHealth)
-      .catch((e: Error) => {
-        if (e.name !== 'AbortError') setError(e.message)
-      })
-    return () => controller.abort()
-  }, [])
-
   return (
-    <main className="mx-auto flex h-full max-w-2xl flex-col justify-center gap-6 p-8">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">SpecMate</h1>
-        <p className="text-sm opacity-60">
-          OpenSpec-driven agent orchestration — Phase 0 skeleton.
-        </p>
-      </header>
-
-      <section className="rounded-lg border border-current/15 p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide opacity-60">API</h2>
-        {error && <p className="text-sm text-red-500">unreachable: {error}</p>}
-        {!error && !health && <p className="text-sm opacity-60">checking…</p>}
-        {health && (
-          <p className="font-mono text-sm">
-            ready={String(health.ok)} db={health.db ?? 'unknown'}
-          </p>
-        )}
-      </section>
-
-      <p className="text-sm opacity-50">
-        Attention Inbox, task sidebar and chat timeline arrive in Phase 1.
-      </p>
-    </main>
+    <SecretGate>
+      <AppShell>
+        <Switch>
+          <Route path="/" component={AttentionScreen} />
+          <Route path="/tasks/new" component={NewTaskScreen} />
+          <Route path="/tasks/:taskId/artifacts/:artifactId">
+            {(params) => <ArtifactsScreen taskId={params.taskId} artifactId={params.artifactId} />}
+          </Route>
+          <Route path="/tasks/:taskId/artifacts">
+            {(params) => <ArtifactsScreen taskId={params.taskId} />}
+          </Route>
+          <Route path="/tasks/:taskId">{(params) => <TaskScreen taskId={params.taskId} />}</Route>
+          <Route>
+            <section className="panel p-8 text-center">
+              <p className="micro-label text-danger">404 / no route</p>
+              <h1 className="mt-3 text-2xl font-semibold">Channel not found</h1>
+            </section>
+          </Route>
+        </Switch>
+      </AppShell>
+    </SecretGate>
   )
 }

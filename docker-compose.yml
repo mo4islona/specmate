@@ -41,7 +41,10 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       API_PORT: 4000
       DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
+      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
       SPECMATE_PASSWORD: ${SPECMATE_PASSWORD}
+    volumes:
+      - ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}:${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
     expose:
       - '4000'
     ports:

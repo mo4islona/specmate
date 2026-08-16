@@ -130,6 +130,13 @@ export interface EngineSettings {
   readonly availableProviders: readonly ProviderId[]
 }
 
+export interface ReworkOptions {
+  readonly taskId: string
+  readonly actor: string
+  readonly target: TaskState
+  readonly comment?: string
+}
+
 export interface EngineDeps {
   readonly db: Database
   readonly workspaces: EngineWorkspaces
@@ -633,15 +640,18 @@ export class Engine {
   }
 
   /** Re-enters a declared target with fresh round counters (the event is the watermark). */
-  async rework(taskId: string, actor: string, target: TaskState): Promise<void> {
+  async rework({ taskId, actor, target, comment }: ReworkOptions): Promise<void> {
     await this.withTaskLock(taskId, async (tx) => {
       const { task, graph, gate } = await this.atGate(taskId, tx)
       if (!(gate.rework ?? []).includes(target)) throw new ReworkTargetError(gate.key, target)
 
+      // Mirrors redirect's feedback insert: every gate action leaves an audit-trail row.
+      await tx.insert(feedback).values({ taskId, kind: 'rework', textMd: comment ?? '' })
+
       await emitEvent(tx, {
         taskId,
         type: 'gate.reworked',
-        payload: { gate: gate.key, to: target, actor },
+        payload: { gate: gate.key, to: target, actor, comment: comment ?? null },
       })
       await this.applyTransition(tx, task, graph.dag, target, { cause: 'rework', actor })
     })

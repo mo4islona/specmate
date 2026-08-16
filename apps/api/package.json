@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/app.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
@@ -11,6 +14,8 @@
   "dependencies": {
     "@specmate/core": "workspace:*",
     "@specmate/db": "workspace:*",
+    "@specmate/orchestrator": "workspace:*",
+    "@specmate/workspace": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.2",
     "zod": "^4.4.3"

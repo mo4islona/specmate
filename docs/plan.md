@@ -259,7 +259,7 @@ Stack: Next.js + React Flow (DAG) + D2 renderer (WASM or Kroki sidecar) + shadcn
 
 ## 9. Runtime & 24/7 Operation (single user)
 
-1. **Deployment**: single VM (Hetzner/EC2) + Docker Compose in v1: `api`, `orchestrator`, `postgres`, `ui`, `runner-claude`, `runner-codex`, `runner-copilot`, `caddy` (TLS). k8s only if/when concurrency demands it.
+1. **Deployment**: single VM (Hetzner/EC2) + Docker Compose in v1: `api`, `orchestrator`, `postgres`, `web` (nginx serves the SPA, proxies `/api`, and terminates TLS), `runner-claude`, `runner-codex`, `runner-copilot`. k8s only if/when concurrency demands it.
 2. **Provider auth (the tricky part)**:
    - Claude Code: authenticate once interactively inside the runner container; persist the session/config dir as a Docker volume. Prefer subscription session where allowed; API key fallback.
    - Codex / Copilot: same pattern — persisted auth volume per provider.

@@ -12,7 +12,8 @@ COPY packages/workspace/package.json packages/workspace/
 # Bun's isolated linker puts deps in per-workspace node_modules, so the whole
 # tree is carried forward — copying only the root node_modules loses everything.
 RUN bun install --frozen-lockfile \
-  --filter '@specmate/api' --filter '@specmate/db' --filter '@specmate/core'
+  --filter '@specmate/api' --filter '@specmate/db' --filter '@specmate/core' \
+  --filter '@specmate/workspace'
 
 FROM oven/bun:1.3.9-alpine AS runtime
 WORKDIR /app
@@ -20,8 +21,13 @@ ENV NODE_ENV=production
 COPY --from=deps /app /app
 COPY packages packages
 COPY apps/api apps/api
+COPY apps/orchestrator apps/orchestrator
 
-RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+RUN apk add --no-cache git \
+  && addgroup -g 10001 -S app \
+  && adduser -u 10001 -S app -G app \
+  && mkdir -p /var/lib/specmate/workspaces \
+  && chown -R app:app /app /var/lib/specmate
 USER app
 
 EXPOSE 4000
