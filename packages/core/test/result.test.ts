@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { parseStageResult } from '../src/result.ts'
+import { checkReviseHasFindings, parseStageResult } from '../src/result.ts'
 import { pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
 
 const minimal = {
@@ -44,6 +44,48 @@ describe('RESULT.json contract', () => {
     expect(parsed.value.verdict).toBe('revise')
     expect(parsed.value.findings[0]?.id).toBe('F1')
   })
+
+  test('rejects a verdict-less result from a role that must return one, naming the role', () => {
+    const parsed = parseStageResult(JSON.stringify({ ...minimal, role: 'verifier' }))
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('verifier')
+  })
+
+  test('accepts a verdict-less result from a role that need not return one', () => {
+    const parsed = parseStageResult(JSON.stringify(minimal))
+    expect(parsed.ok).toBe(true)
+  })
+})
+
+describe('checkReviseHasFindings', () => {
+  const revise = {
+    schema_version: 1 as const,
+    role: 'reviewer' as const,
+    status: 'ok' as const,
+    verdict: 'revise' as const,
+    artifacts_changed: [],
+    decisions_needed: [],
+    findings: [],
+    notes_md: '',
+    usage: {},
+  }
+
+  test('rejects a revise with no findings', () => {
+    expect(checkReviseHasFindings(revise)).toContain('reviewer')
+  })
+
+  test('accepts a revise backed by an explicit finding set (e.g. derived scenario findings)', () => {
+    const derived = [
+      { id: 'AC-1', severity: 'blocking' as const, title: 'uncovered', detail_md: '' },
+    ]
+    expect(checkReviseHasFindings(revise, derived)).toBeNull()
+  })
+
+  test('ignores approve and escalate verdicts', () => {
+    expect(checkReviseHasFindings({ ...revise, verdict: 'approve' })).toBeNull()
+    expect(checkReviseHasFindings({ ...revise, verdict: 'escalate' })).toBeNull()
+  })
 })
 
 describe('role contracts', () => {
@@ -52,6 +94,20 @@ describe('role contracts', () => {
       .filter((c) => c.writesCode)
       .map((c) => c.role)
     expect(codeWriters.sort()).toEqual(['implementer', 'verifier'])
+  })
+
+  test('only reviewer and verifier must return a verdict', () => {
+    const verdictRoles = Object.values(ROLE_CONTRACTS)
+      .filter((c) => c.returnsVerdict)
+      .map((c) => c.role)
+    expect(verdictRoles.sort()).toEqual(['reviewer', 'verifier'])
+  })
+
+  test('only verifier is corroborated against committed evidence', () => {
+    const corroborated = Object.values(ROLE_CONTRACTS)
+      .filter((c) => c.corroborated)
+      .map((c) => c.role)
+    expect(corroborated).toEqual(['verifier'])
   })
 
   test('spec-touching roles receive the house standard skill', () => {

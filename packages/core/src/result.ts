@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AgentRole, ArtifactKind } from './roles.ts'
+import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
 
 /**
  * RESULT.json — the only structured channel out of an agent run. A stage that
@@ -74,7 +74,38 @@ export function parseStageResult(raw: string): ParsedResult {
     return { ok: false, error: `invalid JSON: ${(e as Error).message}`, raw }
   }
   const parsed = StageResult.safeParse(json)
-  return parsed.success
-    ? { ok: true, value: parsed.data }
-    : { ok: false, error: z.prettifyError(parsed.error), raw }
+  if (!parsed.success) return { ok: false, error: z.prettifyError(parsed.error), raw }
+
+  const verdictError = checkVerdictPresent(parsed.data)
+  if (verdictError) return { ok: false, error: verdictError, raw }
+
+  return { ok: true, value: parsed.data }
+}
+
+/**
+ * REQ-6: silence is not approval — a role whose contract requires a verdict
+ * never gets to skip it. Checkable immediately after parse: unlike findings,
+ * a verdict is never derived after the fact.
+ */
+export function checkVerdictPresent(result: StageResult): string | null {
+  if (!ROLE_CONTRACTS[result.role].returnsVerdict) return null
+  if (result.verdict) return null
+
+  return `${result.role} must return a verdict`
+}
+
+/**
+ * REQ-6: a revise with nothing to act on gives the next round no direction.
+ * For a corroborated role (verifier), pass the finding set as it stands after
+ * scenario-finding derivation — its own returned findings may be empty and
+ * still be honest, if the derived findings carry the reason.
+ */
+export function checkReviseHasFindings(
+  result: StageResult,
+  findings: readonly ReviewFinding[] = result.findings,
+): string | null {
+  if (result.verdict !== 'revise') return null
+  if (findings.length > 0) return null
+
+  return `${result.role} returned revise with no findings`
 }

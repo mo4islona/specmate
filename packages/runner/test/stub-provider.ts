@@ -97,11 +97,48 @@ async function writeVerdict(verdict: string): Promise<void> {
   await Bun.write(Bun.stdout, `${telemetry}\n`)
 }
 
+/** Verifier verdicts: the matrix under `verification.md` comes from the test. */
+async function writeVerification(verdict: string): Promise<void> {
+  const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+  await mkdir(folder, { recursive: true })
+  const matrix = process.env.SPECMATE_STUB_MATRIX ?? ''
+  await writeFile(join(folder, 'verification.md'), `# Verification\n\n## Matrix\n\n${matrix}\n`)
+  await writeResult(
+    JSON.stringify({
+      schema_version: 1,
+      role: 'verifier',
+      status: 'ok',
+      verdict,
+      findings: [],
+      notes_md: 'stub verification',
+    }),
+  )
+  await Bun.write(Bun.stdout, `${telemetry}\n`)
+}
+
 switch (mode) {
   case 'approve':
   case 'revise':
   case 'escalate': {
     await writeVerdict(mode)
+    break
+  }
+  case 'verify': {
+    await writeVerification(process.env.SPECMATE_STUB_VERDICT ?? 'approve')
+    break
+  }
+  case 'verify-no-report': {
+    await writeResult(
+      JSON.stringify({
+        schema_version: 1,
+        role: 'verifier',
+        status: 'ok',
+        verdict: process.env.SPECMATE_STUB_VERDICT ?? 'approve',
+        findings: [],
+        notes_md: 'stub verification without a report',
+      }),
+    )
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }
   case 'ok': {
