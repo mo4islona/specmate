@@ -40,6 +40,7 @@ Write `RESULT.json` at the root of your working directory before you stop:
   "schema_version": 1,
   "role": "verifier",
   "status": "ok",
+  "verdict": "approve",
   "artifacts_changed": [
     { "path": "<repo-relative path>", "kind": "verification", "op": "created" }
   ],
@@ -48,7 +49,10 @@ Write `RESULT.json` at the root of your working directory before you stop:
 }
 ```
 
-`status: "ok"` means the verification ran, not that everything passed — the verdict lives in
-`verification.md`. Use `status: "failed"` when you could not run the harness at all. A stage
-without a valid `RESULT.json` is retried once and then escalated, so write it even when the news
-is bad.
+`status: "ok"` means the verification ran, not that everything passed — the outcome is the
+`verdict`, and the orchestrator advances or loops on nothing else. Use `approve` when every
+mapped assertion passed, `revise` when the implementation fails verification (the task returns
+to implementation with your findings), and `escalate` when only a human can decide. The
+evidence behind the verdict lives in `verification.md`. Use `status: "failed"` when you could
+not run the harness at all. A stage without a valid `RESULT.json` is retried once and then
+escalated, so write it even when the news is bad.

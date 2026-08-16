@@ -49,7 +49,7 @@ export class TaskEnvironmentMissingError extends Error {
   }
 }
 
-export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string): RunnerConfig {
+export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string, pidDir?: string): RunnerConfig {
   // The in-process backend shares this process's filesystem and machine with an
   // agent that runs a foreign repository's code. In production that is not a
   // warning, it is a refusal.
@@ -67,6 +67,7 @@ export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string): RunnerConfig 
     rolesDir: env.ROLES_DIR,
     stageTimeoutMs: env.STAGE_TIMEOUT_MS,
     forwardEnv: env.RUNNER_FORWARD_ENV?.split(',').map((name) => name.trim()) ?? [],
+    pidDir,
   })
 }
 

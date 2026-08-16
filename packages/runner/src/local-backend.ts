@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { readdir, readFile, rm } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { ExecutionEnvironment } from '@specmate/core'
 import { type ExecBackend, type ExecResult, type ExecSpec, spawnBounded } from './backend.ts'
 import type { RunnerConfig } from './config.ts'
@@ -23,15 +26,35 @@ export class LocalBackend implements ExecBackend {
     return { image: 'local://host', toolchains: [] }
   }
 
-  run(spec: ExecSpec): Promise<ExecResult> {
-    return spawnBounded({
-      argv: spec.argv,
-      stdin: spec.stdin,
-      cwd: spec.workspacePath,
-      env: this.env(spec),
-      timeoutMs: spec.timeoutMs,
-      outputLimitBytes: this.config.logBytesLimit,
-    })
+  /**
+   * The child is detached (its own process group), so it survives an
+   * orchestrator crash. The pid file is what lets the restart sweep find and
+   * kill it — the local counterpart of a container label.
+   */
+  async run(spec: ExecSpec): Promise<ExecResult> {
+    const pidFile = this.pidFile(spec)
+
+    try {
+      return await spawnBounded({
+        argv: spec.argv,
+        stdin: spec.stdin,
+        cwd: spec.workspacePath,
+        env: this.env(spec),
+        timeoutMs: spec.timeoutMs,
+        outputLimitBytes: this.config.logBytesLimit,
+        onSpawn: pidFile ? (pid) => recordAgentPid(pidFile, pid, spec.labels ?? {}) : undefined,
+      })
+    } finally {
+      if (pidFile) await rm(pidFile, { force: true })
+    }
+  }
+
+  private pidFile(spec: ExecSpec): string | null {
+    if (!this.config.pidDir) return null
+
+    const safe = spec.label.replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 80)
+
+    return join(this.config.pidDir, `${safe}.json`)
   }
 
   /**
@@ -50,5 +73,75 @@ export class LocalBackend implements ExecBackend {
     }
 
     return { ...env, ...spec.env }
+  }
+}
+
+interface AgentPidRecord {
+  readonly pid: number
+  readonly labels: Readonly<Record<string, string>>
+}
+
+/** Synchronous on purpose: the window between spawn and record must not exist. */
+function recordAgentPid(path: string, pid: number, labels: Readonly<Record<string, string>>): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify({ pid, labels } satisfies AgentPidRecord))
+}
+
+/**
+ * The restart sweep's arm for the in-process backend: read the pid files the
+ * runs left behind, kill the matching process groups, drop the files. Best
+ * effort by design — the agent may have exited on its own.
+ */
+export async function killLocalAgents(
+  pidDir: string,
+  labels: Readonly<Record<string, string>>,
+): Promise<string[]> {
+  const entries = await readdir(pidDir).catch(() => [] as string[])
+  const killed: string[] = []
+
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue
+    const path = join(pidDir, entry)
+    const record = await readAgentPid(path)
+    if (!record) continue
+
+    const matches = Object.entries(labels).every(([key, value]) => record.labels[key] === value)
+    if (!matches) continue
+
+    if (killAgentGroup(record.pid)) killed.push(`pid ${record.pid}`)
+    await rm(path, { force: true })
+  }
+
+  return killed
+}
+
+async function readAgentPid(path: string): Promise<AgentPidRecord | null> {
+  const raw = await readFile(path, 'utf8').catch(() => null)
+  if (raw === null) return null
+
+  try {
+    const parsed = JSON.parse(raw) as AgentPidRecord
+    if (typeof parsed.pid !== 'number' || typeof parsed.labels !== 'object') return null
+
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/** The group first, so whatever the agent spawned dies with it. */
+function killAgentGroup(pid: number): boolean {
+  try {
+    process.kill(-pid, 'SIGKILL')
+
+    return true
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL')
+
+      return true
+    } catch {
+      return false
+    }
   }
 }

@@ -31,6 +31,12 @@ export interface RunnerConfig {
   readonly stageTimeoutMs: number
   readonly cpus: string
   readonly memory: string
+  /**
+   * Where the in-process backend records agent pids, so the restart sweep can
+   * kill what a dead orchestrator left running. Absent disables tracking —
+   * containers carry labels instead, and tests need neither.
+   */
+  readonly pidDir?: string
   /** Caps, each with an explicit truncation notice rather than a silent cut. */
   readonly diffBytesLimit: number
   readonly ledgerBytesLimit: number
@@ -66,5 +72,9 @@ export function resolveRunnerConfig(options: RunnerOptions = {}): RunnerConfig {
   const merged = { ...DEFAULT_RUNNER_CONFIG, ...defined } as RunnerConfig
   if (merged.stageTimeoutMs <= 0) throw new Error('stageTimeoutMs must be positive')
 
-  return { ...merged, rolesDir: resolve(merged.rolesDir) }
+  return {
+    ...merged,
+    rolesDir: resolve(merged.rolesDir),
+    ...(merged.pidDir ? { pidDir: resolve(merged.pidDir) } : {}),
+  }
 }

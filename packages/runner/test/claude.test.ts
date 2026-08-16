@@ -3,7 +3,13 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { StageJob } from '@specmate/core'
 import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
-import { ClaudeCodeProvider, readTelemetry, type StageRunError } from '../src/claude.ts'
+import {
+  ClaudeCodeProvider,
+  readStageTelemetry,
+  readTelemetry,
+  type StageRunError,
+  stageContainerLabels,
+} from '../src/claude.ts'
 import { LocalBackend } from '../src/local-backend.ts'
 import {
   cleanupTempDirs,
@@ -171,5 +177,64 @@ describe('telemetry parsing', () => {
   test('returns nothing for output that is not JSON', () => {
     expect(readTelemetry('welcome to the CLI')).toEqual({})
     expect(readTelemetry('')).toEqual({})
+  })
+
+  test('the stage record carries the served model, token kinds, cost, and the raw envelope', () => {
+    const envelope = {
+      type: 'result',
+      total_cost_usd: 1.5,
+      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
+      modelUsage: { 'claude-opus-9': { inputTokens: 10 } },
+    }
+
+    expect(readStageTelemetry(JSON.stringify(envelope))).toEqual({
+      model: 'claude-opus-9',
+      tokens: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5 },
+      costUsd: 1.5,
+      raw: envelope,
+    })
+  })
+
+  test('an unreadable envelope reads as absent, never as zero', () => {
+    expect(readStageTelemetry('not json at all')).toBeNull()
+    expect(readStageTelemetry(JSON.stringify({ type: 'result' }))).toEqual({
+      model: null,
+      tokens: null,
+      costUsd: null,
+      raw: { type: 'result' },
+    })
+  })
+
+  test('a successful run surfaces its telemetry on the outcome', async () => {
+    const harness = await makeHarness('outcome-telemetry')
+    const claude = provider('ok', harness)
+
+    const outcome = await claude.run(job(harness))
+
+    expect(outcome.telemetry?.model).toBe('stub-model-1')
+    expect(outcome.telemetry?.tokens).toEqual({ input_tokens: 1200, output_tokens: 340 })
+    expect(outcome.telemetry?.costUsd).toBe(0.42)
+  })
+
+  test('a garbled envelope leaves the outcome telemetry null and the stage standing', async () => {
+    const harness = await makeHarness('null-telemetry')
+    const claude = provider('garbled-telemetry', harness)
+
+    const outcome = await claude.run(job(harness))
+
+    expect(outcome.result.status).toBe('ok')
+    expect(outcome.telemetry).toBeNull()
+  })
+
+  test('labels every stage container with task, node, and attempt', () => {
+    const labels = stageContainerLabels(
+      job({ workspace: { slug: 'x' } } as Harness, { node: 'research', attempt: 2 }),
+    )
+
+    expect(labels).toEqual({
+      'specmate.task': '11111111-1111-4111-8111-111111111111',
+      'specmate.node': 'research',
+      'specmate.attempt': '2',
+    })
   })
 })

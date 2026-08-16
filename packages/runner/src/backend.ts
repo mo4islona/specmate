@@ -23,6 +23,11 @@ export interface ExecSpec {
   readonly environment?: ExecutionEnvironment
   /** Names the container so a deadline has something to kill. */
   readonly label: string
+  /**
+   * Container labels (task, node, attempt) so the restart sweep can find what
+   * a dead orchestrator left running. Ignored by the in-process backend.
+   */
+  readonly labels?: Readonly<Record<string, string>>
 }
 
 export interface ExecResult {
@@ -53,6 +58,8 @@ export interface SpawnOptions {
   readonly outputLimitBytes: number
   /** Runs when the deadline expires, before the child is signalled. */
   readonly onTimeout?: () => void
+  /** Runs synchronously once the child exists, with its pid. */
+  readonly onSpawn?: (pid: number) => void
 }
 
 /**
@@ -73,6 +80,7 @@ export async function spawnBounded(options: SpawnOptions): Promise<ExecResult> {
       detached: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    if (child.pid !== undefined) options.onSpawn?.(child.pid)
 
     let stdout = ''
     let stderr = ''

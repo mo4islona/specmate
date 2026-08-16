@@ -8,19 +8,20 @@ spec is published to a shared wiki.
 The long-form plan is [`docs/plan.md`](docs/plan.md). SpecMate is developed through OpenSpec
 from day 0 — each roadmap phase ships as one or more changes under `openspec/changes/`.
 
-**Status: Phase 1, in progress.** Workspaces are provisioned per task and committed per stage;
-a stage can now be executed against a real repository. The state machine that decides which
-stage runs is the next change.
+**Status: Phase 1, in progress.** Workspaces are provisioned per task and committed per stage,
+stages execute against real repositories, and the orchestrator loop walks a task along its
+pipeline: dispatch, record the outcome, advance, park at human gates, recover after a restart.
+Task intake beyond the admin entry point, decision cards, and the UI are upcoming changes.
 
 ## Layout
 
 ```
 apps/
   api/           control plane — Hono on Bun; probes, auth, task surface
-  orchestrator/  the state machine's process (Phase 1); today a tick loop
+  orchestrator/  the loop: poll, dispatch, advance, recover; plus the admin entry point
   web/           Vite + React SPA; served by Caddy, proxied to the API
 packages/
-  core/          role catalog, RESULT.json contract, provider interface, state machine
+  core/          role catalog, RESULT.json contract, provider interface, pipeline catalog
   db/            Drizzle schema, generated migrations, connection factory
   workspace/     one git worktree per task, a commit per stage, artifact index
   runner/        prompt assembly, provider invocation, result capture, isolation
@@ -113,8 +114,51 @@ bun apps/orchestrator/src/run-stage.ts --task <task-uuid> --role researcher
 ```
 
 Assembles the prompt, runs the provider, checks what it wrote against the role's contract, and
-commits on success. This is how a prompt or image change is verified before the loop exists to
-schedule it.
+commits on success. This is how a prompt or image change is verified without going through the
+loop's scheduling.
+
+## The orchestrator loop
+
+Pipelines are data, not code. A pipeline definition — the stage nodes, the human gates, the
+loop edges with their caps, the terminal — lives in the catalog in `packages/core`
+(`src/pipeline.ts`), reviewed and shipped like any other code. Creating a task pins a copy of
+its type's definition into the task's run graph, and the engine consults only that copy: a
+deploy that reshapes the catalog never reshapes a task already in flight. Adding a kind of work
+(the incident pipeline is the planned test of this) is a catalog entry plus a status-enum
+migration — not an engine change.
+
+The loop polls Postgres every `TICK_INTERVAL_MS` for tasks positioned at a stage node, runs the
+stage through the runner, records the outcome and its telemetry (model, tokens, cost), and
+advances along the pinned graph: approve moves forward, revise follows the loop edge until the
+loop's cap is spent, escalate and exhausted caps park the task for a human. A failed stage is
+discarded and re-dispatched up to `STAGE_ATTEMPT_CAP` times, then the task moves to `failed`
+naming the stage — never silently.
+
+**Recovery.** Every state the loop needs lives in Postgres, so a restart resumes every
+non-terminal task from the store alone. On startup the orchestrator sweeps: a stage recorded
+`running` with no live execution behind it is treated as a failed attempt — whatever still
+carries the stage's labels is killed (a container, or a local agent found by its pid file),
+the attempt's record is updated in place, and while attempts remain the workspace is reset and
+the stage re-runs as the next attempt under the same cap. A spent cap fails the task and keeps
+the tree untouched as evidence. Tasks parked at gates stay parked across the restart. The cost
+of a `kill -9` is at most the in-flight stage attempt, never the task.
+
+Until the task intake and UI changes ship, tasks are driven through the admin entry point:
+
+```bash
+bun apps/orchestrator/src/admin.ts create --slug s --title t --type feature \
+  --repo <url> --at research                      # dev-only: start at a named node
+bun apps/orchestrator/src/admin.ts approve  --task <uuid>       # at a human gate
+bun apps/orchestrator/src/admin.ts redirect --task <uuid> --comment "..."
+bun apps/orchestrator/src/admin.ts rework   --task <uuid> --to implement
+bun apps/orchestrator/src/admin.ts resume   --task <uuid>       # parked escalations
+bun apps/orchestrator/src/admin.ts restart  --task <uuid> [--to research]  # failed tasks
+bun apps/orchestrator/src/admin.ts show     --task <uuid>
+```
+
+These are the same operations the Phase-2 decision cards will call — the UI adds callers, not
+transitions. The admin entry requires `WORKSPACE_ROOT` set to the same root the daemon uses:
+terminal operations release worktrees there, and a guessed default would silently miss them.
 
 ## Authentication
 

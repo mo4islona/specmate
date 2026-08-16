@@ -31,34 +31,10 @@ export type HumanGate = (typeof HUMAN_GATES)[number]
 
 export const TERMINAL_STATES = ['archived', 'cancelled', 'failed'] as const
 
-/**
- * Allowed transitions. `waiting_human`, `paused` and `blocked` are entered from
- * any active state and return to the state they interrupted, so they are not
- * listed here — the orchestrator stores the resume target on the task.
- */
-export const TRANSITIONS: Readonly<Record<TaskState, readonly TaskState[]>> = {
-  draft: ['planning', 'cancelled'],
-  planning: ['kickoff_brief', 'failed'],
-  kickoff_brief: ['human_kickoff_gate'],
-  // redirect loops back to planning (capped at 2 regenerations)
-  human_kickoff_gate: ['research', 'planning', 'cancelled'],
-  research: ['spec_review', 'failed'],
-  spec_review: ['human_spec_gate', 'research', 'waiting_human'],
-  human_spec_gate: ['implement', 'research', 'cancelled'],
-  implement: ['verify', 'failed'],
-  verify: ['code_review', 'implement', 'waiting_human'],
-  code_review: ['summarize', 'implement', 'waiting_human'],
-  summarize: ['human_final_gate', 'failed'],
-  // rework re-enters the loop at the affected stage
-  human_final_gate: ['publish', 'implement', 'research', 'cancelled'],
-  publish: ['archived', 'failed'],
-  archived: [],
-  waiting_human: [],
-  paused: [],
-  blocked: ['planning', 'cancelled'],
-  cancelled: [],
-  failed: ['planning', 'implement', 'cancelled'],
-}
+// Legal transitions are derived from a task's pinned pipeline — see
+// `canTransition` and `graphTransitions` in pipeline.ts. The hand-written
+// table this module used to hold survives only as the expected rendering of
+// the feature definition in the pipeline tests.
 
 export function isTerminal(state: TaskState): boolean {
   return (TERMINAL_STATES as readonly TaskState[]).includes(state)
@@ -66,11 +42,6 @@ export function isTerminal(state: TaskState): boolean {
 
 export function isHumanGate(state: TaskState): state is HumanGate {
   return (HUMAN_GATES as readonly TaskState[]).includes(state)
-}
-
-export function canTransition(from: TaskState, to: TaskState): boolean {
-  if (to === 'waiting_human' || to === 'paused' || to === 'cancelled') return !isTerminal(from)
-  return (TRANSITIONS[from] ?? []).includes(to)
 }
 
 /** Loop caps (§5). Defaults are per-task overridable config, not constants in code paths. */

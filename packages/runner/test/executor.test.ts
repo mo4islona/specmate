@@ -223,6 +223,34 @@ describe('stage execution', () => {
     expect(execution.status).toBe('succeeded')
   })
 
+  test('an honestly reported failure commits nothing to the task branch', async () => {
+    const harness = await makeHarness('agent-failed')
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(harness, { SPECMATE_STUB_MODE: 'agent-failed' }).execute(
+      request(harness),
+    )
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('agent_failed')
+    expect(execution.detail).toContain('could not finish')
+    expect(await commitCount(harness)).toBe(before)
+  })
+
+  test('a stage bound to a different provider is refused, not silently re-attributed', async () => {
+    const harness = await makeHarness('wrong-provider')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, { SPECMATE_STUB_MODE: 'ok' }).execute(
+      request(harness, { provider: 'codex' }),
+    )
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('provider_error')
+    expect(execution.detail).toContain('codex')
+  })
+
   test('retries once and no more', async () => {
     const harness = await makeHarness('retry-cap')
     await harness.commitAll('baseline')

@@ -48,6 +48,7 @@ const telemetry = JSON.stringify({
   subtype: 'success',
   total_cost_usd: 0.42,
   usage: { input_tokens: 1200, output_tokens: 340 },
+  modelUsage: { 'stub-model-1': { inputTokens: 1200, outputTokens: 340 } },
 })
 
 async function writeResult(body: string): Promise<void> {
@@ -67,7 +68,42 @@ function validResult(): string {
   })
 }
 
+/** Review verdicts, so one queue file can drive a loop: revise, then approve. */
+async function writeVerdict(verdict: string): Promise<void> {
+  const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'review.md'), `# stub review: ${verdict}\n`)
+  const findings =
+    verdict === 'approve'
+      ? []
+      : [
+          {
+            id: process.env.SPECMATE_STUB_FINDING ?? 'stub-finding',
+            severity: 'major',
+            title: 'Stub finding',
+            detail_md: '',
+          },
+        ]
+  await writeResult(
+    JSON.stringify({
+      schema_version: 1,
+      role: role(),
+      status: 'ok',
+      verdict,
+      findings,
+      notes_md: 'stub review',
+    }),
+  )
+  await Bun.write(Bun.stdout, `${telemetry}\n`)
+}
+
 switch (mode) {
+  case 'approve':
+  case 'revise':
+  case 'escalate': {
+    await writeVerdict(mode)
+    break
+  }
   case 'ok': {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
@@ -84,6 +120,21 @@ switch (mode) {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# HALF-WRITTEN-GARBAGE\n')
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'agent-failed': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), '# BROKEN-OUTPUT\n')
+    await writeResult(
+      JSON.stringify({
+        schema_version: 1,
+        role: role(),
+        status: 'failed',
+        notes_md: 'the stub could not finish',
+      }),
+    )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }

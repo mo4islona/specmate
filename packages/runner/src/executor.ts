@@ -1,9 +1,11 @@
 import {
   type AgentProvider,
   type AgentRole,
+  type ProviderId,
   ROLE_CONTRACTS,
   type StageJob,
   type StageResult,
+  type StageTelemetry,
 } from '@specmate/core'
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
 import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
@@ -17,12 +19,16 @@ export type LedgerSource = (taskId: string) => Promise<string>
 /** One retry, then the stage fails — `agent-contracts`, structured result contract. */
 const MAX_ATTEMPTS = 2
 
-export type StageFailure = RunFailure | 'scope_violation'
+export type StageFailure = RunFailure | 'scope_violation' | 'agent_failed'
 
 export interface StageRequest {
   readonly taskId: string
   readonly stageId: string
+  /** Pipeline node key, when the loop dispatches; labels the container for the sweep. */
+  readonly node?: string
   readonly role: AgentRole
+  /** Provider the engine bound and recorded for this stage; a mismatch is refused. */
+  readonly provider?: ProviderId
   readonly workspace: Workspace
   readonly baseBranch: string
   /** Immutable runner image and exact toolchains pinned for this task. */
@@ -46,6 +52,8 @@ export interface StageExecution {
   readonly failure?: StageFailure
   readonly detail?: string
   readonly commit?: string
+  /** From the successful run's envelope; null when it could not be parsed. */
+  readonly telemetry?: StageTelemetry | null
 }
 
 export interface StageExecutorDeps {
@@ -66,6 +74,17 @@ export class StageExecutor {
   constructor(private readonly deps: StageExecutorDeps) {}
 
   async execute(request: StageRequest): Promise<StageExecution> {
+    // The binding is recorded on the stage row and in commit trailers; quietly
+    // running a different provider would make that attribution lie.
+    if (request.provider && request.provider !== this.deps.provider.id) {
+      return {
+        status: 'failed',
+        attempts: [],
+        failure: 'provider_error',
+        detail: `stage is bound to provider "${request.provider}" but this executor runs "${this.deps.provider.id}"`,
+      }
+    }
+
     const attempts: StageAttemptRecord[] = []
     const first = request.attempt ?? 0
 
@@ -79,6 +98,7 @@ export class StageExecutor {
           attempts,
           result: outcome.result,
           commit: outcome.commit,
+          telemetry: outcome.telemetry ?? null,
         }
       }
 
@@ -104,6 +124,7 @@ export class StageExecutor {
     record: StageAttemptRecord
     result?: StageResult
     commit?: string
+    telemetry?: StageTelemetry | null
   }> {
     const { config, provider, git, workspaces, ledger: loadLedger } = this.deps
     const ledger = await loadLedger(request.taskId)
@@ -117,6 +138,7 @@ export class StageExecutor {
     const job: StageJob = {
       taskId: request.taskId,
       stageId: request.stageId,
+      node: request.node,
       role: request.role,
       provider: provider.id,
       workspacePath: request.workspace.path,
@@ -158,6 +180,21 @@ export class StageExecutor {
       }
     }
 
+    // An honest failure report keeps its artifacts out of the task branch: the
+    // retry must start from the last good commit, and `discard` can only take
+    // the tree back there if the failed run was never committed.
+    if (outcome.result.status === 'failed') {
+      return {
+        record: {
+          attempt,
+          ok: false,
+          failure: 'agent_failed',
+          detail: outcome.result.notes_md || 'the agent reported failure in RESULT.json',
+          durationMs: outcome.durationMs,
+        },
+      }
+    }
+
     const commit = await workspaces.commitStage(request.taskId, request.workspace, {
       stageId: request.stageId,
       role: request.role,
@@ -169,6 +206,7 @@ export class StageExecutor {
       record: { attempt, ok: true, durationMs: outcome.durationMs },
       result: outcome.result,
       commit: commit.committed ? commit.commit : undefined,
+      telemetry: outcome.telemetry,
     }
   }
 }

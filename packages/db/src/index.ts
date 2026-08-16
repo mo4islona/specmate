@@ -8,6 +8,11 @@ export { schema }
 
 export type Database = ReturnType<typeof createDb>
 
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/** A database handle or an open transaction — query helpers accept either. */
+export type DbClient = Database | Transaction
+
 export function databaseUrl(): string {
   const url = process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL is not set')

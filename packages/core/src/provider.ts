@@ -5,6 +5,8 @@ import type { AgentRole, ProviderId } from './roles.ts'
 export interface StageJob {
   readonly taskId: string
   readonly stageId: string
+  /** Pipeline node key this run serves; labels the container for the restart sweep. */
+  readonly node?: string
   readonly role: AgentRole
   readonly provider: ProviderId
   /** Absolute path of the worktree the stage runs in. */
@@ -26,12 +28,28 @@ export interface StageJob {
   readonly attempt: number
 }
 
+/**
+ * What actually ran, as the provider reported it — not what was configured.
+ * Absent is null, never zero: the debug chart must tell "no data" from "free".
+ */
+export interface StageTelemetry {
+  /** The model that served the run; a provider-side substitution shows here. */
+  readonly model: string | null
+  /** Token counts under the provider's own keys. */
+  readonly tokens: Readonly<Record<string, number>> | null
+  readonly costUsd: number | null
+  /** The raw envelope, kept for whatever the normalization did not anticipate. */
+  readonly raw: unknown
+}
+
 export interface StageOutcome {
   readonly result: StageResult
   /** Raw CLI stdout/stderr, persisted for the UI log view. */
   readonly log: string
   readonly exitCode: number
   readonly durationMs: number
+  /** Best-effort: null when the provider's envelope could not be parsed. */
+  readonly telemetry?: StageTelemetry | null
 }
 
 export type ProviderAuthState = 'ok' | 'expired' | 'unknown'

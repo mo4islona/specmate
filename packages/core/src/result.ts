@@ -47,7 +47,7 @@ export const StageResult = z.object({
   status: z.enum(['ok', 'needs_decision', 'failed']),
   artifacts_changed: z.array(ArtifactChange).default([]),
   decisions_needed: z.array(DecisionRequest).default([]),
-  /** Reviewer-only. */
+  /** Required from review-shaped stages (reviewer, verifier): it drives the loop edge. */
   verdict: ReviewVerdict.optional(),
   findings: z.array(ReviewFinding).default([]),
   /** Short human-facing note rendered in the chat timeline. */

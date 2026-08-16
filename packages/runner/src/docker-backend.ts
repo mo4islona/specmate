@@ -52,6 +52,11 @@ export class DockerBackend implements ExecBackend {
       '--interactive',
       '--name',
       containerName(spec.label),
+    ]
+    for (const [key, value] of Object.entries(spec.labels ?? {})) {
+      argv.push('--label', `${key}=${value}`)
+    }
+    argv.push(
       '--user',
       config.user,
       '--cpus',
@@ -66,7 +71,7 @@ export class DockerBackend implements ExecBackend {
       `${config.authVolume}:${config.homeDir}`,
       '--volume',
       `${config.toolchainsVolume}:${MISE_SHARED_ROOT}:ro`,
-    ]
+    )
     // Harness containers are opt-in per stage; a stage that has not asked for a
     // runtime cannot reach one even though the host has it.
     if (spec.containerRuntime) argv.push('--volume', `${DOCKER_SOCKET}:${DOCKER_SOCKET}`)
@@ -317,6 +322,48 @@ export function containerName(label: string): string {
   const safe = label.replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 60)
 
   return `specmate-${safe}`
+}
+
+/**
+ * The restart sweep's arm: find containers carrying the given labels and kill
+ * them. Best-effort by design — the container may have exited on its own, and
+ * the runner's wall-clock timeout is the backstop for anything missed.
+ */
+export async function killContainersByLabels(
+  config: RunnerConfig,
+  labels: Readonly<Record<string, string>>,
+): Promise<string[]> {
+  const filters = Object.entries(labels).flatMap(([key, value]) => [
+    '--filter',
+    `label=${key}=${value}`,
+  ])
+  const found = await spawnBounded({
+    argv: [config.dockerCli, 'ps', '--quiet', ...filters],
+    stdin: '',
+    cwd: process.cwd(),
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+    timeoutMs: 30_000,
+    outputLimitBytes: 64 * 1024,
+  }).catch(() => null)
+  if (found?.exitCode !== 0) return []
+
+  const ids = found.stdout
+    .split('\n')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+
+  for (const id of ids) {
+    await spawnBounded({
+      argv: [config.dockerCli, 'kill', id],
+      stdin: '',
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+      timeoutMs: 30_000,
+      outputLimitBytes: 16 * 1024,
+    }).catch(() => null)
+  }
+
+  return ids
 }
 
 function killContainer(dockerCli: string, name: string): void {

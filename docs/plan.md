@@ -306,12 +306,12 @@ deep suite methodology it builds on (an external skills repo), used by suite-sca
    ```yaml
    skill_sources:
      - name: product-tech-spec
-       repo: github.com/subsquid/ai-coding-skills
+       repo: github.com/<org>/<spec-standard-skill>
        ref: main
        path: product-tech-spec/
        inject_into: []   # opted into by suite-scale task types, not per stage
    ```
-   The repo is **private** → the sync job needs its own read-only credential (fine-grained PAT or deploy key, contents:read only), separate from the per-repo deploy keys used by workspaces.
+   A private skill repo needs its own read-only credential for the sync job, separate from the per-repo deploy keys used by workspaces.
 2. **Injection**: every role that reads or writes specs (Researcher, Spec Writer, Reviewer, Summarizer) gets the current skill copy in its context assembly, alongside the OpenSpec artifacts. The skill SHA a stage ran with is recorded in `stages.result` — full reproducibility of "which standard was in force".
 3. **Consistency check**: a mechanical lint in the Verifier/publisher path validates produced specs against the skill's format rules (IDs, required sections, RFC-2119 usage). Skill and spec format can't silently diverge — divergence fails the stage.
 4. **The process updates the skill**: when feedback or a Retro run reveals the standard itself needs changing (a rule that keeps causing rework, a missing section type), the improvement is drafted as a **PR to the skill repo** — going through the same kickoff-brief → approval flow as any change. After merge, the sync job picks it up and every subsequent stage runs on the new standard. Nothing edits the skill copy locally.
