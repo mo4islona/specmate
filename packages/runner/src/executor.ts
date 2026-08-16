@@ -10,6 +10,7 @@ import {
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
 import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
+import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
 import { checkWriteScope } from './scope.ts'
 
@@ -19,7 +20,7 @@ export type LedgerSource = (taskId: string) => Promise<string>
 /** One retry, then the stage fails — `agent-contracts`, structured result contract. */
 const MAX_ATTEMPTS = 2
 
-export type StageFailure = RunFailure | 'scope_violation' | 'agent_failed'
+export type StageFailure = RunFailure | 'scope_violation' | 'agent_failed' | 'uncorroborated'
 
 export interface StageRequest {
   readonly taskId: string
@@ -195,6 +196,38 @@ export class StageExecutor {
       }
     }
 
+    // Same posture as the write-scope check: after the run, before the outcome
+    // is accepted and anything is committed. A no-op for a role the catalog
+    // does not declare corroborated.
+    const corroboration = await corroborateVerification(request.workspace, outcome.result)
+    if (corroboration.kind === 'uncorroborated') {
+      return {
+        record: {
+          attempt,
+          ok: false,
+          failure: 'uncorroborated',
+          detail: `approve is not corroborated by the report for: ${corroboration.violations.join(', ')}`,
+          durationMs: outcome.durationMs,
+        },
+      }
+    }
+    if (corroboration.kind === 'invalid') {
+      return {
+        record: {
+          attempt,
+          ok: false,
+          failure: 'invalid_result',
+          detail: corroboration.detail,
+          durationMs: outcome.durationMs,
+        },
+      }
+    }
+
+    const result =
+      corroboration.kind === 'ok'
+        ? { ...outcome.result, findings: [...corroboration.findings] }
+        : outcome.result
+
     const commit = await workspaces.commitStage(request.taskId, request.workspace, {
       stageId: request.stageId,
       role: request.role,
@@ -204,7 +237,7 @@ export class StageExecutor {
 
     return {
       record: { attempt, ok: true, durationMs: outcome.durationMs },
-      result: outcome.result,
+      result,
       commit: commit.committed ? commit.commit : undefined,
       telemetry: outcome.telemetry,
     }

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   type AgentProvider,
   type AgentRole,
+  checkReviseHasFindings,
   type ProviderStatus,
   parseStageResult,
   ROLE_CONTRACTS,
@@ -118,6 +119,16 @@ export class ClaudeCodeProvider implements AgentProvider {
     const parsed = parseStageResult(raw)
     if (!parsed.ok) {
       throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, parsed.error)
+    }
+
+    // A corroborated role's own findings may be empty and still be honest: the
+    // executor derives scenario findings after the run and checks the merged
+    // set once it knows them (`scope.ts`'s counterpart for verifier evidence).
+    if (!ROLE_CONTRACTS[job.role].corroborated) {
+      const findingsError = checkReviseHasFindings(parsed.value)
+      if (findingsError) {
+        throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, findingsError)
+      }
     }
 
     const telemetry = readStageTelemetry(run.stdout)
