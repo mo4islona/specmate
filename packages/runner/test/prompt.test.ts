@@ -1,6 +1,16 @@
 import { afterAll, describe, expect, test } from 'bun:test'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { BRIEF_SECTIONS, parseStageResult } from '@specmate/core'
 import { assemblePrompt, RolePromptMissingError } from '../src/prompt.ts'
-import { cleanupTempDirs, makeConfig, makeHarness, tempDir, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeConfig,
+  makeHarness,
+  ROLES_DIR,
+  tempDir,
+  writeFiles,
+} from './fixtures.ts'
 
 afterAll(cleanupTempDirs)
 
@@ -35,6 +45,24 @@ describe('prompt assembly', () => {
     expect(prompt).not.toContain('# the review')
   })
 
+  test('gives the planner the draft proposal it is refining and the decision log that rejected the last one', async () => {
+    const { harness, params } = await setup('planner-reads')
+    const rolesDir = await tempDir('roles')
+    await writeFiles(rolesDir, { 'planner.md': '# Role: Planner\n' })
+    await writeFiles(harness.workspace.path, {
+      'openspec/changes/planner-reads/proposal.md': '# draft brief\n\nA rough grounding.\n',
+      'openspec/changes/planner-reads/decisions.md': '# decision log\n\nRedirected: too vague.\n',
+    })
+
+    const prompt = await assemblePrompt(harness.git, makeConfig({ rolesDir }), {
+      ...params,
+      role: 'planner',
+    })
+
+    expect(prompt).toContain('# draft brief')
+    expect(prompt).toContain('# decision log')
+  })
+
   test('gives a reviewing role the product-code diff', async () => {
     const { harness, params } = await setup('reviewable')
     await writeFiles(harness.workspace.path, { 'src/app.ts': 'export const a = 99\n' })
@@ -63,6 +91,33 @@ describe('prompt assembly', () => {
     })
 
     expect(prompt).not.toContain('REVIEW-BODY-MARKER')
+  })
+
+  test('resolves the real prompt file for the planner role', async () => {
+    const { harness, params } = await setup('planner-real-prompt')
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), { ...params, role: 'planner' })
+
+    expect(prompt).toContain('# Role: Planner')
+  })
+
+  test('the planner prompt names every heading the brief check requires', async () => {
+    const body = await readFile(join(ROLES_DIR, 'planner.md'), 'utf8')
+
+    for (const heading of BRIEF_SECTIONS) {
+      expect(body).toContain(`## ${heading}`)
+    }
+  })
+
+  test('every example RESULT.json in the planner prompt parses as a valid StageResult', async () => {
+    const body = await readFile(join(ROLES_DIR, 'planner.md'), 'utf8')
+    const examples = [...body.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => match[1] ?? '')
+
+    expect(examples.length).toBeGreaterThan(0)
+    for (const example of examples) {
+      const parsed = parseStageResult(example)
+      expect(parsed.ok).toBe(true)
+    }
   })
 
   test('fails by name when the role has no prompt file', async () => {

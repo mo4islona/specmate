@@ -389,6 +389,74 @@ describeDb('api', () => {
     }
   })
 
+  test('accepts a task with request text and returns it; accepts one without', async () => {
+    const described = await app.request('/api/v1/tasks', {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        title: 'Described task fixture',
+        description: 'Fix the login redirect so it lands on the dashboard, not the homepage.',
+        type: 'bugfix',
+        repoUrl: 'https://github.com/example/described-task',
+      }),
+    })
+    expect(described.status).toBe(201)
+    const describedBody = (await described.json()) as { task: { id: string; description: string } }
+    createdTaskIds.push(describedBody.task.id)
+    expect(describedBody.task.description).toBe(
+      'Fix the login redirect so it lands on the dashboard, not the homepage.',
+    )
+
+    const titleOnly = await app.request('/api/v1/tasks', {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        title: 'Title-only task fixture',
+        type: 'bugfix',
+        repoUrl: 'https://github.com/example/title-only-task',
+      }),
+    })
+    expect(titleOnly.status).toBe(201)
+    const titleOnlyBody = (await titleOnly.json()) as {
+      task: { id: string; description: string | null }
+    }
+    createdTaskIds.push(titleOnlyBody.task.id)
+    expect(titleOnlyBody.task.description).toBeNull()
+
+    const blankDescription = await app.request('/api/v1/tasks', {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        title: 'Blank-description task fixture',
+        description: '   ',
+        type: 'bugfix',
+        repoUrl: 'https://github.com/example/blank-description-task',
+      }),
+    })
+    expect(blankDescription.status).toBe(201)
+    const blankDescriptionBody = (await blankDescription.json()) as {
+      task: { id: string; description: string | null }
+    }
+    createdTaskIds.push(blankDescriptionBody.task.id)
+    expect(blankDescriptionBody.task.description).toBeNull()
+  })
+
+  test('rejects a description under 20,000 characters that exceeds 20,000 bytes in UTF-8', async () => {
+    const response = await app.request('/api/v1/tasks', {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        title: 'Oversized non-Latin description fixture',
+        description: '東'.repeat(10_000),
+        type: 'bugfix',
+        repoUrl: 'https://github.com/example/oversized-description-task',
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'validation' })
+  })
+
   test('aggregates gate, failure, and stall attention without healthy tasks', async () => {
     const rollback = new Error('rollback attention fixture')
 
@@ -815,6 +883,45 @@ describeDb('api', () => {
       .from(tasks)
       .where(eq(tasks.id, runningTask.id))
     expect(unchanged?.status).toBe('research')
+  })
+
+  test('a redirect past the kickoff cap is refused as a conflict, leaving the task at its gate', async () => {
+    const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `kickoff-cap-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Kickoff cap fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/kickoff-cap-fixture',
+        status: 'human_kickoff_gate',
+      })
+      .returning()
+    if (!task) throw new Error('kickoff cap task insert returned no row')
+    createdTaskIds.push(task.id)
+    await db.insert(runGraphs).values({ taskId: task.id, dag })
+    // Two redirects already spent the default cap (`max_kickoff_regenerations: 2`).
+    await db.insert(events).values([
+      { taskId: task.id, type: 'gate.redirected', payload: { gate: 'human_kickoff_gate' } },
+      { taskId: task.id, type: 'gate.redirected', payload: { gate: 'human_kickoff_gate' } },
+    ])
+
+    const thirdRedirect = await app.request(`/api/v1/tasks/${task.id}/gates/redirect`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ comment: 'One more pass, please' }),
+    })
+
+    expect(thirdRedirect.status).toBe(409)
+    expect(await thirdRedirect.json()).toMatchObject({
+      code: 'conflict',
+      detail: expect.any(String),
+    })
+    const [unchanged] = await db
+      .select({ status: tasks.status })
+      .from(tasks)
+      .where(eq(tasks.id, task.id))
+    expect(unchanged?.status).toBe('human_kickoff_gate')
   })
 
   test('lists a task’s decisions and answers or dismisses them through their own endpoints', async () => {

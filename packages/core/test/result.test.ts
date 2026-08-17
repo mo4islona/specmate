@@ -175,6 +175,20 @@ describe('role contracts', () => {
     expect(verdictRoles.sort()).toEqual(['reviewer', 'verifier'])
   })
 
+  test('planner reads the proposal it is refining and the decisions that rejected the last one', () => {
+    expect(ROLE_CONTRACTS.planner.reads).toEqual(['proposal', 'decision_log'])
+    expect(ROLE_CONTRACTS.planner.writes).toEqual(['proposal'])
+    expect(ROLE_CONTRACTS.planner.writesCode).toBe(false)
+    expect(ROLE_CONTRACTS.planner.injectSpecSkill).toBe(false)
+  })
+
+  test('only planner has its proposal output checked for completeness', () => {
+    const checked = Object.values(ROLE_CONTRACTS)
+      .filter((c) => c.checksProposalCompleteness)
+      .map((c) => c.role)
+    expect(checked).toEqual(['planner'])
+  })
+
   test('only verifier is corroborated against committed evidence', () => {
     const corroborated = Object.values(ROLE_CONTRACTS)
       .filter((c) => c.corroborated)

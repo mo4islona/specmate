@@ -85,6 +85,18 @@ interface AttentionItem {
 
 const CreateTask = z.object({
   title: z.string().trim().min(1).max(200),
+  description: z
+    .string()
+    .trim()
+    // .max() counts UTF-16 code units, not bytes — this task's request text
+    // feeds the ledger's byte-capped budget (packages/runner/src/ledger.ts),
+    // so the cap has to be measured the same way or non-Latin scripts could
+    // blow the whole budget on this one field.
+    .refine((value) => Buffer.byteLength(value, 'utf8') <= 20_000, {
+      message: 'description must not exceed 20,000 bytes',
+    })
+    .optional()
+    .transform((value) => (value ? value : undefined)),
   type: z.enum(['feature', 'bugfix']),
   repoUrl: z.url(),
   baseBranch: z.string().trim().min(1).default('main'),
@@ -565,10 +577,11 @@ export function createApp({
     })
 
     .post('/tasks', validator('json', validateJson(CreateTask)), async (c) => {
-      const { title, type, repoUrl, baseBranch } = c.req.valid('json')
+      const { title, description, type, repoUrl, baseBranch } = c.req.valid('json')
       const { task } = await createTask(db, {
         slug: `${slugify(title)}-${Bun.randomUUIDv7().slice(0, 8)}`,
         title,
+        description,
         type,
         repoUrl,
         baseBranch,

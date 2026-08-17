@@ -31,8 +31,12 @@ const TASK_ID = '33333333-3333-4333-8333-333333333333'
  * The database is not in the loop: a stage receives the ledger as text, so the
  * executor takes a source rather than a handle and the suite needs no Postgres.
  */
-function makeExecutor(harness: Harness, env: Record<string, string>) {
-  const config = makeConfig({ forwardEnv: STUB_ENV })
+function makeExecutor(
+  harness: Harness,
+  env: Record<string, string>,
+  configOverrides: Parameters<typeof makeConfig>[0] = {},
+) {
+  const config = makeConfig({ forwardEnv: STUB_ENV, ...configOverrides })
   setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, ...env })
   const provider = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
   // Only `commitStage` is exercised here, and only its git half — the artifact
@@ -433,6 +437,64 @@ describe('verification corroboration', () => {
 
     expect(approve.status).toBe('failed')
     expect(approve.failure).toBe('uncorroborated')
+    expect(await commitCount(harness)).toBe(before + 1)
+  })
+})
+
+describe('brief completeness', () => {
+  async function plannerRolesDir(): Promise<string> {
+    const dir = await tempDir('roles')
+    await writeFiles(dir, { 'planner.md': '# Role: Planner\n' })
+
+    return dir
+  }
+
+  test('fails a planner run that left an incomplete brief, and commits nothing', async () => {
+    const harness = await makeHarness('brief-incomplete')
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE: 'ok', SPECMATE_STUB_ROLE: 'planner' },
+      { rolesDir: await plannerRolesDir() },
+    ).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('incomplete_brief')
+    expect(execution.detail).toContain('missing')
+    expect(await commitCount(harness)).toBe(before)
+  })
+
+  test('commits a planner run that left a complete brief', async () => {
+    const harness = await makeHarness('brief-complete')
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE: 'brief-complete', SPECMATE_STUB_ROLE: 'planner' },
+      { rolesDir: await plannerRolesDir() },
+    ).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('succeeded')
+    expect(await commitCount(harness)).toBe(before + 1)
+  })
+
+  test('a researcher rewriting the proposal into a full proposal passes the executor unchanged', async () => {
+    const harness = await makeHarness('researcher-proposal')
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    // The researcher's contract does not declare checksProposalCompleteness,
+    // so a bare proposal.md — which would fail the planner's brief check — is
+    // untouched by it here.
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'ok',
+      SPECMATE_STUB_ROLE: 'researcher',
+    }).execute(request(harness, { role: 'researcher' }))
+
+    expect(execution.status).toBe('succeeded')
     expect(await commitCount(harness)).toBe(before + 1)
   })
 })

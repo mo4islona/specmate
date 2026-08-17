@@ -5,7 +5,7 @@ import {
   renderFindingBullets,
 } from '@specmate/core'
 import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
 import { truncate } from './truncate.ts'
 
@@ -23,8 +23,16 @@ export interface LedgerRound {
   readonly findings: readonly ReviewFinding[]
 }
 
+export interface LedgerGateComment {
+  readonly nodeKey: string
+  readonly kind: 'redirect' | 'rework'
+  readonly comment: string
+}
+
 export interface LedgerSnapshot {
   readonly title: string
+  /** The owner's own words the task was launched with; the title stands in when absent. */
+  readonly ask: string
   readonly slug: string
   readonly type: string
   readonly repoUrl: string
@@ -38,34 +46,58 @@ export interface LedgerSnapshot {
     instruction: string
     target: Record<string, unknown> | null
   }[]
+  /** Redirect and rework comments the owner left at a gate, oldest first. */
+  readonly gateComments: readonly LedgerGateComment[]
 }
 
 export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<LedgerSnapshot> {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
   if (!task) throw new TaskNotFoundError(taskId)
 
-  const [rounds, interventions] = await Promise.all([
+  // Interventions and gate comments both live in `feedback`; one query fetches
+  // the rows either can need, split client-side by kind below. The left join
+  // to `stages` only matters to the intervention filter — a gate comment has
+  // no consuming stage and passes through it untouched.
+  const [rounds, feedbackRows] = await Promise.all([
     db
       .select()
       .from(iterations)
       .where(eq(iterations.taskId, taskId))
       .orderBy(asc(iterations.loop), asc(iterations.round)),
     db
-      .select({ id: feedback.id, instruction: feedback.textMd, target: feedback.target })
+      .select({
+        id: feedback.id,
+        kind: feedback.kind,
+        textMd: feedback.textMd,
+        target: feedback.target,
+        stageStatus: stages.status,
+      })
       .from(feedback)
-      .innerJoin(stages, eq(feedback.consumedByStageId, stages.id))
+      .leftJoin(stages, eq(feedback.consumedByStageId, stages.id))
       .where(
         and(
           eq(feedback.taskId, taskId),
-          eq(feedback.kind, 'intervention'),
-          eq(stages.status, 'running'),
+          inArray(feedback.kind, ['intervention', 'redirect', 'rework']),
         ),
       )
       .orderBy(asc(feedback.createdAt)),
   ])
 
+  const interventions = feedbackRows
+    .filter((row) => row.kind === 'intervention' && row.stageStatus === 'running')
+    .map((row) => ({ id: row.id, instruction: row.textMd, target: row.target }))
+
+  const gateComments = feedbackRows
+    .filter((row) => row.kind === 'redirect' || row.kind === 'rework')
+    .map((row) => ({
+      nodeKey: typeof row.target?.nodeKey === 'string' ? row.target.nodeKey : 'unknown',
+      kind: row.kind as 'redirect' | 'rework',
+      comment: row.textMd,
+    }))
+
   return {
     title: task.title,
+    ask: task.description?.trim() || task.title,
     slug: task.slug,
     type: task.type,
     repoUrl: task.repoUrl,
@@ -80,6 +112,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
       findings: round.findings,
     })),
     interventions,
+    gateComments,
   }
 }
 
@@ -95,6 +128,7 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     '## Task',
     '',
     `- Title: ${snapshot.title}`,
+    `- Ask: ${snapshot.ask}`,
     `- Slug: ${snapshot.slug}`,
     `- Type: ${snapshot.type}`,
     `- Repository: ${snapshot.repoUrl}`,
@@ -127,6 +161,9 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     )
   }
 
+  // Interventions are live guidance for the run about to start; gate comments
+  // are history. Interventions come first so an unbounded gate-comment history
+  // is what truncate() cuts first, not the guidance this attempt needs.
   lines.push('', '## Confirmed interventions', '')
   if (snapshot.interventions.length === 0) {
     lines.push('No confirmed intervention targets this run.')
@@ -136,6 +173,17 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
         `- Intervention ${intervention.id}: ${intervention.instruction}`,
         `  Target: ${JSON.stringify(intervention.target ?? {})}`,
       )
+    }
+  }
+
+  lines.push('', '## Gate comments', '')
+  if (snapshot.gateComments.length === 0) {
+    lines.push('No gate comments recorded.')
+  } else {
+    // Newest first: truncate() cuts from the tail, so this is the order in
+    // which this section's own comments are sacrificed if it alone overflows.
+    for (const gateComment of [...snapshot.gateComments].reverse()) {
+      lines.push(`- At ${gateComment.nodeKey} (${gateComment.kind}): ${gateComment.comment}`)
     }
   }
 

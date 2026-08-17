@@ -181,6 +181,32 @@ async function writeVerification(verdict: string): Promise<void> {
   await Bun.write(Bun.stdout, `${telemetry}\n`)
 }
 
+/** A brief carrying every part `checkBrief` requires — used by both the grounding and presenting stub modes. */
+const BRIEF_MD = [
+  '## What and Why',
+  '',
+  'Fix the redirect so it lands on the dashboard.',
+  '',
+  '## Approach',
+  '',
+  '- Read the redirect config',
+  '- Correct the target route',
+  '',
+  '## Key Points',
+  '',
+  '- Risk: low',
+  '- Blast radius: login flow only',
+  '',
+  '## Open Questions',
+  '',
+  'No open questions.',
+  '',
+  '## Size',
+  '',
+  'Small; expected to take one iteration.',
+  '',
+].join('\n')
+
 switch (mode) {
   case 'conversation': {
     await writeConversation('The artifacts choose the safer option.\n')
@@ -286,6 +312,54 @@ switch (mode) {
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
     await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'brief-complete': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), BRIEF_MD)
+    await writeResult(
+      JSON.stringify({ schema_version: 1, role: 'planner', status: 'ok', notes_md: 'stub run' }),
+    )
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'brief-complete-questions': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), BRIEF_MD)
+    await writeResult(
+      JSON.stringify({
+        schema_version: 1,
+        role: 'planner',
+        status: 'ok',
+        artifacts_changed: [
+          {
+            path: `openspec/changes/${process.env.SPECMATE_STUB_SLUG}/proposal.md`,
+            kind: 'proposal',
+            op: 'modified',
+          },
+        ],
+        decisions_needed: [
+          {
+            key: 'auth-scope',
+            kind: 'question',
+            prompt_md: 'Should this cover mobile clients too?',
+            options: [],
+            blocking: false,
+          },
+          {
+            key: 'data-retention',
+            kind: 'question',
+            prompt_md: 'Revoke old sessions immediately, or let them expire?',
+            options: [],
+            blocking: false,
+          },
+        ],
+        notes_md: 'stub brief with open questions',
+      }),
+    )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }

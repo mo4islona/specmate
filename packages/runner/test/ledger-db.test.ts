@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { createDb, type Database, iterations, tasks } from '@specmate/db'
+import { createDb, type Database, feedback, iterations, tasks } from '@specmate/db'
 import { eq } from 'drizzle-orm'
 import { loadLedgerSnapshot, TaskNotFoundError } from '../src/ledger.ts'
 
@@ -53,5 +53,24 @@ describeDb('ledger snapshot', () => {
     const missing = loadLedgerSnapshot(db, '00000000-0000-4000-8000-000000000000')
 
     await expect(missing).rejects.toThrow(TaskNotFoundError)
+  })
+
+  test('loads a gate comment with the gate it was left at', async () => {
+    await db.insert(feedback).values({
+      taskId,
+      kind: 'redirect',
+      textMd: 'The approach misses the auth edge case.',
+      target: { nodeKey: 'human_kickoff_gate' },
+    })
+
+    const snapshot = await loadLedgerSnapshot(db, taskId)
+
+    expect(snapshot.gateComments).toEqual([
+      {
+        nodeKey: 'human_kickoff_gate',
+        kind: 'redirect',
+        comment: 'The approach misses the auth edge case.',
+      },
+    ])
   })
 })

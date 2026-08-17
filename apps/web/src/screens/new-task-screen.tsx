@@ -6,9 +6,21 @@ import { queryKeys } from '../lib/query-keys.ts'
 
 const INITIAL_FORM: CreateTaskInput = {
   title: '',
+  description: '',
   type: 'bugfix',
   repoUrl: '',
   baseBranch: 'main',
+}
+
+/**
+ * REQ-903: the request is optional, so a blank textarea must reach intake as
+ * absent, not as an empty string — trimmed at the edges only, everything
+ * between is the owner's exact words, blank lines included.
+ */
+export function buildCreateTaskPayload(form: CreateTaskInput): CreateTaskInput {
+  const description = form.description?.trim()
+
+  return { ...form, description: description || undefined }
 }
 
 export function NewTaskScreen() {
@@ -27,7 +39,7 @@ export function NewTaskScreen() {
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    launch.mutate(form)
+    launch.mutate(buildCreateTaskPayload(form))
   }
 
   function fieldError(name: keyof CreateTaskInput): string | undefined {
@@ -45,6 +57,29 @@ export function NewTaskScreen() {
       </header>
 
       <form className="panel space-y-6 p-5 sm:p-7" onSubmit={submit} noValidate>
+        <div>
+          <label className="field-label" htmlFor="task-description">
+            Request
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            What you want done, in your own words. The planner works from this.
+          </p>
+          <textarea
+            id="task-description"
+            className="control mt-2 min-h-32 w-full resize-y"
+            value={form.description ?? ''}
+            onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
+            placeholder="Describe the request…"
+            aria-invalid={Boolean(fieldError('description'))}
+            aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
+          />
+          {fieldError('description') && (
+            <p id="task-description-error" className="field-error">
+              {fieldError('description')}
+            </p>
+          )}
+        </div>
+
         <div>
           <label className="field-label" htmlFor="task-title">
             Title
