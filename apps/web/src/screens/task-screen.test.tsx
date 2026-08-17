@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ConversationMessage, DecisionItem, TimelineEvent } from '../lib/api-client.ts'
-import { ConversationMessageItem, EVENT_TITLES, eventDetail } from './task-screen.tsx'
+import {
+  ConversationMessageItem,
+  countGateRedirects,
+  EVENT_TITLES,
+  eventDetail,
+} from './task-screen.tsx'
 
 function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
   return {
@@ -140,5 +145,23 @@ describe('decision timeline events', () => {
     })
 
     expect(eventDetail(event, new Map())).toBe('Needs another pass')
+  })
+})
+
+describe('countGateRedirects', () => {
+  test('counts redirects at the named gate only', () => {
+    const events = [
+      timelineEvent({ type: 'gate.redirected', payload: { gate: 'human_kickoff_gate' } }),
+      timelineEvent({ type: 'gate.redirected', payload: { gate: 'human_kickoff_gate' } }),
+      timelineEvent({ type: 'gate.redirected', payload: { gate: 'human_spec_gate' } }),
+      timelineEvent({ type: 'gate.approved', payload: { gate: 'human_kickoff_gate' } }),
+    ]
+
+    expect(countGateRedirects(events, 'human_kickoff_gate')).toBe(2)
+    expect(countGateRedirects(events, 'human_spec_gate')).toBe(1)
+  })
+
+  test('a task with no redirects yet counts zero', () => {
+    expect(countGateRedirects([], 'human_kickoff_gate')).toBe(0)
   })
 })

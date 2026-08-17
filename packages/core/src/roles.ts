@@ -58,6 +58,8 @@ export interface RoleContract {
   readonly returnsVerdict: boolean
   /** An approve verdict is cross-checked against committed evidence before it is accepted. */
   readonly corroborated: boolean
+  /** A run that wrote the proposal has that proposal checked for the kickoff brief's required parts before it commits. */
+  readonly checksProposalCompleteness: boolean
   readonly defaultProvider: ProviderId
   readonly promptFile: `roles/${string}.md`
 }
@@ -65,12 +67,13 @@ export interface RoleContract {
 export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
   planner: {
     role: 'planner',
-    reads: [],
+    reads: ['proposal', 'decision_log'],
     writes: ['proposal'],
     writesCode: false,
     injectSpecSkill: false,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: true,
     defaultProvider: 'claude-code',
     promptFile: 'roles/planner.md',
   },
@@ -82,6 +85,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: true,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/researcher.md',
   },
@@ -93,6 +97,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: true,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/spec-writer.md',
   },
@@ -104,6 +109,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: false,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'codex',
     promptFile: 'roles/implementer.md',
   },
@@ -115,6 +121,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: false,
     returnsVerdict: true,
     corroborated: true,
+    checksProposalCompleteness: false,
     defaultProvider: 'codex',
     promptFile: 'roles/verifier.md',
   },
@@ -126,6 +133,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: true,
     returnsVerdict: true,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'codex',
     promptFile: 'roles/reviewer.md',
   },
@@ -137,6 +145,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: true,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/summarizer.md',
   },
@@ -148,6 +157,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: false,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/answerer.md',
   },
@@ -159,6 +169,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     injectSpecSkill: false,
     returnsVerdict: false,
     corroborated: false,
+    checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/retro.md',
   },

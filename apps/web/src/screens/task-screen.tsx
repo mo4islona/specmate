@@ -3,6 +3,7 @@ import { type FormEvent, useState } from 'react'
 import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
 import { DecisionCard } from '../components/decision-card.tsx'
+import { KickoffBrief } from '../components/kickoff-brief.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
 import { TelemetryChart } from '../components/telemetry-chart.tsx'
@@ -16,8 +17,10 @@ import {
   createConversation,
   type DecisionItem,
   dismissDecision,
+  getArtifact,
   getConversation,
   getTask,
+  listArtifacts,
   listConversations,
   listDecisions,
   listEvents,
@@ -62,6 +65,13 @@ function payloadValue(event: TimelineEvent, key: string): string | null {
   const value = event.payload[key]
 
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/** Mirrors the engine's own `countRedirects`, so the client reads the cap the same way the server enforces it. */
+export function countGateRedirects(events: readonly TimelineEvent[], gateKey: string): number {
+  return events.filter(
+    (event) => event.type === 'gate.redirected' && payloadValue(event, 'gate') === gateKey,
+  ).length
 }
 
 /**
@@ -179,6 +189,20 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const decisions = useQuery({
     queryKey: queryKeys.decisions(taskId),
     queryFn: () => listDecisions(taskId),
+  })
+  // The brief is read at the kickoff gate only — fetching it elsewhere would
+  // be a document no gate is asking the owner to act on.
+  const atKickoffGate = detail.data?.task.status === 'human_kickoff_gate'
+  const artifacts = useQuery({
+    queryKey: queryKeys.artifacts(taskId),
+    queryFn: ({ signal }) => listArtifacts(taskId, signal),
+    enabled: atKickoffGate,
+  })
+  const briefArtifactId = artifacts.data?.artifacts.find((a) => a.kind === 'proposal')?.id
+  const brief = useQuery({
+    queryKey: queryKeys.artifact(taskId, briefArtifactId ?? 'none'),
+    queryFn: ({ signal }) => getArtifact(taskId, briefArtifactId ?? '', signal),
+    enabled: atKickoffGate && Boolean(briefArtifactId),
   })
   // Tracks a conversation created by this session the instant its id is
   // known, so the very first message doesn't wait on a list refetch to
@@ -402,6 +426,15 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const reworkTargets = currentGate?.kind === 'gate' ? (currentGate.rework ?? []) : []
   const gateError = approve.error ?? redirect.error ?? rework.error
   const gateBusy = approve.isPending || redirect.isPending || rework.isPending
+  // REQ-1305: computed the same way the server counts it, so the redirect
+  // control reads as unavailable before a redirect attempt ever round-trips.
+  const redirectCap =
+    currentGate?.kind === 'gate' && currentGate.redirect
+      ? { key: currentGate.redirect.cap, limit: detail.data.task.caps[currentGate.redirect.cap] }
+      : undefined
+  const redirectsUsed =
+    currentGate?.kind === 'gate' ? countGateRedirects(timeline.data.events, currentGate.key) : 0
+  const redirectCapSpent = redirectCap ? redirectsUsed >= redirectCap.limit : false
   const items = timeline.data.events
   const messages = conversation.data?.messages ?? []
   const actions = conversation.data?.actions ?? []
@@ -478,6 +511,21 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             </button>
           </div>
 
+          {atKickoffGate && (
+            <div className="mt-5 border-t border-border pt-5">
+              {artifacts.isError && (
+                <p className="field-error">Brief unavailable: {artifacts.error.message}</p>
+              )}
+              {!artifacts.isError && brief.isPending && (
+                <p className="font-mono text-xs text-muted">Loading the kickoff brief…</p>
+              )}
+              {brief.isError && (
+                <p className="field-error">Brief unavailable: {brief.error.message}</p>
+              )}
+              {brief.data && <KickoffBrief content={brief.data.artifact.content ?? ''} />}
+            </div>
+          )}
+
           <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
             <textarea
               className="control min-h-24 w-full resize-y"
@@ -487,16 +535,26 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               aria-label="Gate comment"
             />
             <div className="flex min-w-48 flex-col gap-2">
-              {currentGate.redirect && (
-                <button
-                  type="button"
-                  className="button-secondary border-amber/45 text-amber"
-                  disabled={!gateComment.trim() || gateBusy}
-                  onClick={() => redirect.mutate()}
-                >
-                  Redirect
-                </button>
-              )}
+              {currentGate.redirect &&
+                redirectCap &&
+                (redirectCapSpent ? (
+                  <p
+                    className="border border-border px-3 py-2 font-mono text-xs text-muted"
+                    role="status"
+                  >
+                    Redirect unavailable: {redirectsUsed} of {redirectCap.limit}{' '}
+                    {redirectCap.key.replaceAll('_', ' ')} used.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="button-secondary border-amber/45 text-amber"
+                    disabled={!gateComment.trim() || gateBusy}
+                    onClick={() => redirect.mutate()}
+                  >
+                    Redirect
+                  </button>
+                ))}
               {reworkTargets.length > 0 && (
                 <>
                   <select

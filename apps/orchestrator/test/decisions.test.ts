@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { StageResult } from '@specmate/core'
+import { renderDecisionLog, StageResult } from '@specmate/core'
 import {
   conversationActions,
   conversationMessages,
@@ -651,5 +651,273 @@ describeDb('decision-records', () => {
     const resolved = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'Yes, file it separately.' })
     expect((await reload(db, task.id)).status).toBe('spec_review')
+  })
+})
+
+describeDb('kickoff brief questions', () => {
+  let db: Database
+  const created: string[] = []
+  const engines: Engine[] = []
+
+  beforeAll(() => {
+    db = createDb(url)
+  })
+
+  afterEach(async () => {
+    for (const engine of engines.splice(0)) await engine.idle()
+    if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
+  })
+
+  function makeEngine(overrides: Partial<EngineSettings> = {}) {
+    const ws = fakeWorkspaces()
+    const stagesDispatcher = fakeDispatcher()
+    const conversationsDispatcher = fakeConversationDispatcher()
+    const engine = new Engine({
+      db,
+      workspaces: ws.workspaces,
+      settings: {
+        stageConcurrency: 1,
+        stageAttemptCap: 2,
+        conversationConcurrency: 1,
+        availableProviders: ['claude-code'],
+        ...overrides,
+      },
+      dispatcher: stagesDispatcher.dispatcher,
+      conversationDispatcher: conversationsDispatcher.dispatcher,
+    })
+    engines.push(engine)
+
+    return { engine, ws, stagesDispatcher, conversationsDispatcher }
+  }
+
+  async function seed(options: Parameters<typeof seedTask>[1] = {}) {
+    const seeded = await seedTask(db, options)
+    created.push(seeded.task.id)
+
+    return seeded
+  }
+
+  async function openDecisions(taskId: string) {
+    return db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+  }
+
+  const BRIEF_QUESTIONS: StageResult['decisions_needed'] = [
+    { key: 'auth-scope', kind: 'question', prompt_md: 'Mobile too?', options: [], blocking: false },
+    {
+      key: 'data-retention',
+      kind: 'question',
+      prompt_md: 'Revoke immediately?',
+      options: [],
+      blocking: false,
+    },
+  ]
+
+  test('a brief stage returning non-blocking questions advances to the gate carrying them open — REQ-1304, AC-1309', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief' })
+    stagesDispatcher.plan(() =>
+      result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+    const open = await openDecisions(task.id)
+    expect(open.map((d) => d.key).sort()).toEqual(['auth-scope', 'data-retention'])
+    expect(open.every((d) => d.blocking === false && d.nodeKey === 'kickoff_brief')).toBe(true)
+  })
+
+  test('approving the gate resolves every question the brief raised: an answer stands, the rest are dismissed as declined — AC-1310, AC-1311', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief' })
+    stagesDispatcher.plan(() =>
+      result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const open = await openDecisions(task.id)
+    const authScope = open.find((d) => d.key === 'auth-scope')
+    assert(authScope)
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: authScope.id,
+      actor: 'evgeny',
+      text: 'Mobile too.',
+    })
+    await engine.approve(task.id, 'evgeny')
+
+    expect((await reload(db, task.id)).status).toBe('research')
+    const all = await db
+      .select()
+      .from(decisions)
+      .where(eq(decisions.taskId, task.id))
+      .orderBy(asc(decisions.key))
+    expect(all.find((d) => d.key === 'auth-scope')).toMatchObject({
+      status: 'answered',
+      answerMd: 'Mobile too.',
+    })
+    expect(all.find((d) => d.key === 'data-retention')).toMatchObject({ status: 'dismissed' })
+
+    const log = renderDecisionLog(all)
+    expect(log).toContain('Status: answered by evgeny')
+    expect(log).toContain('Mobile too.')
+    expect(log).toContain('Status: dismissed by evgeny')
+  })
+
+  test('research reads both the answer and the decline once approval resolves the brief’s questions — AC-1310, AC-1311', async () => {
+    const { engine, stagesDispatcher, ws } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief' })
+    stagesDispatcher.plan(() =>
+      result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const open = await openDecisions(task.id)
+    const authScope = open.find((d) => d.key === 'auth-scope')
+    assert(authScope)
+    await engine.answer({
+      taskId: task.id,
+      decisionId: authScope.id,
+      actor: 'evgeny',
+      text: 'Mobile too.',
+    })
+    await engine.approve(task.id, 'evgeny')
+
+    stagesDispatcher.plan(() => result({ role: 'researcher', status: 'ok' }))
+    await engine.tick()
+    await engine.idle()
+
+    const logs = ws.calls.decisionLogs.filter((entry) => entry.slug === task.slug)
+    const last = logs.at(-1)
+    expect(last?.markdown).toContain('Mobile too.')
+    expect(last?.markdown).toContain('Status: dismissed by evgeny')
+  })
+
+  test('approving a gate whose target is itself terminal still dismisses open decisions as gate_approved, not terminal', async () => {
+    const { engine } = makeEngine()
+    const { task } = await seed({ status: 'human_final_gate' })
+    await db.insert(decisions).values({
+      taskId: task.id,
+      nodeKey: 'human_final_gate',
+      key: 'final-note',
+      kind: 'question',
+      promptMd: 'Anything else before archiving?',
+      blocking: false,
+      status: 'open',
+    })
+
+    await engine.approve(task.id, 'evgeny')
+
+    expect((await reload(db, task.id)).status).toBe('archived')
+    const all = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+    expect(all).toMatchObject([{ status: 'dismissed' }])
+
+    const dismissals = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.dismissed')))
+    expect(dismissals).toHaveLength(1)
+    expect(dismissals[0]?.payload).toMatchObject({ cause: 'gate_approved' })
+  })
+
+  test('a brief question opens its own scoped conversation; a follow-up message and a proposed answer stay inert until confirmed — REQ-1304, AC-1315', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task, graph } = await seed({ at: 'kickoff_brief' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'planner',
+        status: 'ok',
+        decisions_needed: [
+          {
+            key: 'auth-scope',
+            kind: 'question',
+            prompt_md: 'Mobile too?',
+            options: [],
+            blocking: false,
+          },
+        ],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    const [conversation] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(eq(conversations.subjectKind, 'decision'), eq(conversations.subjectId, decision.id)),
+      )
+    assert(conversation)
+
+    const [followUp] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'Do you mean the native app, or the mobile web client too?',
+        status: 'completed',
+        taskState: 'human_kickoff_gate',
+      })
+      .returning()
+    assert(followUp)
+
+    // A follow-up message alone leaves the decision open.
+    expect(
+      (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+    ).toBe('open')
+
+    const [proposalMessage] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 2,
+        role: 'assistant',
+        contentMd: 'I recommend covering mobile too.',
+        status: 'completed',
+        taskState: 'human_kickoff_gate',
+      })
+      .returning()
+    assert(proposalMessage)
+    const [action] = await db
+      .insert(conversationActions)
+      .values({
+        taskId: task.id,
+        conversationId: conversation.id,
+        messageId: proposalMessage.id,
+        kind: 'answer_decision',
+        target: { taskId: task.id, graphId: graph.id, decisionId: decision.id },
+        instruction: 'Mobile too.',
+        expectedVersion: {
+          taskStatus: 'human_kickoff_gate',
+          graphId: graph.id,
+          decisionStatus: 'open',
+        },
+      })
+      .returning()
+    assert(action)
+
+    // A proposed answer does not resolve anything until the owner confirms it.
+    expect(
+      (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+    ).toBe('open')
+
+    await engine.confirmAction({
+      taskId: task.id,
+      actionId: action.id,
+      actor: 'evgeny',
+      idempotencyKey: `confirm:${action.id}`,
+    })
+
+    expect(
+      (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0],
+    ).toMatchObject({ status: 'answered', answerMd: 'Mobile too.' })
   })
 })

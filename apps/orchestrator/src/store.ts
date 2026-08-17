@@ -52,6 +52,8 @@ export class TaskNotFoundError extends Error {
 export interface CreateTaskInput {
   readonly slug: string
   readonly title: string
+  /** The owner's request in their own words; absent on a title-only launch. */
+  readonly description?: string
   readonly type: string
   readonly repoUrl: string
   readonly baseBranch?: string
@@ -93,6 +95,7 @@ export async function createTask(
       .values({
         slug: input.slug,
         title: input.title,
+        description: input.description,
         type: input.type as TaskType,
         repoUrl: input.repoUrl,
         baseBranch: input.baseBranch ?? 'main',

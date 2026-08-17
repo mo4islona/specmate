@@ -21,7 +21,7 @@ import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
 import type { LedgerSource } from './executor.ts'
 import { assemblePrompt } from './prompt.ts'
-import { checkWriteScope } from './scope.ts'
+import { changedPaths, checkWriteScope } from './scope.ts'
 
 export type ConversationFailure =
   | RunFailure
@@ -123,7 +123,9 @@ export class ConversationExecutor {
 
       // Same posture as StageExecutor: the answerer is read-only by contract,
       // and the filesystem is checked regardless of what the agent reports.
-      const violations = await checkWriteScope(git, request.workspace, 'answerer')
+      const violations = await checkWriteScope(request.workspace, 'answerer', () =>
+        changedPaths(git, request.workspace),
+      )
       if (violations.length > 0) {
         return {
           status: 'failed',

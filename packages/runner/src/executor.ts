@@ -8,11 +8,12 @@ import {
   type StageTelemetry,
 } from '@specmate/core'
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
+import { checkBriefCompleteness } from './brief.ts'
 import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
 import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
-import { checkWriteScope } from './scope.ts'
+import { changedPaths, checkWriteScope } from './scope.ts'
 
 /** Injected rather than a database handle: the ledger is text by the time a stage sees it. */
 export type LedgerSource = (taskId: string) => Promise<string>
@@ -20,7 +21,12 @@ export type LedgerSource = (taskId: string) => Promise<string>
 /** One retry, then the stage fails — `agent-contracts`, structured result contract. */
 const MAX_ATTEMPTS = 2
 
-export type StageFailure = RunFailure | 'scope_violation' | 'agent_failed' | 'uncorroborated'
+export type StageFailure =
+  | RunFailure
+  | 'scope_violation'
+  | 'agent_failed'
+  | 'uncorroborated'
+  | 'incomplete_brief'
 
 export interface StageRequest {
   readonly taskId: string
@@ -174,7 +180,13 @@ export class StageExecutor {
       }
     }
 
-    const violations = await checkWriteScope(git, request.workspace, request.role)
+    // Memoized: `checkWriteScope` and `checkBriefCompleteness` both read the
+    // workspace's changed paths, and a stage attempt never mutates the tree
+    // between them, so the underlying `git status` runs at most once here.
+    let changedPathsPromise: Promise<string[]> | undefined
+    const getChangedPaths = () => (changedPathsPromise ??= changedPaths(git, request.workspace))
+
+    const violations = await checkWriteScope(request.workspace, request.role, getChangedPaths)
     if (violations.length > 0) {
       return {
         record: {
@@ -197,6 +209,27 @@ export class StageExecutor {
           ok: false,
           failure: 'agent_failed',
           detail: outcome.result.notes_md || 'the agent reported failure in RESULT.json',
+          durationMs: outcome.durationMs,
+        },
+      }
+    }
+
+    // Same posture as the write-scope check: after the run, before the outcome
+    // is accepted and anything is committed. A no-op for a role the catalog
+    // does not declare, and for a run that left the proposal untouched.
+    const brief = await checkBriefCompleteness(
+      config,
+      request.workspace,
+      request.role,
+      getChangedPaths,
+    )
+    if (brief.kind === 'incomplete') {
+      return {
+        record: {
+          attempt,
+          ok: false,
+          failure: 'incomplete_brief',
+          detail: brief.detail,
           durationMs: outcome.durationMs,
         },
       }

@@ -2209,6 +2209,11 @@ export class Engine {
         type: 'gate.approved',
         payload: { gate: gate.key, to: gate.approve, actor },
       })
+      // Dismissed before the transition: a gate whose target is itself a
+      // terminal status would otherwise have applyTransition's own terminal
+      // dismissal claim every open decision first, under cause 'terminal'
+      // rather than 'gate_approved'.
+      await this.dismissOpenDecisions(tx, taskId, actor, 'gate_approved')
       await this.applyTransition(tx, task, graph.dag, gate.approve, { cause: 'approve', actor })
 
       return { task, dag: graph.dag, to: gate.approve }
@@ -2227,7 +2232,12 @@ export class Engine {
       if (used >= limit) throw new RedirectCapExhaustedError(gate.key, edge.cap, limit)
 
       // The lifecycle spec: a redirect's comment is recorded as feedback.
-      await tx.insert(feedback).values({ taskId, kind: 'redirect', textMd: comment ?? '' })
+      await tx.insert(feedback).values({
+        taskId,
+        kind: 'redirect',
+        textMd: comment ?? '',
+        target: { nodeKey: gate.key },
+      })
 
       await emitEvent(tx, {
         taskId,
@@ -2251,7 +2261,13 @@ export class Engine {
       if (!(gate.rework ?? []).includes(target)) throw new ReworkTargetError(gate.key, target)
 
       // Mirrors redirect's feedback insert: every gate action leaves an audit-trail row.
-      await tx.insert(feedback).values({ taskId, kind: 'rework', textMd: comment ?? '' })
+      // Tagged by the rework target, not the gate, since one gate can declare several targets.
+      await tx.insert(feedback).values({
+        taskId,
+        kind: 'rework',
+        textMd: comment ?? '',
+        target: { nodeKey: target },
+      })
 
       await emitEvent(tx, {
         taskId,
@@ -2499,10 +2515,22 @@ export class Engine {
 
     // A terminal task leaves nothing open behind it: an inbox that
     // accumulates dead questions from finished tasks is an inbox nobody reads.
-    if (isTerminal(to)) await this.dismissOpenDecisions(db, task.id, opts.actor ?? 'system')
+    if (isTerminal(to))
+      await this.dismissOpenDecisions(db, task.id, opts.actor ?? 'system', 'terminal')
   }
 
-  private async dismissOpenDecisions(db: DbClient, taskId: string, actor: string): Promise<void> {
+  /**
+   * REQ-1304: a gate-generic resolution — approving any gate closes what the
+   * task still has open. An answered decision is already past `open` and is
+   * untouched; only a question never answered is dismissed here, readable in
+   * the decision log as declined rather than as never asked.
+   */
+  private async dismissOpenDecisions(
+    db: DbClient,
+    taskId: string,
+    actor: string,
+    cause: 'terminal' | 'gate_approved',
+  ): Promise<void> {
     const dismissed = await db
       .update(decisions)
       .set({ status: 'dismissed', answeredBy: actor, answeredAt: new Date() })
@@ -2524,7 +2552,7 @@ export class Engine {
           nodeKey: decision.nodeKey,
           key: decision.key,
           actor,
-          cause: 'terminal',
+          cause,
         },
       })
     }

@@ -8,20 +8,26 @@ import type { Git, Workspace } from '@specmate/workspace'
  * recorded as legitimate work.
  */
 export async function checkWriteScope(
-  git: Git,
   workspace: Workspace,
   role: AgentRole,
+  getChangedPaths: () => Promise<readonly string[]>,
 ): Promise<string[]> {
   if (ROLE_CONTRACTS[role].writesCode) return []
 
+  const prefix = `${workspace.changeDir}/`
+
+  return (await getChangedPaths()).filter((path) => !path.startsWith(prefix))
+}
+
+/** Repo-relative paths touched since the workspace's last commit — what the filesystem shows. */
+export async function changedPaths(git: Git, workspace: Workspace): Promise<string[]> {
   // `-uall`: a fully untracked directory otherwise collapses to `dir/`, which
   // would flag a fresh change folder as product code on a task's first stage.
   const status = await git.run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
     cwd: workspace.path,
   })
-  const prefix = `${workspace.changeDir}/`
 
-  return parseStatus(status.stdout).filter((path) => !path.startsWith(prefix))
+  return parseStatus(status.stdout)
 }
 
 /** `--porcelain=v1 -z`: NUL-separated, renames carry their source as the next field. */

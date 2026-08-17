@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { DEFAULT_BRIEF_CEILING_BYTES } from '@specmate/core'
 
 export type BackendId = 'docker' | 'local'
 
@@ -42,6 +43,8 @@ export interface RunnerConfig {
   readonly ledgerBytesLimit: number
   readonly artifactBytesLimit: number
   readonly logBytesLimit: number
+  /** REQ-1302: the kickoff brief stays one page. */
+  readonly briefBytesLimit: number
 }
 
 export const DEFAULT_RUNNER_CONFIG = {
@@ -63,6 +66,7 @@ export const DEFAULT_RUNNER_CONFIG = {
   ledgerBytesLimit: 32 * 1024,
   artifactBytesLimit: 256 * 1024,
   logBytesLimit: 4 * 1024 * 1024,
+  briefBytesLimit: DEFAULT_BRIEF_CEILING_BYTES,
 } as const satisfies RunnerConfig
 
 export type RunnerOptions = Partial<RunnerConfig>

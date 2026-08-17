@@ -5,6 +5,7 @@ import { makeConfig } from './fixtures.ts'
 
 const BASE: LedgerSnapshot = {
   title: 'Fix the reorg bug in the ingester',
+  ask: 'Fix the reorg bug in the ingester',
   slug: 'fix-reorg',
   type: 'bugfix',
   repoUrl: 'git@example.com:org/ingester.git',
@@ -14,6 +15,7 @@ const BASE: LedgerSnapshot = {
   caps: { ...DEFAULT_CAPS },
   rounds: [],
   interventions: [],
+  gateComments: [],
 }
 
 describe('ledger', () => {
@@ -82,6 +84,72 @@ describe('ledger', () => {
 
     expect(ledger).toContain('Intervention intervention-1: Use the bounded variant.')
     expect(ledger).not.toContain('Why did we discuss this?')
+  })
+
+  test('renders the request the owner launched the task with', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      ask: 'Reorgs deeper than 6 blocks corrupt the balance index; fix the ingester.',
+    })
+
+    expect(ledger).toContain(
+      '- Ask: Reorgs deeper than 6 blocks corrupt the balance index; fix the ingester.',
+    )
+  })
+
+  test('falls back to the title as the ask when the task carries no request', () => {
+    const ledger = renderLedger(makeConfig(), BASE)
+
+    expect(ledger).toContain('- Ask: Fix the reorg bug in the ingester')
+  })
+
+  test('renders both comments from a task redirected twice', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      gateComments: [
+        { nodeKey: 'human_kickoff_gate', kind: 'redirect', comment: 'Missing the auth case.' },
+        { nodeKey: 'human_kickoff_gate', kind: 'redirect', comment: 'Still missing scope.' },
+      ],
+    })
+
+    expect(ledger).toContain('- At human_kickoff_gate (redirect): Missing the auth case.')
+    expect(ledger).toContain('- At human_kickoff_gate (redirect): Still missing scope.')
+  })
+
+  test('renders identically across two calls with the same state', () => {
+    const snapshot: LedgerSnapshot = {
+      ...BASE,
+      gateComments: [
+        { nodeKey: 'human_kickoff_gate', kind: 'redirect', comment: 'Missing the auth case.' },
+      ],
+    }
+
+    expect(renderLedger(makeConfig(), snapshot)).toBe(renderLedger(makeConfig(), snapshot))
+  })
+
+  test('lets an oversized set of gate comments be cut by the existing byte limiter', () => {
+    const gateComments = Array.from({ length: 200 }, (_, i) => ({
+      nodeKey: 'human_kickoff_gate',
+      kind: 'redirect' as const,
+      comment: `redirect comment ${i} ${'padding'.repeat(20)}`,
+    }))
+
+    const ledger = renderLedger(makeConfig({ ledgerBytesLimit: 1024 }), { ...BASE, gateComments })
+
+    expect(ledger).toContain('[truncated: ledger exceeded 1024 bytes')
+  })
+
+  test('sacrifices the oldest gate comment to truncation, keeping the newest', () => {
+    const gateComments = Array.from({ length: 200 }, (_, i) => ({
+      nodeKey: 'human_kickoff_gate',
+      kind: 'redirect' as const,
+      comment: `redirect comment ${i} ${'padding'.repeat(20)}`,
+    }))
+
+    const ledger = renderLedger(makeConfig({ ledgerBytesLimit: 1024 }), { ...BASE, gateComments })
+
+    expect(ledger).toContain('redirect comment 199')
+    expect(ledger).not.toContain('redirect comment 0 ')
   })
 
   test('announces a ledger it had to truncate', () => {

@@ -540,4 +540,96 @@ describeDb('the loop against a real repository', () => {
     })
     expect(resumed.status).toBe('spec_review')
   })
+
+  async function makeKickoffTask(): Promise<Task> {
+    const slug = `e2e-kickoff-${crypto.randomUUID().slice(0, 8)}`
+    const { task } = await createTask(db, {
+      slug,
+      title: `E2E ${slug}`,
+      type: 'feature',
+      repoUrl: originUrl,
+      at: 'planning',
+    })
+    created.push(task.id)
+
+    return task
+  }
+
+  test('a task walks planning → kickoff_brief → the kickoff gate: the brief is complete, and its questions are open and discussable without being resolved', async () => {
+    const engine = makeEngine()
+    const task = await makeKickoffTask()
+    await queueModes(task, ['brief-complete', 'brief-complete-questions'])
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const openDecisions = await db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.taskId, task.id), eq(decisions.status, 'open')))
+    expect(openDecisions.map((d) => d.key).sort()).toEqual(['auth-scope', 'data-retention'])
+    expect(openDecisions.every((d) => d.blocking === false && d.nodeKey === 'kickoff_brief')).toBe(
+      true,
+    )
+
+    // Every question opened its own scoped, discussable conversation.
+    const scoped = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.taskId, task.id),
+          inArray(
+            conversations.subjectId,
+            openDecisions.map((d) => d.id),
+          ),
+        ),
+      )
+    expect(scoped).toHaveLength(2)
+    expect(scoped.every((c) => c.subjectKind === 'decision')).toBe(true)
+
+    const briefPath = join(
+      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
+      'openspec/changes',
+      task.slug,
+      'proposal.md',
+    )
+    const brief = await readFile(briefPath, 'utf8')
+    expect(brief).toContain('## Key Points')
+    expect(brief).toContain('## Open Questions')
+  })
+
+  test('a kickoff redirect carries the comment back to planning; approving afterward starts research with no open question', async () => {
+    const engine = makeEngine()
+    const task = await makeKickoffTask()
+    await queueModes(task, ['brief-complete', 'brief-complete-questions'])
+    await walkOneStage(engine)
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    await engine.redirect(task.id, 'evgeny', 'Please reconsider the auth scope before drafting.')
+    expect((await reload(db, task.id)).status).toBe('planning')
+
+    const record = join(await tempDir('stub-record'), 'invocation.json')
+    await queueModes(task, ['brief-complete'], { record })
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+    const invocation = JSON.parse(await readFile(record, 'utf8')) as { prompt: string }
+    expect(invocation.prompt).toContain('Please reconsider the auth scope before drafting.')
+
+    await queueModes(task, ['brief-complete-questions'])
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    await engine.approve(task.id, 'evgeny')
+    expect((await reload(db, task.id)).status).toBe('research')
+    const stillOpen = await db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.taskId, task.id), eq(decisions.status, 'open')))
+    expect(stillOpen).toHaveLength(0)
+  })
 })

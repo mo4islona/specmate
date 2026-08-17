@@ -11,6 +11,7 @@ import {
   type StageResult,
 } from '@specmate/core'
 import type { Workspace } from '@specmate/workspace'
+import { readChangeFile } from './change-file.ts'
 
 export type CorroborationOutcome =
   | { readonly kind: 'not_applicable' }
@@ -36,15 +37,12 @@ export async function corroborateVerification(
   }
 
   const inventory = extractScenarioInventory(await readSpecFiles(workspace))
-  const report = await readFile(
-    join(workspace.path, workspace.changeDir, 'verification.md'),
-    'utf8',
-  ).catch(() => null)
-  if (report === null) {
-    return { kind: 'invalid', detail: 'verification.md was not found in the change folder' }
+  const report = await readChangeFile(workspace, 'verification.md')
+  if (report.content === null) {
+    return { kind: 'invalid', detail: report.detail }
   }
 
-  const matrix = parseMatrix(report)
+  const matrix = parseMatrix(report.content)
   if (!matrix.ok) return { kind: 'invalid', detail: matrix.error }
 
   const check = corroborate(inventory, matrix.rows, verdict)

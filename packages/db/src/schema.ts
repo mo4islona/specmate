@@ -190,6 +190,8 @@ export const tasks = pgTable(
     id: uuid().primaryKey().defaultRandom(),
     slug: text().notNull(),
     title: text().notNull(),
+    /** The owner's request in their own words; absent on a title-only launch. */
+    description: text(),
     type: taskTypeEnum().notNull(),
     repoUrl: text('repo_url').notNull(),
     baseBranch: text('base_branch').notNull().default('main'),

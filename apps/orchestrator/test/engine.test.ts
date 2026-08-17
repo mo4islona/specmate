@@ -469,6 +469,8 @@ describeDb('conversation scheduling and interruption', () => {
     await engine.rework({ taskId: task.id, actor: 'evgeny', target: 'research' })
 
     expect((await reload(db, task.id)).status).toBe('research')
+    const notes = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(notes[0]?.target).toEqual({ nodeKey: 'research' })
 
     // With the counters reset, a fourth revise still fits the cap of three.
     await db.update(tasks).set({ status: 'spec_review' }).where(eq(tasks.id, task.id))
