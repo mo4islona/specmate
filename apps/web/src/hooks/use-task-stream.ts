@@ -11,7 +11,6 @@ interface EventsCache {
 
 /** Mirrors the server's GET /tasks/:id/events window so the cache can't grow past what a refetch would return. */
 const EVENT_WINDOW = 200
-
 export function mergeTimelineEvents(
   current: TimelineEvent[],
   incoming: TimelineEvent,
@@ -50,6 +49,9 @@ export function useTaskStream(taskId: string): StreamConnectionState {
         void queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) })
         void queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
         void queryClient.invalidateQueries({ queryKey: queryKeys.attention })
+        if (event.type.startsWith('conversation.')) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.conversations(taskId) })
+        }
         if (event.type.includes('artifact') || event.type === 'stage.completed') {
           void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(taskId) })
         }

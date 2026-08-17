@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
+import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Git, RESULT_FILE, SCRATCH_DIR, type StageRef } from '../src/index.ts'
@@ -79,5 +80,24 @@ describe('discard', () => {
 
     const status = await git.run(['status', '--porcelain=v1'], { cwd: workspace.path })
     expect(status.stdout.trim()).toBe('')
+  })
+
+  test('an interrupted attempt can reset an agent-created commit to its accepted anchor', async () => {
+    const { manager, workspace, git, committed } = await setup('interrupted-commit')
+    assert(committed.committed)
+    await writeFiles(workspace.path, { 'src/app.ts': 'export const a = 99\n' })
+    await git.run(['add', '-A'], { cwd: workspace.path })
+    await git.run(['commit', '--quiet', '-m', 'unaccepted attempt commit'], {
+      cwd: workspace.path,
+    })
+    await writeFiles(workspace.path, { 'src/partial.ts': 'export const partial = true\n' })
+
+    await manager.discard(workspace, committed.commit)
+
+    expect((await git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })).stdout.trim()).toBe(
+      committed.commit,
+    )
+    expect(await readFile(join(workspace.path, 'src/app.ts'), 'utf8')).toBe('export const a = 1\n')
+    expect(await stat(join(workspace.path, 'src/partial.ts')).catch(() => null)).toBeNull()
   })
 })

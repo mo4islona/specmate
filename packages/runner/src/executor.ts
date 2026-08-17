@@ -53,6 +53,8 @@ export interface StageExecution {
   readonly failure?: StageFailure
   readonly detail?: string
   readonly commit?: string
+  /** The orchestrator must commit while holding the task lock. */
+  readonly commitDeferred?: boolean
   /** From the successful run's envelope; null when it could not be parsed. */
   readonly telemetry?: StageTelemetry | null
 }
@@ -63,6 +65,8 @@ export interface StageExecutorDeps {
   readonly git: Git
   readonly workspaces: WorkspaceService
   readonly ledger: LedgerSource
+  /** Production orchestration owns the commit/stop race under its task lock. */
+  readonly deferCommit?: boolean
 }
 
 /**
@@ -99,6 +103,7 @@ export class StageExecutor {
           attempts,
           result: outcome.result,
           commit: outcome.commit,
+          commitDeferred: outcome.commitDeferred,
           telemetry: outcome.telemetry ?? null,
         }
       }
@@ -125,6 +130,7 @@ export class StageExecutor {
     record: StageAttemptRecord
     result?: StageResult
     commit?: string
+    commitDeferred?: boolean
     telemetry?: StageTelemetry | null
   }> {
     const { config, provider, git, workspaces, ledger: loadLedger } = this.deps
@@ -228,17 +234,20 @@ export class StageExecutor {
         ? { ...outcome.result, findings: [...corroboration.findings] }
         : outcome.result
 
-    const commit = await workspaces.commitStage(request.taskId, request.workspace, {
-      stageId: request.stageId,
-      role: request.role,
-      provider: provider.id,
-      attempt,
-    })
+    const commit = this.deps.deferCommit
+      ? null
+      : await workspaces.commitStage(request.taskId, request.workspace, {
+          stageId: request.stageId,
+          role: request.role,
+          provider: provider.id,
+          attempt,
+        })
 
     return {
       record: { attempt, ok: true, durationMs: outcome.durationMs },
       result,
-      commit: commit.committed ? commit.commit : undefined,
+      commit: commit?.committed ? commit.commit : undefined,
+      commitDeferred: this.deps.deferCommit,
       telemetry: outcome.telemetry,
     }
   }

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { createDb, type Database, stages, type Task, tasks } from '@specmate/db'
 import {
   ClaudeCodeProvider,
+  ConversationExecutor,
   LocalBackend,
   renderLedgerForTask,
   resolveRunnerConfig,
@@ -25,7 +26,7 @@ import {
   setStubEnv,
   tempDir,
 } from '../../../packages/runner/test/fixtures.ts'
-import { Engine, type StageDispatcher } from '../src/engine.ts'
+import { type ConversationDispatcher, Engine, type StageDispatcher } from '../src/engine.ts'
 import { taskRunnerEnvironment } from '../src/runner.ts'
 import { createTask } from '../src/store.ts'
 import { reload } from './fixtures.ts'
@@ -67,7 +68,7 @@ describeDb('the loop against a real repository', () => {
     }
   })
 
-  function makeEngine() {
+  function makeEngine(options: { beforeStage?: () => Promise<void> } = {}) {
     const manager = new WorkspaceManager({ config: { root } })
     const config = resolveRunnerConfig({
       backend: 'local',
@@ -77,17 +78,26 @@ describeDb('the loop against a real repository', () => {
       forwardEnv: STUB_ENV,
     })
     const backend = new LocalBackend(config)
+    const provider = new ClaudeCodeProvider({ config, backend })
     const service = new WorkspaceService(manager, db, (workspace, image) =>
       backend.resolveEnvironment(workspace.path, image),
     )
     const executor = new StageExecutor({
       config,
-      provider: new ClaudeCodeProvider({ config, backend }),
+      provider,
       git: new Git(manager.config),
       workspaces: service,
       ledger: (taskId) => renderLedgerForTask(db, config, taskId),
+      deferCommit: true,
+    })
+    const conversationExecutor = new ConversationExecutor({
+      config,
+      provider,
+      git: new Git(manager.config),
+      ledger: (taskId) => renderLedgerForTask(db, config, taskId),
     })
     const dispatcher: StageDispatcher = async ({ task, node, stageId, attempt, workspace }) => {
+      await options.beforeStage?.()
       const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
 
       return executor.execute({
@@ -101,16 +111,59 @@ describeDb('the loop against a real repository', () => {
         attempt,
       })
     }
+    const conversationDispatcher: ConversationDispatcher = async ({
+      task,
+      conversationId,
+      response,
+      ownerMessage,
+      context,
+      previousAnchorCommit,
+      previousTaskState,
+      currentAnchorCommit,
+      currentTaskState,
+      contextPath,
+      actionOptions,
+      attempt,
+      provider,
+      workspace,
+    }) => {
+      const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+
+      return conversationExecutor.execute({
+        taskId: task.id,
+        conversationId,
+        responseId: response.id,
+        message: ownerMessage.contentMd,
+        context,
+        previousAnchorCommit,
+        previousTaskState,
+        currentAnchorCommit,
+        currentTaskState,
+        contextPath,
+        actionOptions,
+        provider,
+        workspace,
+        baseBranch: task.baseBranch,
+        environment: taskRunnerEnvironment(current?.environment ?? null),
+        attempt,
+      })
+    }
 
     return new Engine({
       db,
       workspaces: {
         provision: (request) => service.provision({ ...request, image: config.image }),
-        discard: (workspace) => service.discard(workspace),
+        provisionConversation: (workspace, key) => service.provisionConversation(workspace, key),
+        releaseConversation: (task, key) =>
+          service.releaseConversation(task.slug, task.repoUrl, key),
+        discard: (workspace, commit) => service.discard(workspace, commit),
+        headCommit: (workspace) => service.headCommit(workspace),
+        commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
         release: (taskId) => service.release(taskId),
       },
       settings: { stageConcurrency: 1, stageAttemptCap: 2, availableProviders: ['claude-code'] },
       dispatcher,
+      conversationDispatcher,
     })
   }
 

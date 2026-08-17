@@ -38,8 +38,16 @@ export interface ExecResult {
   readonly timedOut: boolean
 }
 
+export interface ExecHandle {
+  /** Settles exactly once when the execution exits or is cancelled. */
+  readonly result: Promise<ExecResult>
+  /** Idempotently terminates only this execution and waits for settlement. */
+  cancel(): Promise<void>
+}
+
 export interface ExecBackend {
   readonly id: BackendId
+  start(spec: ExecSpec): ExecHandle
   run(spec: ExecSpec): Promise<ExecResult>
   resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment>
   /**
@@ -68,24 +76,30 @@ export interface SpawnOptions {
  * that started a test suite is the normal case, not the exception.
  */
 export async function spawnBounded(options: SpawnOptions): Promise<ExecResult> {
+  return spawnBoundedHandle(options).result
+}
+
+export function spawnBoundedHandle(options: SpawnOptions): ExecHandle {
   const [command, ...args] = options.argv
   if (!command) throw new Error('argv is empty')
 
   const started = Date.now()
 
-  return await new Promise<ExecResult>((settle, fail) => {
+  let done = false
+  let childPid: number | undefined
+  const result = new Promise<ExecResult>((settle, fail) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...options.env },
       detached: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    if (child.pid !== undefined) options.onSpawn?.(child.pid)
+    childPid = child.pid
+    if (childPid !== undefined) options.onSpawn?.(childPid)
 
     let stdout = ''
     let stderr = ''
     let timedOut = false
-    let done = false
 
     const capture = (current: string, chunk: Buffer): string =>
       current.length >= options.outputLimitBytes
@@ -128,6 +142,17 @@ export async function spawnBounded(options: SpawnOptions): Promise<ExecResult> {
     })
     child.stdin.end(options.stdin)
   })
+
+  return {
+    result,
+    async cancel() {
+      if (!done) killGroup(childPid)
+      await result.then(
+        () => undefined,
+        () => undefined,
+      )
+    },
+  }
 }
 
 function killGroup(pid: number | undefined): void {

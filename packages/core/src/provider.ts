@@ -42,6 +42,24 @@ export interface StageTelemetry {
   readonly raw: unknown
 }
 
+/**
+ * Durable usage for one agent attempt. Stage rows keep their timestamps in
+ * columns; non-stage runs can carry them inline without inventing a second
+ * telemetry shape.
+ */
+export interface ExecutionUsage {
+  readonly provider?: ProviderId | null
+  readonly model?: string | null
+  readonly startedAt?: string | null
+  readonly finishedAt?: string | null
+  readonly durationMs?: number | null
+  readonly tokens?: Readonly<Record<string, number>> | null
+  readonly costUsd?: number | null
+  readonly raw?: unknown
+  readonly contextPath?: 'stored' | 'cached' | 'reconstructed' | 'none'
+  readonly failure?: { readonly reason: string; readonly detail?: string } | null
+}
+
 export interface StageOutcome {
   readonly result: StageResult
   /** Raw CLI stdout/stderr, persisted for the UI log view. */

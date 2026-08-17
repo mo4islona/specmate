@@ -6,7 +6,14 @@ import { isDirectory, pathExists } from './fs.ts'
 import { Git } from './git.ts'
 import { withDiskLock, withKeyedMutex } from './lock.ts'
 import { ensureExcludes, ensureMirror, resolveBaseCommit } from './mirror.ts'
-import { changeDir, mirrorPath, SCHEMA_MARKER, taskBranch, worktreePath } from './paths.ts'
+import {
+  changeDir,
+  conversationWorktreePath,
+  mirrorPath,
+  SCHEMA_MARKER,
+  taskBranch,
+  worktreePath,
+} from './paths.ts'
 
 export interface ProvisionRequest {
   readonly slug: string
@@ -23,6 +30,20 @@ export interface Workspace {
   /** Change folder, relative to the working tree (see `StageJob.changeDir`). */
   readonly changeDir: string
   readonly mirrorPath: string
+}
+
+/** A clean, detached snapshot destroyed after one conversation response attempt. */
+export interface ConversationWorkspace extends Workspace {
+  readonly kind: 'conversation'
+  readonly key: string
+  readonly sourceBranch: string
+}
+
+export class InvalidConversationWorkspaceKeyError extends Error {
+  constructor(key: string) {
+    super(`conversation workspace key is not safe: ${JSON.stringify(key)}`)
+    this.name = 'InvalidConversationWorkspaceKeyError'
+  }
 }
 
 export interface StageRef {
@@ -88,27 +109,83 @@ export class WorkspaceManager {
     })
   }
 
-  async commitStage(workspace: Workspace, stage: StageRef): Promise<CommitOutcome> {
-    await this.git.run(['add', '-A'], { cwd: workspace.path })
-    const status = await this.git.run(['status', '--porcelain=v1', '-z'], { cwd: workspace.path })
-    const files = parseStatus(status.stdout)
-    if (files.length === 0) return { committed: false }
+  /**
+   * Checks out the task's current commit into a clean detached worktree. The
+   * primary task branch remains available to stages, and deleting this tree
+   * removes every transcript, ignored file, edit, and commit a response made.
+   */
+  async provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace> {
+    assertConversationWorkspaceKey(key)
+    const path = conversationWorktreePath(this.config, workspace.slug, key)
 
-    const subject = `chore(${workspace.slug}): ${stage.role} stage output`
-    const trailers = [
-      `Task: ${workspace.slug}`,
-      `Stage: ${stage.stageId}`,
-      `Role: ${stage.role}`,
-      `Provider: ${stage.provider}`,
-      `Attempt: ${stage.attempt}`,
-    ].join('\n')
-    // Target repositories are foreign property: their hooks may lint, rewrite,
-    // or refuse, and a stage's durability must not depend on them.
-    await this.git.run(['commit', '--no-verify', '-m', subject, '-m', trailers], {
-      cwd: workspace.path,
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
+      await this.removeWorktree(workspace.mirrorPath, path)
+      await mkdir(dirname(path), { recursive: true })
+      try {
+        await this.git.inMirror(workspace.mirrorPath, [
+          'worktree',
+          'add',
+          '--detach',
+          path,
+          head.stdout.trim(),
+        ])
+      } catch (error) {
+        await this.removeWorktree(workspace.mirrorPath, path)
+        throw error
+      }
+
+      return {
+        ...workspace,
+        kind: 'conversation',
+        key,
+        sourceBranch: workspace.branch,
+        branch: head.stdout.trim(),
+        path,
+      }
     })
-    const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
-    return { committed: true, commit: head.stdout.trim(), files }
+  }
+
+  /** Removes a disposable conversation checkout and commits reachable only from it. */
+  async releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
+    assertConversationWorkspaceKey(key)
+    const path = conversationWorktreePath(this.config, slug, key)
+    const mirror = mirrorPath(this.config, repoUrl)
+
+    await this.withMirrorLock(mirror, async () => {
+      await this.removeWorktree(mirror, path)
+    })
+  }
+
+  /**
+   * Mirror-locked like every other method touching `workspace.path`: a task's
+   * stage and its conversation responses now dispatch concurrently and share
+   * this one worktree, so a commit racing a conversation's HEAD read (or
+   * another commit, or a discard) is a real TOCTOU otherwise.
+   */
+  async commitStage(workspace: Workspace, stage: StageRef): Promise<CommitOutcome> {
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      await this.git.run(['add', '-A'], { cwd: workspace.path })
+      const status = await this.git.run(['status', '--porcelain=v1', '-z'], { cwd: workspace.path })
+      const files = parseStatus(status.stdout)
+      if (files.length === 0) return { committed: false }
+
+      const subject = `chore(${workspace.slug}): ${stage.role} stage output`
+      const trailers = [
+        `Task: ${workspace.slug}`,
+        `Stage: ${stage.stageId}`,
+        `Role: ${stage.role}`,
+        `Provider: ${stage.provider}`,
+        `Attempt: ${stage.attempt}`,
+      ].join('\n')
+      // Target repositories are foreign property: their hooks may lint, rewrite,
+      // or refuse, and a stage's durability must not depend on them.
+      await this.git.run(['commit', '--no-verify', '-m', subject, '-m', trailers], {
+        cwd: workspace.path,
+      })
+      const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
+      return { committed: true, commit: head.stdout.trim(), files }
+    })
   }
 
   /**
@@ -117,9 +194,19 @@ export class WorkspaceManager {
    * result — is the evidence a human is shown, and excluded paths are exactly
    * what `-x` would delete.
    */
-  async discard(workspace: Workspace): Promise<void> {
-    await this.git.run(['reset', '--hard', '--quiet', 'HEAD'], { cwd: workspace.path })
-    await this.git.run(['clean', '-fdq'], { cwd: workspace.path })
+  async discard(workspace: Workspace, commit = 'HEAD'): Promise<void> {
+    await this.withMirrorLock(workspace.mirrorPath, async () => {
+      await this.git.run(['reset', '--hard', '--quiet', commit], { cwd: workspace.path })
+      await this.git.run(['clean', '-fdq'], { cwd: workspace.path })
+    })
+  }
+
+  async headCommit(workspace: Workspace): Promise<string> {
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
+
+      return head.stdout.trim()
+    })
   }
 
   /** Removes the working tree; the branch and its commits stay in the cache. */
@@ -172,6 +259,14 @@ export class WorkspaceManager {
     await this.git.inMirror(mirror, ['worktree', 'add', path, branch])
   }
 
+  private async removeWorktree(mirror: string, path: string): Promise<void> {
+    if (await pathExists(path)) {
+      await this.git.tryInMirror(mirror, ['worktree', 'remove', '--force', path])
+      await rm(path, { recursive: true, force: true })
+    }
+    if (await isDirectory(mirror)) await this.git.tryInMirror(mirror, ['worktree', 'prune'])
+  }
+
   private async isCheckoutOf(path: string, branch: string): Promise<boolean> {
     if (!(await isDirectory(path))) return false
     const head = await this.git.tryRun(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path })
@@ -199,4 +294,10 @@ function parseStatus(raw: string): string[] {
     files.push(entry.slice(3))
   }
   return files
+}
+
+function assertConversationWorkspaceKey(key: string): void {
+  if (key === '.' || key === '..' || !/^[a-zA-Z0-9._-]+$/.test(key)) {
+    throw new InvalidConversationWorkspaceKeyError(key)
+  }
 }

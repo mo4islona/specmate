@@ -8,6 +8,8 @@ export const SCHEMA_MARKER = '.openspec.yaml'
 export const RESULT_FILE = 'RESULT.json'
 /** Per-stage logs and other runner scratch. */
 export const SCRATCH_DIR = '.specmate'
+/** Conversational run product, kept inside the per-attempt scratch directory. */
+export const CONVERSATION_FILE = 'CONVERSATION.json'
 
 /**
  * Two remotes can spell the same repository (`git@host:org/repo.git`,
@@ -38,6 +40,15 @@ export function mirrorPath(config: WorkspaceConfig, repoUrl: string): string {
 
 export function worktreePath(config: WorkspaceConfig, slug: string): string {
   return join(config.root, 'tasks', slug)
+}
+
+/** Disposable detached checkout used by one conversation response attempt. */
+export function conversationWorktreePath(
+  config: WorkspaceConfig,
+  slug: string,
+  key: string,
+): string {
+  return join(config.root, 'conversations', slug, key)
 }
 
 export function taskBranch(slug: string): string {

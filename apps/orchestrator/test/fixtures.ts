@@ -1,20 +1,39 @@
 import { type Caps, StageResult, type TaskState } from '@specmate/core'
 import type { Database, Task } from '@specmate/db'
 import { tasks } from '@specmate/db'
-import type { StageExecution } from '@specmate/runner'
-import type { Workspace } from '@specmate/workspace'
+import type { ConversationExecution, StageExecution } from '@specmate/runner'
+import type { ConversationWorkspace, Workspace } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
-import type { EngineWorkspaces, StageDispatch, StageDispatcher } from '../src/engine.ts'
+import type {
+  ConversationDispatch,
+  ConversationDispatcher,
+  EngineWorkspaces,
+  StageDispatch,
+  StageDispatcher,
+} from '../src/engine.ts'
 import { createTask, type RunGraphRow } from '../src/store.ts'
 
 export interface FakeWorkspaces {
-  readonly calls: { provisioned: string[]; discarded: string[]; released: string[] }
+  readonly calls: {
+    provisioned: string[]
+    conversationProvisioned: string[]
+    conversationReleased: string[]
+    discarded: string[]
+    released: string[]
+  }
   readonly workspaces: EngineWorkspaces
+  failNextConversationRelease(error?: Error): void
 }
 
 /** In-memory stand-in: the engine's workspace contract without git or disk. */
 export function fakeWorkspaces(): FakeWorkspaces {
-  const calls = { provisioned: [] as string[], discarded: [] as string[], released: [] as string[] }
+  const calls = {
+    provisioned: [] as string[],
+    conversationProvisioned: [] as string[],
+    conversationReleased: [] as string[],
+    discarded: [] as string[],
+    released: [] as string[],
+  }
   const workspace = (slug: string): Workspace => ({
     slug,
     repoUrl: 'file:///dev/null',
@@ -23,13 +42,36 @@ export function fakeWorkspaces(): FakeWorkspaces {
     changeDir: `openspec/changes/${slug}`,
     mirrorPath: '/tmp/fake-mirror',
   })
+  let conversationReleaseFailure: Error | undefined
 
   return {
     calls,
+    failNextConversationRelease(error = new Error('conversation cleanup failed')) {
+      conversationReleaseFailure = error
+    },
     workspaces: {
       async provision(request) {
         calls.provisioned.push(request.slug)
         return workspace(request.slug)
+      },
+      async provisionConversation(primary, key): Promise<ConversationWorkspace> {
+        calls.conversationProvisioned.push(key)
+        return {
+          ...primary,
+          kind: 'conversation',
+          key,
+          sourceBranch: primary.branch,
+          branch: 'fake-conversation-head',
+          path: `${primary.path}/conversations/${key}`,
+        }
+      },
+      async releaseConversation(_task, key) {
+        calls.conversationReleased.push(key)
+        if (conversationReleaseFailure) {
+          const error = conversationReleaseFailure
+          conversationReleaseFailure = undefined
+          throw error
+        }
       },
       async discard(ws) {
         calls.discarded.push(ws.slug)
@@ -59,6 +101,35 @@ export function fakeDispatcher(): FakeDispatcher {
     },
     dispatcher: async (dispatch) => {
       dispatches.push(dispatch)
+      return next(dispatch)
+    },
+  }
+}
+
+export interface FakeConversationDispatcher {
+  readonly dispatches: ConversationDispatch[]
+  readonly dispatcher: ConversationDispatcher
+  plan(
+    next: (
+      dispatch: ConversationDispatch,
+    ) => Promise<ConversationExecution> | ConversationExecution,
+  ): void
+}
+
+export function fakeConversationDispatcher(): FakeConversationDispatcher {
+  const dispatches: ConversationDispatch[] = []
+  let next: (
+    dispatch: ConversationDispatch,
+  ) => Promise<ConversationExecution> | ConversationExecution = () => okConversationExecution()
+
+  return {
+    dispatches,
+    plan(fn) {
+      next = fn
+    },
+    dispatcher: async (dispatch) => {
+      dispatches.push(dispatch)
+
       return next(dispatch)
     },
   }
@@ -96,6 +167,32 @@ export function failedExecution(failure = 'provider_error', detail = 'boom'): St
     attempts: [{ attempt: 0, ok: false, durationMs: 5 }],
     failure: failure as StageExecution['failure'],
     detail,
+  }
+}
+
+export function okConversationExecution(message = 'The fixture response.'): ConversationExecution {
+  return {
+    status: 'succeeded',
+    message,
+    actions: [],
+    durationMs: 25,
+    telemetry: {
+      model: 'stub-model-1',
+      tokens: { input_tokens: 40, output_tokens: 12 },
+      costUsd: 0.02,
+      raw: { type: 'result' },
+    },
+  }
+}
+
+export function failedConversationExecution(
+  failure: ConversationExecution['failure'] = 'provider_error',
+): ConversationExecution {
+  return {
+    status: 'failed',
+    failure,
+    detail: 'fixture conversation response failed',
+    durationMs: 10,
   }
 }
 

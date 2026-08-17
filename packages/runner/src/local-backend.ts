@@ -2,7 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { ExecutionEnvironment } from '@specmate/core'
-import { type ExecBackend, type ExecResult, type ExecSpec, spawnBounded } from './backend.ts'
+import {
+  type ExecBackend,
+  type ExecHandle,
+  type ExecResult,
+  type ExecSpec,
+  spawnBoundedHandle,
+} from './backend.ts'
 import type { RunnerConfig } from './config.ts'
 
 /**
@@ -31,22 +37,28 @@ export class LocalBackend implements ExecBackend {
    * orchestrator crash. The pid file is what lets the restart sweep find and
    * kill it — the local counterpart of a container label.
    */
-  async run(spec: ExecSpec): Promise<ExecResult> {
+  start(spec: ExecSpec): ExecHandle {
     const pidFile = this.pidFile(spec)
+    const execution = spawnBoundedHandle({
+      argv: spec.argv,
+      stdin: spec.stdin,
+      cwd: spec.workspacePath,
+      env: this.env(spec),
+      timeoutMs: spec.timeoutMs,
+      outputLimitBytes: this.config.logBytesLimit,
+      onSpawn: pidFile ? (pid) => recordAgentPid(pidFile, pid, spec.labels ?? {}) : undefined,
+    })
 
-    try {
-      return await spawnBounded({
-        argv: spec.argv,
-        stdin: spec.stdin,
-        cwd: spec.workspacePath,
-        env: this.env(spec),
-        timeoutMs: spec.timeoutMs,
-        outputLimitBytes: this.config.logBytesLimit,
-        onSpawn: pidFile ? (pid) => recordAgentPid(pidFile, pid, spec.labels ?? {}) : undefined,
-      })
-    } finally {
-      if (pidFile) await rm(pidFile, { force: true })
+    return {
+      result: execution.result.finally(async () => {
+        if (pidFile) await rm(pidFile, { force: true })
+      }),
+      cancel: () => execution.cancel(),
     }
+  }
+
+  run(spec: ExecSpec): Promise<ExecResult> {
+    return this.start(spec).result
   }
 
   private pidFile(spec: ExecSpec): string | null {

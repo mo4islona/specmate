@@ -5,6 +5,7 @@ import { Git } from './git.ts'
 import { type IndexedArtifact, indexChangeFolder } from './index-artifacts.ts'
 import type {
   CommitOutcome,
+  ConversationWorkspace,
   ProvisionRequest,
   StageRef,
   Workspace,
@@ -109,6 +110,7 @@ export class WorkspaceService {
   async commitStage(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit> {
     const outcome = await this.manager.commitStage(workspace, stage)
     if (!outcome.committed) return outcome
+
     const indexed = await indexChangeFolder(this.db, this.git, this.manager.config, {
       taskId,
       workspace,
@@ -117,13 +119,26 @@ export class WorkspaceService {
     return { ...outcome, indexed }
   }
 
-  discard(workspace: Workspace): Promise<void> {
-    return this.manager.discard(workspace)
+  provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace> {
+    return this.manager.provisionConversation(workspace, key)
+  }
+
+  releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
+    return this.manager.releaseConversation(slug, repoUrl, key)
+  }
+
+  discard(workspace: Workspace, commit?: string): Promise<void> {
+    return this.manager.discard(workspace, commit)
+  }
+
+  headCommit(workspace: Workspace): Promise<string> {
+    return this.manager.headCommit(workspace)
   }
 
   async release(taskId: string): Promise<void> {
     const task = await this.loadTask(taskId)
     if (!isTerminal(task.status)) throw new WorkspaceBusyError(taskId, task.status)
+
     await this.manager.release(task.slug, task.repoUrl)
   }
 

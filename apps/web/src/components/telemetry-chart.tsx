@@ -8,10 +8,25 @@ import {
   YAxis,
 } from '@wick-charts/react'
 import { useEffect, useState } from 'react'
-import type { TaskDetail } from '../lib/api-client.ts'
+import type { ConversationMessage, TaskDetail } from '../lib/api-client.ts'
 
 type Stage = TaskDetail['stages'][number]
 type ChartTheme = ReturnType<typeof createTheme>['theme']
+
+export interface TelemetryAttempt {
+  readonly id: string
+  readonly kind: 'stage' | 'conversation'
+  readonly label: string
+  readonly provider: string
+  readonly model: string | null
+  readonly startedAt: string | Date | null
+  readonly finishedAt: string | Date | null
+  readonly durationMs: number | null
+  readonly tokens: Readonly<Record<string, number>> | null
+  readonly costUsd: number | null
+  readonly sortAt: number
+  readonly sequence: number
+}
 
 const CHART_START = Date.UTC(2026, 0, 1)
 const CHART_STEP_MS = 60_000
@@ -65,45 +80,126 @@ function useMissionControlChartTheme(): ChartTheme | null {
   return theme
 }
 
-function durationSeconds(stage: Stage): number | null {
-  const started = stage.telemetry?.startedAt
-  const finished = stage.telemetry?.finishedAt
-  if (!started || !finished) {
+function timestamp(value: string | Date | null | undefined): number | null {
+  if (!value) return null
+
+  const parsed = new Date(value).getTime()
+
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function durationSeconds(attempt: TelemetryAttempt): number | null {
+  if (attempt.durationMs !== null) return Math.max(0, attempt.durationMs / 1_000)
+
+  const started = timestamp(attempt.startedAt)
+  const finished = timestamp(attempt.finishedAt)
+  if (started === null || finished === null) {
     return null
   }
 
-  return Math.max(0, (new Date(finished).getTime() - new Date(started).getTime()) / 1_000)
+  return Math.max(0, (finished - started) / 1_000)
 }
 
-export function TelemetryChart({ stages }: { stages: Stage[] }) {
+export function buildTelemetryAttempts(
+  stages: Stage[],
+  messages: ConversationMessage[],
+): TelemetryAttempt[] {
+  const attempts: TelemetryAttempt[] = []
+  let sequence = 0
+  for (const stage of stages) {
+    // Gated on telemetry alone, not startedAt: a stage that has started but
+    // has no telemetry yet (running, or finished without ever recording any)
+    // belongs only in the caller's `absent` list — including it here too
+    // would show the same attempt in both the chart and the "no telemetry"
+    // footer at once.
+    if (!stage.telemetry) continue
+    attempts.push({
+      id: `stage:${stage.id}`,
+      kind: 'stage',
+      label: `${stage.nodeKey} / attempt ${stage.attempt}`,
+      provider: stage.provider,
+      model: stage.telemetry.model ?? null,
+      startedAt: stage.telemetry.startedAt ?? stage.startedAt,
+      finishedAt: stage.telemetry.finishedAt ?? stage.finishedAt,
+      durationMs: null,
+      tokens: stage.telemetry.tokens ?? null,
+      costUsd: stage.telemetry.costUsd ?? null,
+      sortAt:
+        timestamp(stage.telemetry.startedAt ?? stage.startedAt) ??
+        timestamp(stage.createdAt) ??
+        Number.MAX_SAFE_INTEGER,
+      sequence,
+    })
+    sequence += 1
+  }
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+    for (const [attempt, telemetry] of message.telemetry.entries()) {
+      attempts.push({
+        id: `conversation:${message.id}:${attempt}`,
+        kind: 'conversation',
+        label: `Conversation / attempt ${attempt + 1}`,
+        provider: telemetry.provider ?? 'answerer',
+        model: telemetry.model ?? null,
+        startedAt: telemetry.startedAt ?? null,
+        finishedAt: telemetry.finishedAt ?? null,
+        durationMs: telemetry.durationMs ?? null,
+        tokens: telemetry.tokens ?? null,
+        costUsd: telemetry.costUsd ?? null,
+        sortAt:
+          timestamp(telemetry.startedAt) ?? timestamp(message.createdAt) ?? Number.MAX_SAFE_INTEGER,
+        sequence,
+      })
+      sequence += 1
+    }
+  }
+
+  return attempts.sort(
+    (left, right) => left.sortAt - right.sortAt || left.sequence - right.sequence,
+  )
+}
+
+export function TelemetryChart({
+  stages,
+  messages,
+}: {
+  stages: Stage[]
+  messages: ConversationMessage[]
+}) {
   const theme = useMissionControlChartTheme()
-  const recorded = stages.filter((stage) => stage.telemetry !== null)
+  const recorded = buildTelemetryAttempts(stages, messages)
   const absent = stages.filter((stage) => stage.telemetry === null)
-  const tokenKinds = [
-    ...new Set(recorded.flatMap((stage) => Object.keys(stage.telemetry?.tokens ?? {}))),
-  ]
+  const tokenKinds = [...new Set(recorded.flatMap((attempt) => Object.keys(attempt.tokens ?? {})))]
   const colors = theme?.seriesColors ?? []
   const tokenLayers = tokenKinds.map((kind) =>
-    recorded.map((stage, index) => ({
+    recorded.map((attempt, index) => ({
       time: CHART_START + index * CHART_STEP_MS,
-      value: stage.telemetry?.tokens?.[kind] ?? 0,
+      value: attempt.tokens?.[kind] ?? 0,
     })),
   )
-  const durations = recorded.flatMap((stage, index) => {
-    const duration = durationSeconds(stage)
+  const durations = recorded.flatMap((attempt, index) => {
+    const duration = durationSeconds(attempt)
 
     return duration === null ? [] : [{ time: CHART_START + index * CHART_STEP_MS, value: duration }]
   })
   const hasChartData = tokenLayers.length > 0 || durations.length > 0
+  const recordedCost = recorded.reduce(
+    (total, attempt) => total + (attempt.costUsd === null ? 0 : attempt.costUsd),
+    0,
+  )
+  const absentCostCount = recorded.filter((attempt) => attempt.costUsd === null).length
 
   return (
     <section className="panel p-4 sm:p-5">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
-          <p className="micro-label text-cyan">Stage telemetry</p>
+          <p className="micro-label text-cyan">Task telemetry</p>
           <h2 className="mt-2 text-lg font-semibold">Budget trace by attempt</h2>
         </div>
-        <p className="font-mono text-xs text-muted">stacked tokens · duration seconds</p>
+        <p className="font-mono text-xs text-muted">
+          ${recordedCost.toFixed(4)} recorded
+          {absentCostCount > 0 ? ` · ${absentCostCount} cost absent` : ''}
+        </p>
       </div>
 
       {recorded.length === 0 ? (
@@ -125,7 +221,7 @@ export function TelemetryChart({ stages }: { stages: Stage[] }) {
               >
                 {tokenLayers.length > 0 && (
                   <BarSeries
-                    id="stage-tokens"
+                    id="task-tokens"
                     data={tokenLayers}
                     label="Tokens"
                     options={{ colors, stacking: 'normal', barWidthRatio: 0.65 }}
@@ -133,7 +229,7 @@ export function TelemetryChart({ stages }: { stages: Stage[] }) {
                 )}
                 {durations.length > 0 && (
                   <LineSeries
-                    id="stage-duration"
+                    id="task-duration"
                     data={[durations]}
                     label="Duration (s)"
                     options={{
@@ -167,25 +263,25 @@ export function TelemetryChart({ stages }: { stages: Stage[] }) {
           </div>
 
           <ol className="space-y-2 font-mono text-xs">
-            {recorded.map((stage) => {
-              const duration = durationSeconds(stage)
-              const totalTokens = Object.values(stage.telemetry?.tokens ?? {}).reduce(
-                (total, value) => total + value,
-                0,
-              )
+            {recorded.map((attempt) => {
+              const duration = durationSeconds(attempt)
+              const totalTokens = attempt.tokens
+                ? Object.values(attempt.tokens).reduce((total, value) => total + value, 0)
+                : null
 
               return (
-                <li key={stage.id} className="border border-border bg-ground/45 p-3">
-                  <p className="truncate text-text">
-                    {stage.nodeKey} / attempt {stage.attempt}
+                <li key={attempt.id} className="border border-border bg-ground/45 p-3">
+                  <p className="truncate text-text">{attempt.label}</p>
+                  <p className="mt-1 text-muted">
+                    {totalTokens === null
+                      ? 'tokens absent'
+                      : `${totalTokens.toLocaleString()} tokens`}{' '}
+                    · {duration === null ? 'duration absent' : `${duration.toFixed(1)}s`}
                   </p>
                   <p className="mt-1 text-muted">
-                    {totalTokens.toLocaleString()} tokens ·{' '}
-                    {duration === null ? 'duration absent' : `${duration.toFixed(1)}s`}
+                    {attempt.costUsd === null ? 'cost absent' : `$${attempt.costUsd.toFixed(4)}`}
                   </p>
-                  <p className="mt-1 truncate text-cyan">
-                    {stage.telemetry?.model ?? stage.provider}
-                  </p>
+                  <p className="mt-1 truncate text-cyan">{attempt.model ?? attempt.provider}</p>
                 </li>
               )
             })}

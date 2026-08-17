@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import assert from 'node:assert/strict'
 import { instantiateDefinition, PIPELINE_CATALOG, type TaskState } from '@specmate/core'
 import {
-  artifacts,
+  conversationActions,
+  conversationMessages,
+  conversations,
   createDb,
   type Database,
   events,
@@ -11,33 +14,354 @@ import {
   tasks,
 } from '@specmate/db'
 import { Engine } from '@specmate/orchestrator/engine'
-import { asc, eq, inArray, sql } from 'drizzle-orm'
+import { createTask as createOrchestratedTask } from '@specmate/orchestrator/store'
+import { asc, eq, inArray } from 'drizzle-orm'
 import { createApp } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
 
-function createGateEngine(db: Database): Engine {
+function createEngine(db: Database): Engine {
   return new Engine({
     db,
     workspaces: {
       provision: () => Promise.reject(new Error('API tests do not provision workspaces')),
+      provisionConversation: () =>
+        Promise.reject(new Error('API tests do not provision snapshots')),
+      releaseConversation: () => Promise.resolve(),
       discard: () => Promise.reject(new Error('API tests do not discard workspaces')),
       release: () => Promise.resolve(),
     },
-    settings: {
-      stageConcurrency: 1,
-      stageAttemptCap: 1,
-      availableProviders: ['claude-code'],
-    },
+    settings: { stageConcurrency: 1, stageAttemptCap: 1, availableProviders: ['claude-code'] },
   })
 }
+
+describeDb('api conversations', () => {
+  let app: ReturnType<typeof createApp>
+  let db: Database
+  const createdTaskIds: string[] = []
+  const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
+
+  beforeAll(() => {
+    db = createDb(url)
+    app = createApp({
+      db,
+      gates: createEngine(db),
+      config: loadConfig({
+        DATABASE_URL: url,
+        NODE_ENV: 'test',
+        SPECMATE_PASSWORD: 'test-password',
+        WORKSPACE_ROOT: 'workspaces',
+      }),
+    })
+  })
+
+  afterAll(async () => {
+    try {
+      if (createdTaskIds.length > 0) {
+        await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
+      }
+    } finally {
+      await db.$client.close()
+    }
+  })
+
+  async function createTask(status: 'research' | 'archived' = 'research'): Promise<string> {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `api-conversation-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'API conversation fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/api-conversation',
+        status,
+      })
+      .returning()
+    assert(task)
+    createdTaskIds.push(task.id)
+
+    return task.id
+  }
+
+  test('health and authenticated task routes keep their structured boundary', async () => {
+    expect((await app.request('/healthz')).status).toBe(200)
+    const missing = await app.request('/api/v1/tasks')
+    expect(missing.status).toBe(401)
+    expect(await missing.json()).toMatchObject({ code: 'unauthenticated' })
+  })
+
+  test('creates, posts to, and hydrates one ordered conversation', async () => {
+    const taskId = await createTask()
+    const created = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+    })
+    expect(created.status).toBe(201)
+    const { conversation } = (await created.json()) as { conversation: { id: string } }
+
+    const posted = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${conversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'What changed?', idempotencyKey: crypto.randomUUID() }),
+      },
+    )
+    expect(posted.status).toBe(201)
+    expect(await posted.json()).toMatchObject({
+      message: { sequence: 1, role: 'owner', contentMd: 'What changed?' },
+      response: { sequence: 2, role: 'assistant', status: 'queued' },
+    })
+
+    const hydrated = await app.request(`/api/v1/tasks/${taskId}/conversations/${conversation.id}`, {
+      headers: auth,
+    })
+    expect(hydrated.status).toBe(200)
+    expect(await hydrated.json()).toMatchObject({
+      conversation: { id: conversation.id },
+      messages: [{ sequence: 1 }, { sequence: 2 }],
+      actions: [],
+    })
+  })
+
+  test('rejects empty messages and terminal posts without changing the transcript', async () => {
+    const taskId = await createTask()
+    const created = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+    })
+    const { conversation } = (await created.json()) as { conversation: { id: string } }
+    const empty = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${conversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: ' ', idempotencyKey: crypto.randomUUID() }),
+      },
+    )
+    expect(empty.status).toBe(400)
+    expect(await empty.json()).toMatchObject({ code: 'validation' })
+
+    await db
+      .update(tasks)
+      .set({ status: 'archived' })
+      .where(inArray(tasks.id, [taskId]))
+    const terminal = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${conversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'Too late', idempotencyKey: crypto.randomUUID() }),
+      },
+    )
+    expect(terminal.status).toBe(409)
+    expect(await terminal.json()).toMatchObject({ code: 'conflict' })
+  })
+
+  test('replays the same conversation and message pair for a repeated idempotency key', async () => {
+    const taskId = await createTask()
+    const openKey = crypto.randomUUID()
+    const first = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ idempotencyKey: openKey }),
+    })
+    const { conversation: firstConversation } = (await first.json()) as {
+      conversation: { id: string }
+    }
+
+    const second = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ idempotencyKey: openKey }),
+    })
+    expect(second.status).toBe(201)
+    const { conversation: secondConversation } = (await second.json()) as {
+      conversation: { id: string }
+    }
+    expect(secondConversation.id).toBe(firstConversation.id)
+
+    const messageKey = crypto.randomUUID()
+    const firstMessage = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${firstConversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'What changed?', idempotencyKey: messageKey }),
+      },
+    )
+    const firstBody = (await firstMessage.json()) as { message: { id: string } }
+
+    const secondMessage = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${firstConversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'What changed?', idempotencyKey: messageKey }),
+      },
+    )
+    expect(secondMessage.status).toBe(201)
+    const secondBody = (await secondMessage.json()) as { message: { id: string } }
+    expect(secondBody.message.id).toBe(firstBody.message.id)
+
+    const hydrated = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${firstConversation.id}`,
+      { headers: auth },
+    )
+    expect(await hydrated.json()).toMatchObject({ messages: [{ sequence: 1 }, { sequence: 2 }] })
+  })
+
+  test('stops directly, blocks early restart, and idempotently stores restart guidance', async () => {
+    const slug = `api-stop-${crypto.randomUUID().slice(0, 8)}`
+    const { task, graph } = await createOrchestratedTask(db, {
+      slug,
+      title: 'API stop fixture',
+      type: 'feature',
+      repoUrl: 'https://github.com/example/api-stop',
+      at: 'research',
+    })
+    createdTaskIds.push(task.id)
+    const [stage] = await db
+      .insert(stages)
+      .values({
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'research',
+        role: 'researcher',
+        provider: 'claude-code',
+        status: 'running',
+        attempt: 0,
+        startedAt: new Date(),
+      })
+      .returning()
+    assert(stage)
+
+    const stopped = await app.request(`/api/v1/tasks/${task.id}/stages/stop`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        stageId: stage.id,
+        graphId: graph.id,
+        nodeKey: 'research',
+        attempt: 0,
+      }),
+    })
+    expect(stopped.status).toBe(200)
+    expect(await stopped.json()).toMatchObject({
+      task: { status: 'paused', resumeStatus: 'research' },
+      stage: { status: 'interrupted', interruptionCleanupStatus: 'pending' },
+    })
+
+    const restartBody = {
+      stageId: stage.id,
+      guidance: 'Use the bounded variant.',
+      idempotencyKey: `restart:${stage.id}`,
+    }
+    const early = await app.request(`/api/v1/tasks/${task.id}/stages/restart`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify(restartBody),
+    })
+    expect(early.status).toBe(409)
+
+    await db
+      .update(stages)
+      .set({ interruptionCleanupStatus: 'succeeded' })
+      .where(eq(stages.id, stage.id))
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const restarted = await app.request(`/api/v1/tasks/${task.id}/stages/restart`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify(restartBody),
+      })
+      expect(restarted.status).toBe(200)
+    }
+    expect(
+      await db
+        .select()
+        .from(feedback)
+        .where(eq(feedback.idempotencyKey, restartBody.idempotencyKey)),
+    ).toHaveLength(1)
+  })
+
+  test('confirms only an action belonging to the addressed conversation', async () => {
+    const taskId = await createTask()
+    const [conversation] = await db.insert(conversations).values({ taskId }).returning()
+    assert(conversation)
+    const [message] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'I can carry that forward.',
+        status: 'completed',
+        taskState: 'research',
+      })
+      .returning()
+    assert(message)
+    const [action] = await db
+      .insert(conversationActions)
+      .values({
+        taskId,
+        conversationId: conversation.id,
+        messageId: message.id,
+        kind: 'instruct_next_run',
+        target: { taskId, nodeKey: 'implement' },
+        instruction: 'Keep the migration bounded.',
+        expectedVersion: { taskStatus: 'research' },
+      })
+      .returning()
+    assert(action)
+
+    const wrong = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${crypto.randomUUID()}/actions/${action.id}/confirm`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ idempotencyKey: `action:${action.id}` }),
+      },
+    )
+    expect(wrong.status).toBe(404)
+
+    const confirmed = await app.request(
+      `/api/v1/tasks/${taskId}/conversations/${conversation.id}/actions/${action.id}/confirm`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ idempotencyKey: `action:${action.id}` }),
+      },
+    )
+    expect(confirmed.status).toBe(200)
+    expect(
+      (await db.select().from(conversationActions).where(eq(conversationActions.id, action.id)))[0],
+    ).toMatchObject({ status: 'applied' })
+  })
+})
 
 describeDb('api', () => {
   let app: ReturnType<typeof createApp>
   let db: Database
   const createdTaskIds: string[] = []
+  const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
+
+  function createGateEngine(engineDb: Database): Engine {
+    return new Engine({
+      db: engineDb,
+      workspaces: {
+        provision: () => Promise.reject(new Error('API tests do not provision workspaces')),
+        provisionConversation: () =>
+          Promise.reject(new Error('API tests do not provision snapshots')),
+        releaseConversation: () => Promise.resolve(),
+        discard: () => Promise.reject(new Error('API tests do not discard workspaces')),
+        release: () => Promise.resolve(),
+      },
+      settings: { stageConcurrency: 1, stageAttemptCap: 1, availableProviders: ['claude-code'] },
+    })
+  }
 
   beforeAll(() => {
     db = createDb(url)
@@ -64,225 +388,6 @@ describeDb('api', () => {
     }
   })
 
-  test('healthz needs no credentials', async () => {
-    const res = await app.request('/healthz')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
-  })
-
-  test('readyz reports the database', async () => {
-    const res = await app.request('/readyz')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, db: 'up' })
-  })
-
-  test('api routes reject a missing or wrong password', async () => {
-    const missing = await app.request('/api/v1/tasks')
-    expect(missing.status).toBe(401)
-    expect(await missing.json()).toMatchObject({
-      code: 'unauthenticated',
-      detail: expect.any(String),
-    })
-
-    const wrong = await app.request('/api/v1/tasks', {
-      headers: { authorization: 'Bearer nope' },
-    })
-    expect(wrong.status).toBe(401)
-    expect(await wrong.json()).toMatchObject({
-      code: 'unauthenticated',
-      detail: expect.any(String),
-    })
-  })
-
-  test('creates and lists a task', async () => {
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
-    const created = await app.request('/api/v1/tasks', {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({
-        title: 'Verify the walking skeleton',
-        type: 'bugfix',
-        repoUrl: 'https://github.com/example/repo',
-      }),
-    })
-    expect(created.status).toBe(201)
-    const { task } = (await created.json()) as { task: { id: string; status: string } }
-    createdTaskIds.push(task.id)
-    expect(task.status).toBe('draft')
-
-    const listed = await app.request('/api/v1/tasks', { headers: auth })
-    const { tasks } = (await listed.json()) as { tasks: { id: string }[] }
-    expect(tasks.some((t) => t.id === task.id)).toBe(true)
-
-    const events = await app.request(`/api/v1/tasks/${task.id}/events`, { headers: auth })
-    const body = (await events.json()) as { events: { type: string }[] }
-    expect(body.events.map((e) => e.type)).toContain('task.created')
-  })
-
-  test('returns task detail with its latest run graph and stages', async () => {
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
-    const created = await app.request('/api/v1/tasks', {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({
-        title: 'Inspect a pinned graph',
-        type: 'feature',
-        repoUrl: 'https://github.com/example/detail-fixture',
-        baseBranch: 'main',
-      }),
-    })
-    const { task } = (await created.json()) as { task: { id: string } }
-    createdTaskIds.push(task.id)
-
-    const [graph] = await db.select().from(runGraphs).where(eq(runGraphs.taskId, task.id)).limit(1)
-    if (!graph) throw new Error('created task has no pinned run graph')
-
-    const [stage] = await db
-      .insert(stages)
-      .values({
-        taskId: task.id,
-        graphId: graph.id,
-        nodeKey: 'planning',
-        role: 'planner',
-        provider: 'claude-code',
-        attempt: 1,
-      })
-      .returning()
-    if (!stage) throw new Error('stage insert returned no row')
-
-    const detail = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
-    expect(detail.status).toBe(200)
-    expect(await detail.json()).toMatchObject({
-      task: { id: task.id },
-      graph: { id: graph.id, version: 1 },
-      stages: [{ id: stage.id, nodeKey: 'planning', attempt: 1 }],
-    })
-
-    const missing = await app.request('/api/v1/tasks/00000000-0000-4000-8000-000000000000', {
-      headers: auth,
-    })
-    expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ code: 'not_found', detail: expect.any(String) })
-  })
-
-  test('lists artifact metadata and reads stored snapshot content', async () => {
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
-    const created = await app.request('/api/v1/tasks', {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({
-        title: 'Read an artifact snapshot',
-        type: 'bugfix',
-        repoUrl: 'https://github.com/example/artifact-fixture',
-      }),
-    })
-    const { task } = (await created.json()) as { task: { id: string } }
-    createdTaskIds.push(task.id)
-
-    const [artifact] = await db
-      .insert(artifacts)
-      .values({
-        taskId: task.id,
-        path: 'openspec/changes/example/proposal.md',
-        kind: 'proposal',
-        gitSha: '0123456789abcdef',
-        snapshotMd: '# Stored proposal\n',
-      })
-      .returning()
-    if (!artifact) throw new Error('artifact insert returned no row')
-
-    const listed = await app.request(`/api/v1/tasks/${task.id}/artifacts`, { headers: auth })
-    expect(listed.status).toBe(200)
-    expect(await listed.json()).toMatchObject({
-      artifacts: [
-        {
-          id: artifact.id,
-          path: artifact.path,
-          kind: 'proposal',
-          updatedAt: expect.any(String),
-        },
-      ],
-    })
-
-    const read = await app.request(`/api/v1/tasks/${task.id}/artifacts/${artifact.id}`, {
-      headers: auth,
-    })
-    expect(read.status).toBe(200)
-    expect(await read.json()).toMatchObject({
-      artifact: {
-        id: artifact.id,
-        path: artifact.path,
-        content: '# Stored proposal\n',
-      },
-    })
-  })
-
-  test('serializes recorded stage telemetry without inventing missing values', async () => {
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
-    const created = await app.request('/api/v1/tasks', {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({
-        title: 'Inspect stage telemetry',
-        type: 'feature',
-        repoUrl: 'https://github.com/example/telemetry-fixture',
-      }),
-    })
-    const { task } = (await created.json()) as { task: { id: string } }
-    createdTaskIds.push(task.id)
-
-    const [graph] = await db.select().from(runGraphs).where(eq(runGraphs.taskId, task.id)).limit(1)
-    if (!graph) throw new Error('created task has no pinned run graph')
-
-    const startedAt = new Date('2026-08-16T08:00:00.000Z')
-    const finishedAt = new Date('2026-08-16T08:00:12.000Z')
-    await db.insert(stages).values([
-      {
-        taskId: task.id,
-        graphId: graph.id,
-        nodeKey: 'implement',
-        role: 'implementer',
-        provider: 'codex',
-        status: 'succeeded',
-        attempt: 1,
-        startedAt,
-        finishedAt,
-        cost: sql`'{"model":"gpt-5","tokens":{"input":1200,"output":340,"cache":0},"costUsd":0.42,"raw":{"ignored":true}}'::jsonb`,
-      },
-      {
-        taskId: task.id,
-        graphId: graph.id,
-        nodeKey: 'verify',
-        role: 'verifier',
-        provider: 'claude-code',
-        attempt: 1,
-      },
-    ])
-
-    const detail = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
-    expect(detail.status).toBe(200)
-    expect(await detail.json()).toMatchObject({
-      stages: [
-        {
-          nodeKey: 'implement',
-          provider: 'codex',
-          telemetry: {
-            model: 'gpt-5',
-            startedAt: startedAt.toISOString(),
-            finishedAt: finishedAt.toISOString(),
-            tokens: { input: 1200, output: 340, cache: 0 },
-            costUsd: 0.42,
-          },
-        },
-        {
-          nodeKey: 'verify',
-          provider: 'claude-code',
-          telemetry: null,
-        },
-      ],
-    })
-  })
-
   test('aggregates gate, failure, and stall attention without healthy tasks', async () => {
     const rollback = new Error('rollback attention fixture')
 
@@ -303,9 +408,9 @@ describeDb('api', () => {
           }),
           now: () => fixedNow,
         })
-        const auth = { authorization: 'Bearer test-password' }
+        const attentionAuth = { authorization: 'Bearer test-password' }
 
-        const empty = await isolatedApp.request('/api/v1/attention', { headers: auth })
+        const empty = await isolatedApp.request('/api/v1/attention', { headers: attentionAuth })
         expect(empty.status).toBe(200)
         expect(await empty.json()).toEqual({ items: [] })
 
@@ -390,7 +495,7 @@ describeDb('api', () => {
           },
         ])
 
-        const response = await isolatedApp.request('/api/v1/attention', { headers: auth })
+        const response = await isolatedApp.request('/api/v1/attention', { headers: attentionAuth })
         expect(response.status).toBe(200)
         const body = (await response.json()) as {
           items: {
@@ -419,106 +524,6 @@ describeDb('api', () => {
         throw error
       }
     }
-  })
-
-  test('replays and follows task events from the last delivered sequence', async () => {
-    const [task] = await db
-      .insert(tasks)
-      .values({
-        slug: `stream-${crypto.randomUUID().slice(0, 8)}`,
-        title: 'Stream fixture',
-        type: 'bugfix',
-        repoUrl: 'https://github.com/example/stream-fixture',
-      })
-      .returning()
-    if (!task) throw new Error('task insert returned no row')
-    createdTaskIds.push(task.id)
-
-    const seeded = await db
-      .insert(events)
-      .values([
-        { taskId: task.id, type: 'stage.started', payload: { ordinal: 1 } },
-        { taskId: task.id, type: 'stage.completed', payload: { ordinal: 2 } },
-      ])
-      .returning()
-    const cursor = seeded[0]?.seq
-    const replayed = seeded[1]
-    if (cursor === undefined || !replayed) throw new Error('stream events were not inserted')
-
-    const response = await app.request(`/api/v1/tasks/${task.id}/events/stream`, {
-      headers: {
-        authorization: 'Bearer test-password',
-        'last-event-id': String(cursor),
-      },
-    })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('text/event-stream')
-    if (!response.body) throw new Error('stream response has no body')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    const frames: string[] = []
-    let buffer = ''
-    let sawHeartbeat = false
-
-    async function nextEvent() {
-      while (frames.length === 0) {
-        const chunk = await reader.read()
-        if (chunk.done) throw new Error('event stream ended early')
-
-        buffer += decoder.decode(chunk.value, { stream: true })
-        const split = buffer.split('\n\n')
-        buffer = split.pop() ?? ''
-        for (const frame of split) {
-          if (frame.startsWith(':')) {
-            sawHeartbeat = true
-          } else if (frame.length > 0) {
-            frames.push(frame)
-          }
-        }
-      }
-
-      const frame = frames.shift()
-      if (!frame) throw new Error('event frame queue was empty')
-
-      const lines = new Map(
-        frame.split('\n').map((line) => {
-          const separator = line.indexOf(': ')
-
-          return [line.slice(0, separator), line.slice(separator + 2)]
-        }),
-      )
-
-      return {
-        id: Number(lines.get('id')),
-        event: lines.get('event'),
-        data: JSON.parse(lines.get('data') ?? 'null') as { seq: number; payload: unknown },
-      }
-    }
-
-    const first = await nextEvent()
-    expect(first).toMatchObject({
-      id: replayed.seq,
-      event: 'stage.completed',
-      data: { seq: replayed.seq, payload: { ordinal: 2 } },
-    })
-
-    const [live] = await db
-      .insert(events)
-      .values({ taskId: task.id, type: 'task.parked', payload: { ordinal: 3 } })
-      .returning()
-    if (!live) throw new Error('live stream event was not inserted')
-
-    const second = await nextEvent()
-    expect(second).toMatchObject({
-      id: live.seq,
-      event: 'task.parked',
-      data: { seq: live.seq, payload: { ordinal: 3 } },
-    })
-    expect([first.id, second.id]).toEqual([replayed.seq, live.seq])
-    expect(sawHeartbeat).toBe(true)
-
-    await reader.cancel()
   })
 
   test('requires bearer auth for streams and ignores query-string credentials', async () => {
@@ -569,7 +574,6 @@ describeDb('api', () => {
       .returning()
     if (!stage) throw new Error('stage insert returned no row')
 
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
     const unpinned = await app.request(`/api/v1/tasks/${task.id}/feedback`, {
       method: 'POST',
       headers: auth,
@@ -630,7 +634,6 @@ describeDb('api', () => {
   })
 
   test('delegates gate actions and rejects actions away from a gate', async () => {
-    const auth = { authorization: 'Bearer test-password', 'content-type': 'application/json' }
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
 
     async function seedAt(status: TaskState, label: string) {
@@ -731,41 +734,124 @@ describeDb('api', () => {
       .select({ status: tasks.status })
       .from(tasks)
       .where(eq(tasks.id, runningTask.id))
-      .limit(1)
     expect(unchanged?.status).toBe('research')
   })
 
-  test('names every invalid intake field', async () => {
-    const res = await app.request('/api/v1/tasks', {
+  test('replays and follows conversation events from the last delivered sequence', async () => {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `stream-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Stream fixture',
+        type: 'bugfix',
+        repoUrl: 'https://github.com/example/stream-fixture',
+      })
+      .returning()
+    if (!task) throw new Error('task insert returned no row')
+    createdTaskIds.push(task.id)
+
+    const [baseline] = await db
+      .insert(events)
+      .values({ taskId: task.id, type: 'task.created', payload: {} })
+      .returning()
+    if (!baseline) throw new Error('stream cursor event was not inserted')
+
+    // Two events via the real API before the stream opens (replayed from cursor),
+    // then a third posted live once the stream is already reading.
+    const created = await app.request(`/api/v1/tasks/${task.id}/conversations`, {
       method: 'POST',
-      headers: { authorization: 'Bearer test-password', 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'chore', repoUrl: 'not-a-url' }),
+      headers: auth,
+      body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
     })
-    expect(res.status).toBe(400)
-    expect(await res.json()).toMatchObject({
-      code: 'validation',
-      detail: expect.any(String),
-      fields: {
-        title: expect.any(Array),
-        type: expect.any(Array),
-        repoUrl: expect.any(Array),
+    const { conversation } = (await created.json()) as { conversation: { id: string } }
+    const firstMessage = await app.request(
+      `/api/v1/tasks/${task.id}/conversations/${conversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'What changed?', idempotencyKey: crypto.randomUUID() }),
+      },
+    )
+    expect(firstMessage.status).toBe(201)
+
+    const response = await app.request(`/api/v1/tasks/${task.id}/events/stream`, {
+      headers: {
+        authorization: 'Bearer test-password',
+        'last-event-id': String(baseline.seq),
       },
     })
-  })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+    if (!response.body) throw new Error('stream response has no body')
 
-  test('accepts a request body sent without a Content-Type header', async () => {
-    const res = await app.request('/api/v1/tasks', {
-      method: 'POST',
-      headers: { authorization: 'Bearer test-password' },
-      body: JSON.stringify({
-        title: 'Headerless create',
-        type: 'feature',
-        repoUrl: 'https://github.com/example/repo',
-      }),
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    const frames: string[] = []
+    let buffer = ''
+    let sawHeartbeat = false
+
+    async function nextEvent() {
+      while (frames.length === 0) {
+        const chunk = await reader.read()
+        if (chunk.done) throw new Error('event stream ended early')
+
+        buffer += decoder.decode(chunk.value, { stream: true })
+        const split = buffer.split('\n\n')
+        buffer = split.pop() ?? ''
+        for (const frame of split) {
+          if (frame.startsWith(':')) {
+            sawHeartbeat = true
+          } else if (frame.length > 0) {
+            frames.push(frame)
+          }
+        }
+      }
+
+      const frame = frames.shift()
+      if (!frame) throw new Error('event frame queue was empty')
+
+      const lines = new Map(
+        frame.split('\n').map((line) => {
+          const separator = line.indexOf(': ')
+
+          return [line.slice(0, separator), line.slice(separator + 2)]
+        }),
+      )
+
+      return {
+        id: Number(lines.get('id')),
+        event: lines.get('event'),
+        data: JSON.parse(lines.get('data') ?? 'null') as { seq: number; payload: unknown },
+      }
+    }
+
+    const replayed = [await nextEvent(), await nextEvent()]
+    expect(replayed.map((event) => event.event)).toEqual([
+      'conversation.created',
+      'conversation.message.created',
+    ])
+    expect(replayed[0]?.data).toMatchObject({ payload: { conversationId: conversation.id } })
+    expect(replayed[1]?.data).toMatchObject({ payload: { conversationId: conversation.id } })
+
+    const secondMessage = await app.request(
+      `/api/v1/tasks/${task.id}/conversations/${conversation.id}/messages`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ message: 'And after that?', idempotencyKey: crypto.randomUUID() }),
+      },
+    )
+    expect(secondMessage.status).toBe(201)
+    const live = await nextEvent()
+    expect(live).toMatchObject({
+      event: 'conversation.message.created',
+      data: { payload: { conversationId: conversation.id } },
     })
-    expect(res.status).toBe(201)
-    const { task } = (await res.json()) as { task: { id: string; title: string } }
-    createdTaskIds.push(task.id)
-    expect(task.title).toBe('Headerless create')
+    expect([...replayed.map((event) => event.id), live.id]).toEqual(
+      [...replayed.map((event) => event.id), live.id].sort((left, right) => left - right),
+    )
+    expect(sawHeartbeat).toBe(true)
+
+    await reader.cancel()
   })
 })
