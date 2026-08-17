@@ -593,6 +593,27 @@ describe('advance', () => {
     })
   })
 
+  test('an ok result carrying a blocking decision still parks, not just needs_decision', () => {
+    expect(
+      advance(graph, 'research', { status: 'ok', hasBlockingDecision: true }, [], caps),
+    ).toEqual({
+      kind: 'park',
+      reason: 'needs_decision',
+      resume: 'research',
+    })
+  })
+
+  test('an ok result carrying only non-blocking decisions advances normally', () => {
+    const decision = advance(
+      graph,
+      'research',
+      { status: 'ok', hasBlockingDecision: false },
+      [],
+      caps,
+    )
+    expect(decision.kind).toBe('advance')
+  })
+
   test('advancing from a gate is a programming error, not a transition', () => {
     expect(() => advance(graph, 'human_spec_gate', { status: 'ok' }, [], caps)).toThrow(
       /not a stage node/,

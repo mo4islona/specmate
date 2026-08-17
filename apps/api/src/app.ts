@@ -4,7 +4,7 @@ import {
   ConversationSubjectConflictError,
   ConversationTaskNotFoundError,
   EmptyConversationMessageError,
-  isAwaitingHuman,
+  isHumanGate,
   isTerminal,
   listConversations,
   openConversation,
@@ -71,6 +71,10 @@ interface EventQuery {
 }
 
 interface AttentionItem {
+  /** Stable per-row identity: a task carries at most one gate/failed/stalled
+   * item but may carry several open decisions, so only the decision item
+   * can key off the decision itself. */
+  id: string
   task: Pick<Task, 'id' | 'slug' | 'title' | 'type' | 'status'>
   reason: {
     kind: 'gate' | 'decision' | 'failed' | 'stalled'
@@ -152,6 +156,7 @@ const GATE_CONFLICT_ERRORS = new Set([
   'StageStopConflictError',
   'StageRestartConflictError',
   'DecisionNotOpenError',
+  'NoResumeStateError',
 ])
 
 const OWNER_ACTOR = 'owner'
@@ -470,6 +475,7 @@ export function createApp({
       // the moment it was raised, whether or not it also parked the task.
       for (const { decision, task } of openDecisionRows) {
         items.push({
+          id: decision.id,
           task: {
             id: task.id,
             slug: task.slug,
@@ -492,19 +498,24 @@ export function createApp({
           status: task.status,
         }
 
-        if (isAwaitingHuman(task.status)) {
+        // waiting_human carries no gate item of its own: REQ-1201 guarantees
+        // it has at least one open decision, already covered above.
+        if (isHumanGate(task.status)) {
           items.push({
+            id: task.id,
             task: taskSummary,
             reason: { kind: 'gate', detail: `waiting at ${task.status}` },
             since: task.updatedAt,
           })
           continue
         }
+        if (task.status === 'waiting_human') continue
 
         if (task.status === 'failed') {
           const failure = failures.get(task.id)
           const failureReason = failure?.payload.reason
           items.push({
+            id: task.id,
             task: taskSummary,
             reason: {
               kind: 'failed',
@@ -518,6 +529,7 @@ export function createApp({
         const since = latest?.createdAt ?? task.updatedAt
         if (!isTerminal(task.status) && since < stallCutoff) {
           items.push({
+            id: task.id,
             task: taskSummary,
             reason: {
               kind: 'stalled',

@@ -4,7 +4,7 @@
  * entry point must not grow transitions of its own.
  *
  *   bun apps/orchestrator/src/admin.ts create --slug s --title t --type feature --repo <url> [--at research]
- *   bun apps/orchestrator/src/admin.ts approve|redirect|rework|restart|cancel --task <uuid> [...]
+ *   bun apps/orchestrator/src/admin.ts approve|redirect|rework|resume|restart|cancel --task <uuid> [...]
  *   bun apps/orchestrator/src/admin.ts answer --task <uuid> --decision <uuid> [--option id | --text "..."]
  *   bun apps/orchestrator/src/admin.ts dismiss --task <uuid> --decision <uuid> [--reason "..."]
  *   bun apps/orchestrator/src/admin.ts show --task <uuid>
@@ -140,6 +140,10 @@ try {
       })
       break
     }
+    case 'resume': {
+      await engine.resume(required('task'), actor)
+      break
+    }
     case 'restart': {
       const to = flag('to')
       await engine.restart(required('task'), actor, to ? TaskState.parse(to) : undefined)
@@ -179,7 +183,7 @@ try {
     }
     default: {
       console.error(
-        'usage: admin.ts <create|approve|redirect|rework|answer|dismiss|restart|cancel|show> [--flags]',
+        'usage: admin.ts <create|approve|redirect|rework|answer|dismiss|resume|restart|cancel|show> [--flags]',
       )
       process.exit(2)
     }

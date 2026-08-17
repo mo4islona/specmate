@@ -440,6 +440,13 @@ export interface StageOutcomeSummary {
   readonly status: 'ok' | 'needs_decision'
   readonly verdict?: ReviewVerdict
   readonly findings?: readonly ReviewFinding[]
+  /**
+   * A requested decision came back marked blocking even though the stage
+   * otherwise called itself `ok`. Blocking means blocking regardless of the
+   * status it rode in on — an unresolved one left behind by an `ok` stage is
+   * still a reason the run cannot honestly keep going.
+   */
+  readonly hasBlockingDecision?: boolean
 }
 
 export interface RecordedRound {
@@ -491,7 +498,7 @@ export function advance(
     throw new Error(`cannot advance from ${nodeKey}: it is not a stage node of ${graph.pipeline}`)
   }
 
-  if (outcome.status === 'needs_decision') {
+  if (outcome.status === 'needs_decision' || outcome.hasBlockingDecision) {
     return { kind: 'park', reason: 'needs_decision', resume: nodeKey }
   }
 

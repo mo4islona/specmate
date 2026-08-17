@@ -109,6 +109,9 @@ export function parseStageResult(raw: string): ParsedResult {
   const verdictError = checkVerdictPresent(parsed.data)
   if (verdictError) return { ok: false, error: verdictError, raw }
 
+  const decisionsError = checkDecisionsPresent(parsed.data)
+  if (decisionsError) return { ok: false, error: decisionsError, raw }
+
   return { ok: true, value: parsed.data }
 }
 
@@ -122,6 +125,18 @@ export function checkVerdictPresent(result: StageResult): string | null {
   if (result.verdict) return null
 
   return `${result.role} must return a verdict`
+}
+
+/**
+ * `advance()` parks any `needs_decision` outcome regardless of what it
+ * carries; a status with nothing in `decisions_needed` would park the task
+ * with no decision for the owner to answer and no way back.
+ */
+export function checkDecisionsPresent(result: StageResult): string | null {
+  if (result.status !== 'needs_decision') return null
+  if (result.decisions_needed.length > 0) return null
+
+  return `${result.role} returned needs_decision with no decisions_needed`
 }
 
 /**
