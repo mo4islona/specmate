@@ -2,8 +2,8 @@
 
 See proposal.md — Why. What exists, and the seams this change has to fit:
 
-- `harness_status` is a database enum with exactly the plan's vocabulary
-  (`unknown | adequate | partial | missing | waived`), defaulting to `unknown`. Nothing writes
+- `harness_status` is a database enum with exactly the vocabulary
+  `unknown | adequate | partial | missing | waived`, defaulting to `unknown`. Nothing writes
   it; `renderLedger` already prints it to every stage as "Harness coverage".
 - `blocked_by uuid[]` exists and is never written. `blocked` is a `TaskState`, is in
   `RESERVED_STATES` (so no pipeline node may claim it) and in the engine's `NOT_RUNNABLE` poll

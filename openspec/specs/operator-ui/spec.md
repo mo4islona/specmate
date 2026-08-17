@@ -173,8 +173,8 @@ missing or wrong, the client SHALL return to the secret prompt instead of failin
 ### Requirement: REQ-911 — Usable from a phone
 
 Every screen SHALL be usable on a phone-sized viewport: no horizontal scrolling of the page,
-actions reachable, forms and the comment input operable. The plan's requirement that the
-owner can "comment on everything from the browser/phone" is a contract, not an aspiration.
+actions reachable, forms and the comment input operable. The owner being able to comment on
+everything from the browser or phone is a contract, not an aspiration.
 
 #### Scenario: AC-920 — Approving from a phone
 

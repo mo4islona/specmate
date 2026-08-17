@@ -1,9 +1,9 @@
 ## Why
 
-`docs/plan.md` §6 opens with a rule the pipeline cannot currently keep: no PR leaves it
-verified by unit tests alone. The verifier extends whatever harness a repository has — but
-nothing ever asks whether that harness can carry the work at all. A task against a subsystem
-with no state-level tests walks the whole pipeline and comes out the far end with a verification
+The pipeline cannot currently keep a rule it was built for: no PR leaves it verified by unit
+tests alone. The verifier extends whatever harness a repository has — but nothing ever asks
+whether that harness can carry the work at all. A task against a subsystem with no
+state-level tests walks the whole pipeline and comes out the far end with a verification
 report that proves very little, and nobody was told.
 
 The pieces are staged and idle. `tasks.harness_status` has held

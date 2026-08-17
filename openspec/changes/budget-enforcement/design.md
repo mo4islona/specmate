@@ -58,7 +58,7 @@ So the budget is redefined as the summed duration of the runs charged to the tas
 is amended to say so. The stored key `max_wall_clock_minutes` is left alone — renaming it would
 be a migration for a comment — and the requirement is where the meaning lives.
 
-Why keep it at all rather than trusting cost: under a subscription session, the plan's preferred
+Why keep it at all rather than trusting cost: under a subscription session, the preferred
 billing mode, a provider may report no cost for any run. `max_cost_usd` then never fires, and a
 cap that never fires while looking like protection is the failure this change exists to avoid.
 Agent-minutes are timed by the orchestrator, so they are always available and always complete —

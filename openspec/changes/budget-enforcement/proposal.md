@@ -11,8 +11,8 @@ Two things make this worth doing beyond closing a stated requirement. `task-qa` 
 conversation responses and interrupted stages cost and says outright that caps act on them only
 when this change lands — so that spend is otherwise unbounded by construction. And the cost
 budget alone cannot be trusted: telemetry may
-be absent, and REQ-305 is explicit that absent is not zero. Under a subscription session — the
-plan's preferred billing mode — a provider may report no cost for any run at all, which makes
+be absent, and REQ-305 is explicit that absent is not zero. Under a subscription session, the
+preferred billing mode, a provider may report no cost for any run at all, which makes
 `max_cost_usd` a cap that silently never fires. A cap that looks like protection and is not is
 worse than no cap.
 
