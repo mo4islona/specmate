@@ -1,6 +1,7 @@
 import {
   Budgets,
   Caps,
+  type DecisionInsert,
   instantiateDefinition,
   nodeAt,
   PIPELINE_CATALOG,
@@ -11,15 +12,18 @@ import {
   type TaskType,
 } from '@specmate/core'
 import {
+  conversations,
   type Database,
   type DbClient,
+  type Decision,
+  decisions,
   events,
   iterations,
   runGraphs,
   type Task,
   tasks,
 } from '@specmate/db'
-import { asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
   constructor(type: string) {
@@ -263,6 +267,76 @@ export async function countRedirects(db: DbClient, taskId: string, gate: string)
     )
 
   return row?.n ?? 0
+}
+
+/**
+ * A request or an engine escalation becomes a durable decision, matched by
+ * (node, key) while open — a retry attaches instead of duplicating. A freshly
+ * created decision also opens its inert scoped conversation, in the same
+ * transaction: raising a decision creates one place to discuss it, without
+ * spending a model run.
+ */
+export async function raiseDecision(
+  db: DbClient,
+  taskId: string,
+  stageId: string | null,
+  input: DecisionInsert,
+): Promise<{ decision: Decision; created: boolean }> {
+  const [open] = await db
+    .select()
+    .from(decisions)
+    .where(
+      and(
+        eq(decisions.taskId, taskId),
+        eq(decisions.nodeKey, input.nodeKey),
+        eq(decisions.key, input.key),
+        eq(decisions.status, 'open'),
+      ),
+    )
+    .limit(1)
+  if (open) return { decision: open, created: false }
+
+  const [created] = await db
+    .insert(decisions)
+    .values({
+      taskId,
+      stageId: stageId ?? undefined,
+      nodeKey: input.nodeKey,
+      key: input.key,
+      kind: input.kind,
+      promptMd: input.promptMd,
+      options: [...input.options],
+      blocking: input.blocking,
+    })
+    .returning()
+  if (!created) throw new Error(`decision "${input.key}" at ${input.nodeKey} could not be created`)
+
+  await emitEvent(db, {
+    taskId,
+    stageId: stageId ?? undefined,
+    type: 'decision.raised',
+    payload: {
+      decisionId: created.id,
+      nodeKey: input.nodeKey,
+      key: input.key,
+      kind: input.kind,
+      blocking: input.blocking,
+    },
+  })
+
+  const [conversation] = await db
+    .insert(conversations)
+    .values({ taskId, subjectKind: 'decision', subjectId: created.id })
+    .returning()
+  if (!conversation) throw new Error(`conversation for decision ${created.id} could not be created`)
+
+  await emitEvent(db, {
+    taskId,
+    type: 'conversation.created',
+    payload: { conversationId: conversation.id, subjectKind: 'decision', subjectId: created.id },
+  })
+
+  return { decision: created, created: true }
 }
 
 export interface EngineEvent {

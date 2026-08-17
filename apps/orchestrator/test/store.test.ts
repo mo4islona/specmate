@@ -1,10 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition } from '@specmate/core'
-import { createDb, type Database, events, iterations, runGraphs, stages, tasks } from '@specmate/db'
-import { asc, eq, inArray } from 'drizzle-orm'
+import {
+  conversations,
+  createDb,
+  type Database,
+  decisions,
+  events,
+  iterations,
+  runGraphs,
+  stages,
+  tasks,
+} from '@specmate/db'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import {
   createTask,
   latestGraph,
+  raiseDecision,
   recordRound,
   replanTask,
   UnknownNodeError,
@@ -116,5 +127,96 @@ describeDb('task store', () => {
 
     const rows = await db.select().from(iterations).where(eq(iterations.taskId, task.id))
     expect(rows).toHaveLength(1)
+  })
+
+  describe('raiseDecision', () => {
+    const request = {
+      nodeKey: 'research' as const,
+      key: 'scope',
+      kind: 'question' as const,
+      promptMd: 'What does this cover?',
+      options: [],
+      blocking: true,
+    }
+
+    test('creates a decision and its inert scoped conversation', async () => {
+      const { task } = await make()
+
+      const { decision, created } = await raiseDecision(db, task.id, null, request)
+
+      expect(created).toBe(true)
+      expect(decision).toMatchObject({ nodeKey: 'research', key: 'scope', status: 'open' })
+      const [conversation] = await db
+        .select()
+        .from(conversations)
+        .where(
+          and(eq(conversations.subjectKind, 'decision'), eq(conversations.subjectId, decision.id)),
+        )
+      expect(conversation).toBeDefined()
+      expect(conversation?.taskId).toBe(task.id)
+      const raisedEvents = await db
+        .select({ type: events.type })
+        .from(events)
+        .where(eq(events.taskId, task.id))
+      expect(raisedEvents.map((e) => e.type)).toEqual(
+        expect.arrayContaining(['decision.raised', 'conversation.created']),
+      )
+    })
+
+    test('a second request at the same node and key attaches instead of duplicating', async () => {
+      const { task } = await make()
+
+      const first = await raiseDecision(db, task.id, null, request)
+      const second = await raiseDecision(db, task.id, null, { ...request, promptMd: 'A retry' })
+
+      expect(second.created).toBe(false)
+      expect(second.decision.id).toBe(first.decision.id)
+      expect(second.decision.promptMd).toBe(request.promptMd)
+      const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+      expect(rows).toHaveLength(1)
+      const conversationRows = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.taskId, task.id))
+      expect(conversationRows).toHaveLength(1)
+    })
+
+    test('asking again after an answer opens a fresh decision, leaving the old one readable', async () => {
+      const { task } = await make()
+
+      const { decision: answered } = await raiseDecision(db, task.id, null, request)
+      await db
+        .update(decisions)
+        .set({ status: 'answered', answerMd: 'Both.', answeredBy: 'owner' })
+        .where(eq(decisions.id, answered.id))
+
+      const second = await raiseDecision(db, task.id, null, request)
+
+      expect(second.created).toBe(true)
+      expect(second.decision.id).not.toBe(answered.id)
+      const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+      expect(rows).toHaveLength(2)
+      const stillAnswered = rows.find((row) => row.id === answered.id)
+      expect(stillAnswered).toMatchObject({ status: 'answered', answerMd: 'Both.' })
+    })
+
+    test('a failure later in the same transaction rolls the decision insert back with it', async () => {
+      const { task } = await make()
+
+      await expect(
+        db.transaction(async (tx) => {
+          await raiseDecision(tx, task.id, null, request)
+          throw new Error('simulated failure after the decision insert')
+        }),
+      ).rejects.toThrow('simulated failure')
+
+      const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+      expect(rows).toHaveLength(0)
+      const conversationRows = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.taskId, task.id))
+      expect(conversationRows).toHaveLength(0)
+    })
   })
 })

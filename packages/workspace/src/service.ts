@@ -123,6 +123,10 @@ export class WorkspaceService {
     return this.manager.provisionConversation(workspace, key)
   }
 
+  writeDecisionLog(workspace: Workspace, markdown: string): Promise<void> {
+    return this.manager.writeDecisionLog(workspace, markdown)
+  }
+
   releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
     return this.manager.releaseConversation(slug, repoUrl, key)
   }

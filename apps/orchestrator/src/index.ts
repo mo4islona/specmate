@@ -145,6 +145,7 @@ const engineWorkspaces: EngineWorkspaces = {
   discard: (workspace, commit) => service.discard(workspace, commit),
   headCommit: (workspace) => service.headCommit(workspace),
   commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
+  writeDecisionLog: (workspace, markdown) => service.writeDecisionLog(workspace, markdown),
   release: (taskId) => service.release(taskId),
 }
 

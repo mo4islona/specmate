@@ -395,18 +395,29 @@ export const decisions = pgTable(
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
     stageId: uuid('stage_id').references(() => stages.id, { onDelete: 'set null' }),
-    /** Stable per-stage key so a re-asked question maps to the same record. */
+    /** The pinned-graph node that raised this decision — a re-ask at the same node and key attaches. */
+    nodeKey: text('node_key').notNull(),
+    /** Stable per-node key so a re-asked question maps to the same record. */
     key: text().notNull(),
     kind: decisionKindEnum().notNull(),
     promptMd: text('prompt_md').notNull(),
     options: jsonb().$type<{ id: string; label: string }[]>().notNull().default([]),
+    /** Non-blocking decisions are recorded and surfaced without parking the task. */
+    blocking: boolean().notNull().default(true),
     answerMd: text('answer_md'),
     answeredBy: text('answered_by'),
     status: decisionStatusEnum().notNull().default('open'),
     createdAt: timestamps.createdAt,
     answeredAt: timestamp('answered_at', { withTimezone: true }),
   },
-  (t) => [index('decisions_open_idx').on(t.status, t.createdAt)],
+  (t) => [
+    index('decisions_open_idx').on(t.status, t.createdAt),
+    // Identity is (node, key), unique only while open: a retry attaches instead
+    // of duplicating, and a re-ask after an answer opens a fresh record.
+    uniqueIndex('decisions_open_node_key_idx')
+      .on(t.taskId, t.nodeKey, t.key)
+      .where(sql`${t.status} = 'open'`),
+  ],
 )
 
 // ─── artifacts index (git is the store; Postgres indexes it) ──────────────────

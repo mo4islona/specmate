@@ -1,0 +1,108 @@
+import { describe, expect, test } from 'bun:test'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { DecisionItem } from '../lib/api-client.ts'
+import { DecisionCard } from './decision-card.tsx'
+
+function decision(overrides: Partial<DecisionItem> = {}): DecisionItem {
+  return {
+    id: 'decision-1',
+    taskId: 'task-1',
+    stageId: null,
+    nodeKey: 'research',
+    key: 'scope',
+    kind: 'question',
+    promptMd: 'What does *this* cover?',
+    options: [],
+    blocking: true,
+    answerMd: null,
+    answeredBy: null,
+    status: 'open',
+    createdAt: '2026-08-16T10:00:00.000Z',
+    answeredAt: null,
+    conversationId: null,
+    ...overrides,
+  }
+}
+
+const noop = () => {}
+
+describe('decision card', () => {
+  test('renders the question as markdown and states the task is stopped on it', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision()}
+        parkedOnThis={true}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('<em>this</em>')
+    expect(rendered).toContain('The task is stopped on this.')
+    expect(rendered).toContain('data-decision-status="open"')
+  })
+
+  test('a decision that did not park the task shows no stopped state', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({ blocking: false })}
+        parkedOnThis={false}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).not.toContain('stopped on this')
+  })
+
+  test('offers options as direct actions', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({ options: [{ id: 'a', label: 'This repository' }] })}
+        parkedOnThis={false}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('This repository')
+  })
+
+  test('a resolved decision shows its outcome and no answer controls', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({
+          status: 'answered',
+          answerMd: 'The whole repository.',
+          answeredBy: 'evgeny',
+        })}
+        parkedOnThis={false}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('Answered by evgeny')
+    expect(rendered).toContain('The whole repository.')
+    expect(rendered).not.toContain('<textarea')
+  })
+
+  test('a dismissed decision reads as dismissed, not answered', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({ status: 'dismissed', answerMd: 'Superseded.', answeredBy: 'evgeny' })}
+        parkedOnThis={false}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('Dismissed by evgeny')
+    expect(rendered).not.toContain('Answered by')
+  })
+})

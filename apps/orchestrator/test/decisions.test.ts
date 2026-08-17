@@ -1,0 +1,466 @@
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import assert from 'node:assert/strict'
+import { StageResult } from '@specmate/core'
+import {
+  conversationActions,
+  conversationMessages,
+  conversations,
+  createDb,
+  type Database,
+  decisions,
+  feedback,
+  stages,
+  tasks,
+} from '@specmate/db'
+import type { StageExecution } from '@specmate/runner'
+import { and, eq, inArray } from 'drizzle-orm'
+import {
+  DecisionAnswerEmptyError,
+  DecisionNotOpenError,
+  Engine,
+  type EngineSettings,
+} from '../src/engine.ts'
+import { recordRound } from '../src/store.ts'
+import {
+  fakeConversationDispatcher,
+  fakeDispatcher,
+  fakeWorkspaces,
+  reload,
+  seedTask,
+} from './fixtures.ts'
+
+const url = process.env.DATABASE_URL
+const describeDb = url ? describe : describe.skip
+
+function result(overrides: Partial<StageResult> & { role: StageResult['role'] }): StageExecution {
+  return {
+    status: 'succeeded',
+    attempts: [{ attempt: 0, ok: true, durationMs: 5 }],
+    result: StageResult.parse({ schema_version: 1, status: 'ok', ...overrides }),
+    telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
+  }
+}
+
+describeDb('decision-records', () => {
+  let db: Database
+  const created: string[] = []
+  const engines: Engine[] = []
+
+  beforeAll(() => {
+    db = createDb(url)
+  })
+
+  afterEach(async () => {
+    for (const engine of engines.splice(0)) await engine.idle()
+    if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
+  })
+
+  function makeEngine(overrides: Partial<EngineSettings> = {}) {
+    const ws = fakeWorkspaces()
+    const stagesDispatcher = fakeDispatcher()
+    const conversationsDispatcher = fakeConversationDispatcher()
+    const logs: string[] = []
+    const engine = new Engine({
+      db,
+      workspaces: ws.workspaces,
+      settings: {
+        stageConcurrency: 1,
+        stageAttemptCap: 2,
+        conversationConcurrency: 1,
+        availableProviders: ['claude-code'],
+        ...overrides,
+      },
+      dispatcher: stagesDispatcher.dispatcher,
+      conversationDispatcher: conversationsDispatcher.dispatcher,
+      log: (message) => logs.push(message),
+    })
+    engines.push(engine)
+
+    return { engine, ws, stagesDispatcher, conversationsDispatcher, logs }
+  }
+
+  async function seed(options: Parameters<typeof seedTask>[1] = {}) {
+    const seeded = await seedTask(db, options)
+    created.push(seeded.task.id)
+
+    return seeded
+  }
+
+  async function openDecisions(taskId: string) {
+    return db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+  }
+
+  test('a blocking request parks the task, records waiting_human on the stage, and keeps the committed result', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
+    const [stage] = await db.select().from(stages).where(eq(stages.taskId, task.id))
+    expect(stage).toMatchObject({ status: 'waiting_human' })
+    expect(stage?.result).toMatchObject({ status: 'needs_decision' })
+    const open = await openDecisions(task.id)
+    expect(open).toHaveLength(1)
+    expect(open[0]).toMatchObject({
+      nodeKey: 'research',
+      key: 'scope',
+      blocking: true,
+      status: 'open',
+    })
+  })
+
+  test('a non-blocking request is recorded without parking the task', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'ok',
+        decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+    const open = await openDecisions(task.id)
+    expect(open).toHaveLength(1)
+    expect(open[0]).toMatchObject({ blocking: false, status: 'open' })
+  })
+
+  test('escalate, cap_exhausted, and repeated_finding each leave exactly one open escalation', async () => {
+    const { engine: escalateEngine, stagesDispatcher: escalateDispatcher } = makeEngine()
+    const escalate = await seed({ at: 'spec_review' })
+    escalateDispatcher.plan(() => result({ role: 'reviewer', verdict: 'escalate', findings: [] }))
+    await escalateEngine.tick()
+    await escalateEngine.idle()
+    expect((await reload(db, escalate.task.id)).status).toBe('waiting_human')
+    const escalateOpen = await openDecisions(escalate.task.id)
+    expect(escalateOpen.filter((d) => d.kind === 'escalation')).toHaveLength(1)
+    expect(escalateOpen[0]?.promptMd).toContain('escalate')
+
+    const { engine: capEngine, stagesDispatcher: capDispatcher } = makeEngine()
+    const cap = await seed({ at: 'spec_review' })
+    for (const round of [1, 2, 3]) {
+      await recordRound(db, cap.task.id, { loop: 'spec', round, verdict: 'revise', findings: [] })
+    }
+    capDispatcher.plan(() => result({ role: 'reviewer', verdict: 'revise', findings: [] }))
+    await capEngine.tick()
+    await capEngine.idle()
+    expect((await reload(db, cap.task.id)).status).toBe('waiting_human')
+    const capOpen = await openDecisions(cap.task.id)
+    expect(capOpen.filter((d) => d.kind === 'escalation')).toHaveLength(1)
+    expect(capOpen[0]?.promptMd).toContain('spec')
+
+    const { engine: repeatEngine, stagesDispatcher: repeatDispatcher } = makeEngine()
+    const repeat = await seed({ at: 'spec_review' })
+    await recordRound(db, repeat.task.id, {
+      loop: 'spec',
+      round: 1,
+      verdict: 'revise',
+      findings: [{ id: 'stubborn', severity: 'major', title: 'Still wrong', detail_md: '' }],
+    })
+    repeatDispatcher.plan(() =>
+      result({
+        role: 'reviewer',
+        verdict: 'revise',
+        findings: [{ id: 'stubborn', severity: 'major', title: 'Still wrong', detail_md: '' }],
+      }),
+    )
+    await repeatEngine.tick()
+    await repeatEngine.idle()
+    expect((await reload(db, repeat.task.id)).status).toBe('waiting_human')
+    const repeatOpen = await openDecisions(repeat.task.id)
+    expect(repeatOpen.filter((d) => d.kind === 'escalation')).toHaveLength(1)
+    expect(repeatOpen[0]?.promptMd).toContain('stubborn')
+  })
+
+  test('raising a decision creates exactly one conversation and dispatches no response before an owner message', async () => {
+    const { engine, stagesDispatcher, conversationsDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+    const convos = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(eq(conversations.subjectKind, 'decision'), eq(conversations.subjectId, decision.id)),
+      )
+    expect(convos).toHaveLength(1)
+
+    expect(await engine.tick()).toBe(0)
+    expect(conversationsDispatcher.dispatches).toHaveLength(0)
+  })
+
+  test('answering the last of two blocking decisions resumes the task and records feedback against the asking stage', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [
+          { key: 'scope', prompt_md: 'What does this cover?' },
+          { key: 'owner', prompt_md: 'Who owns this?' },
+        ],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const open = await openDecisions(task.id)
+    expect(open).toHaveLength(2)
+    const scope = open.find((d) => d.key === 'scope')
+    const owner = open.find((d) => d.key === 'owner')
+    assert(scope && owner)
+
+    const afterFirst = await engine.answer({
+      taskId: task.id,
+      decisionId: scope.id,
+      actor: 'evgeny',
+      text: 'The whole repo.',
+    })
+    expect(afterFirst.status).toBe('waiting_human')
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
+
+    const afterSecond = await engine.answer({
+      taskId: task.id,
+      decisionId: owner.id,
+      actor: 'evgeny',
+      text: 'The platform team.',
+    })
+    expect(afterSecond.status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('research')
+
+    const feedbackRows = await db
+      .select()
+      .from(feedback)
+      .where(and(eq(feedback.taskId, task.id), eq(feedback.kind, 'decision_answer')))
+    expect(feedbackRows).toHaveLength(2)
+    for (const row of feedbackRows) {
+      expect(row.role).toBe('researcher')
+      expect(row.provider).toBe('claude-code')
+    }
+  })
+
+  test('resolving twice, and answering with neither an option nor text, are rejected without writing anything', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    await expect(
+      engine.answer({ taskId: task.id, decisionId: decision.id, actor: 'evgeny' }),
+    ).rejects.toThrow(DecisionAnswerEmptyError)
+    expect(
+      (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+    ).toBe('open')
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      text: 'Fine.',
+    })
+    await expect(
+      engine.answer({ taskId: task.id, decisionId: decision.id, actor: 'evgeny', text: 'Again?' }),
+    ).rejects.toThrow(DecisionNotOpenError)
+    const stored = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+    expect(stored?.answerMd).toBe('Fine.')
+  })
+
+  test('dismissing the last blocker resumes the task and reads as dismissed, not answered', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    const resumed = await engine.dismiss({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      reason: 'Superseded.',
+    })
+
+    expect(resumed.status).toBe('research')
+    const stored = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+    expect(stored).toMatchObject({ status: 'dismissed', answerMd: 'Superseded.' })
+  })
+
+  test('cancelling a task with open decisions dismisses them', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    expect(await openDecisions(task.id)).toHaveLength(1)
+
+    await engine.cancel(task.id, 'evgeny')
+
+    expect((await reload(db, task.id)).status).toBe('cancelled')
+    expect(await openDecisions(task.id)).toHaveLength(0)
+    const [decision] = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+    expect(decision).toMatchObject({ status: 'dismissed', answeredBy: 'evgeny' })
+  })
+
+  test('sweep logs a waiting_human task with no open decision as a defect, without repairing it', async () => {
+    const { engine, logs } = makeEngine()
+    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'research' })
+
+    await engine.sweep()
+
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
+    expect(logs.some((line) => line.includes(task.id) && line.includes('defect'))).toBe(true)
+  })
+
+  test('a confirmed answer_decision action delegates to the same answer operation; a stale one conflicts', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task, graph } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+    const [conversation] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(eq(conversations.subjectKind, 'decision'), eq(conversations.subjectId, decision.id)),
+      )
+    assert(conversation)
+    const [message] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'I recommend answering "the whole repo".',
+        status: 'completed',
+        taskState: 'waiting_human',
+      })
+      .returning()
+    assert(message)
+    const [action] = await db
+      .insert(conversationActions)
+      .values({
+        taskId: task.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        kind: 'answer_decision',
+        target: { taskId: task.id, graphId: graph.id, decisionId: decision.id },
+        instruction: 'The whole repo.',
+        expectedVersion: { taskStatus: 'waiting_human', graphId: graph.id, decisionStatus: 'open' },
+      })
+      .returning()
+    assert(action)
+
+    // Proposing the action does not itself resolve anything.
+    expect(
+      (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+    ).toBe('open')
+
+    await engine.confirmAction({
+      taskId: task.id,
+      actionId: action.id,
+      actor: 'evgeny',
+      idempotencyKey: `confirm:${action.id}`,
+    })
+
+    const resolved = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+    expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repo.' })
+    expect((await reload(db, task.id)).status).toBe('research')
+
+    // A second proposal against the now-resolved decision is a stale target.
+    const [staleMessage] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 2,
+        role: 'assistant',
+        contentMd: 'A later, stale proposal.',
+        status: 'completed',
+        taskState: 'research',
+      })
+      .returning()
+    assert(staleMessage)
+    const [staleAction] = await db
+      .insert(conversationActions)
+      .values({
+        taskId: task.id,
+        conversationId: conversation.id,
+        messageId: staleMessage.id,
+        kind: 'answer_decision',
+        target: { taskId: task.id, graphId: graph.id, decisionId: decision.id },
+        instruction: 'Something else.',
+        expectedVersion: { taskStatus: 'waiting_human', graphId: graph.id, decisionStatus: 'open' },
+      })
+      .returning()
+    assert(staleAction)
+
+    await expect(
+      engine.confirmAction({
+        taskId: task.id,
+        actionId: staleAction.id,
+        actor: 'evgeny',
+        idempotencyKey: `confirm:${staleAction.id}`,
+      }),
+    ).rejects.toThrow()
+    const stillResolved = (
+      await db.select().from(decisions).where(eq(decisions.id, decision.id))
+    )[0]
+    expect(stillResolved?.answerMd).toBe('The whole repo.')
+  })
+})

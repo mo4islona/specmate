@@ -1,20 +1,30 @@
 import {
   advance,
   bindStageProvider,
+  blockingOpen,
+  type Caps,
   type ConversationActionOption,
   type ConversationActionProposal,
   canTransition,
+  decisionFromRequest,
+  type EscalationInput,
   type ExecutionUsage,
+  escalationForPark,
   type GateNode,
   isRestartable,
   isTerminal,
+  LOOP_CAPS,
   nodeAt,
   type PinnedGraph,
   type ProviderId,
   RESERVED_STATES,
+  type RecordedRound,
   ROLE_CONTRACTS,
+  type RoundToRecord,
+  renderDecisionLog,
   type StageNode,
   type StageTelemetry,
+  stalledFindings,
   type TaskState,
   TERMINAL_STATES,
 } from '@specmate/core'
@@ -45,6 +55,7 @@ import {
   latestGraph,
   latestGraphsFor,
   type RunGraphRow,
+  raiseDecision,
   recordRound,
   roundsFor,
   TaskNotFoundError,
@@ -154,6 +165,30 @@ export class ActionConflictError extends Error {
   }
 }
 
+export class DecisionNotFoundError extends Error {
+  override readonly name = 'DecisionNotFoundError'
+
+  constructor(decisionId: string) {
+    super(`decision ${decisionId} does not exist`)
+  }
+}
+
+export class DecisionNotOpenError extends Error {
+  override readonly name = 'DecisionNotOpenError'
+
+  constructor(decisionId: string, status: string) {
+    super(`decision ${decisionId} is ${status}, not open`)
+  }
+}
+
+export class DecisionAnswerEmptyError extends Error {
+  override readonly name = 'DecisionAnswerEmptyError'
+
+  constructor(decisionId: string) {
+    super(`decision ${decisionId} was answered with neither an option nor text`)
+  }
+}
+
 /** What the engine needs from the workspace layer; the entry point adapts `WorkspaceService`. */
 export interface EngineWorkspaces {
   provision(request: {
@@ -167,6 +202,8 @@ export interface EngineWorkspaces {
   discard(workspace: Workspace, commit?: string): Promise<void>
   headCommit?(workspace: Workspace): Promise<string>
   commitStage?(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
+  /** Absent in ops-only contexts (the admin CLI), which never dispatch a stage. */
+  writeDecisionLog?(workspace: Workspace, markdown: string): Promise<void>
   release(taskId: string): Promise<void>
 }
 
@@ -230,6 +267,21 @@ export interface ReworkOptions {
   readonly actor: string
   readonly target: TaskState
   readonly comment?: string
+}
+
+export interface AnswerDecisionOptions {
+  readonly taskId: string
+  readonly decisionId: string
+  readonly actor: string
+  readonly optionId?: string
+  readonly text?: string
+}
+
+export interface DismissDecisionOptions {
+  readonly taskId: string
+  readonly decisionId: string
+  readonly actor: string
+  readonly reason?: string
 }
 
 export interface StopStageOptions {
@@ -1101,6 +1153,7 @@ export class Engine {
         }
         row = { ...row, workspaceCommit }
       }
+      if (workspaces.writeDecisionLog) await this.writeDecisionLog(task.id, workspace)
       execution = await dispatcher({
         task,
         graphId: graph.id,
@@ -1143,6 +1196,24 @@ export class Engine {
         `bookkeeping after ${task.id}/${node.key} attempt ${row.attempt}: ${(e as Error).message}`,
       )
     }
+  }
+
+  /**
+   * Regenerates `decisions.md` from the store into the change folder, right
+   * before the run that will read it: the one moment the content matters, in
+   * the one process that owns the tree. Rides the stage's own commit, so an
+   * agent's edits to the file never survive past this point, and a
+   * re-provisioned workspace reproduces it the same way.
+   */
+  private async writeDecisionLog(taskId: string, workspace: Workspace): Promise<void> {
+    if (!this.deps.workspaces.writeDecisionLog) return
+
+    const rows = await this.deps.db
+      .select()
+      .from(decisions)
+      .where(eq(decisions.taskId, taskId))
+      .orderBy(asc(decisions.createdAt))
+    await this.deps.workspaces.writeDecisionLog(workspace, renderDecisionLog(rows))
   }
 
   private async completeStage(
@@ -1190,10 +1261,28 @@ export class Engine {
         acceptedCommit = commit.committed ? commit.commit : null
       }
 
+      const reworkedAt = await lastReworkAt(tx, task.id)
+      const rounds = await roundsFor(tx, task.id, reworkedAt)
+      const decision = advance(
+        liveGraph.dag,
+        node.key,
+        {
+          status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
+          verdict: result.verdict,
+          findings: result.findings,
+        },
+        rounds,
+        liveTask.caps,
+      )
+
+      // A stage that asked a blocking question, escalated, or spent a loop's
+      // cap did work and committed it, but did not finish its node: recording
+      // it as `succeeded` would say otherwise, and would not distinguish "the
+      // node is done" from "the node is stuck" for the next tick or a human.
       const completed = await tx
         .update(stages)
         .set({
-          status: 'succeeded',
+          status: decision.kind === 'park' ? 'waiting_human' : 'succeeded',
           finishedAt: new Date(),
           cost: usageRecord(execution.telemetry),
           result,
@@ -1216,22 +1305,29 @@ export class Engine {
         },
       })
 
-      const reworkedAt = await lastReworkAt(tx, task.id)
-      const rounds = await roundsFor(tx, task.id, reworkedAt)
-      const decision = advance(
-        liveGraph.dag,
-        node.key,
-        {
-          status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
-          verdict: result.verdict,
-          findings: result.findings,
-        },
-        rounds,
-        liveTask.caps,
-      )
-
       if (decision.record) await recordRound(tx, task.id, decision.record)
+
+      // Every decision requested this run becomes a durable record, whatever
+      // the outcome — a non-blocking one is recorded without parking anything.
+      for (const request of result.decisions_needed) {
+        await raiseDecision(tx, task.id, row.id, decisionFromRequest(node.key, request))
+      }
+
       if (decision.kind === 'park') {
+        // A park no agent asked for gets the engine's own escalation, so the
+        // invariant "parked implies an open decision" holds for every cause.
+        if (decision.reason !== 'needs_decision') {
+          for (const input of escalationEvidence(
+            decision.reason,
+            node,
+            decision.record,
+            rounds,
+            liveTask.caps,
+          )) {
+            await raiseDecision(tx, task.id, row.id, escalationForPark(input))
+          }
+        }
+
         await this.applyTransition(tx, liveTask, liveGraph.dag, 'waiting_human', {
           cause: decision.reason,
           resume: decision.resume,
@@ -1406,8 +1502,36 @@ export class Engine {
 
     const recoveredInterruptions = await this.recoverPendingInterruptions()
     const recoveredActions = await this.recoverStuckActions()
+    await this.reportUnexplainedParks()
 
     return orphans.length + orphanedResponses.length + recoveredInterruptions + recoveredActions
+  }
+
+  /**
+   * REQ-1201's invariant, checked rather than repaired: a `waiting_human` task
+   * with no open decision is a bug — the park transition and its decision
+   * insert are meant to commit together — and the honest response is to log
+   * it for a human, not to silently mint a decision or guess a resume.
+   */
+  private async reportUnexplainedParks(): Promise<void> {
+    const rows = await this.deps.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .leftJoin(
+        decisions,
+        and(
+          eq(decisions.taskId, tasks.id),
+          eq(decisions.status, 'open'),
+          eq(decisions.blocking, true),
+        ),
+      )
+      .where(and(eq(tasks.status, 'waiting_human'), sql`${decisions.id} is null`))
+
+    for (const row of rows) {
+      this.deps.log?.(
+        `sweep: task ${row.id} is waiting_human with no open blocking decision — this is a defect, not repaired`,
+      )
+    }
   }
 
   /**
@@ -1908,29 +2032,28 @@ export class Engine {
           })
           break
         }
-        case 'answer_decision':
+        case 'answer_decision': {
+          const decisionId = action.target.decisionId
+          if (!decisionId) throw new ActionConflictError(action.id, 'decision target is missing')
+
+          await this.answer({
+            taskId: options.taskId,
+            decisionId,
+            actor: options.actor,
+            text: action.instruction ?? undefined,
+          })
+          break
+        }
         case 'dismiss_decision': {
           const decisionId = action.target.decisionId
           if (!decisionId) throw new ActionConflictError(action.id, 'decision target is missing')
 
-          const [updated] = await this.deps.db
-            .update(decisions)
-            .set({
-              status: action.kind === 'answer_decision' ? 'answered' : 'dismissed',
-              answerMd: action.instruction,
-              answeredBy: options.actor,
-              answeredAt: new Date(),
-            })
-            .where(
-              and(
-                eq(decisions.id, decisionId),
-                eq(decisions.taskId, options.taskId),
-                eq(decisions.status, 'open'),
-              ),
-            )
-            .returning({ id: decisions.id })
-          if (!updated) throw new ActionConflictError(action.id, 'decision is no longer open')
-
+          await this.dismiss({
+            taskId: options.taskId,
+            decisionId,
+            actor: options.actor,
+            reason: action.instruction ?? undefined,
+          })
           break
         }
         case 'instruct_next_run': {
@@ -2103,18 +2226,123 @@ export class Engine {
     })
   }
 
-  /** Returns a parked task to the exact state it stopped in. */
+  /**
+   * Returns a paused task to the exact state it stopped in. A `waiting_human`
+   * task never leaves that state through this operation: REQ-1204 leaves it
+   * exactly two exits, resolving its open blocking decisions or cancellation —
+   * `answer` and `dismiss` are how the first one moves the task.
+   */
   async resume(taskId: string, actor: string): Promise<void> {
     await this.withTaskLock(taskId, async (tx) => {
       const { task, graph } = await this.taskWithGraph(taskId, tx)
-      if (task.status !== 'waiting_human' && task.status !== 'paused') {
-        throw new NotParkedError(taskId, task.status)
-      }
+      if (task.status !== 'paused') throw new NotParkedError(taskId, task.status)
+
       const to = task.resumeStatus
       if (!to) throw new NoResumeStateError(taskId)
 
       await emitEvent(tx, { taskId, type: 'task.resumed', payload: { to, actor } })
       await this.applyTransition(tx, task, graph.dag, to, { cause: 'resume', actor })
+    })
+  }
+
+  /**
+   * Answering is one atomic step: the answer, the answering identity and
+   * time, a `decision_answer` feedback record against the asking stage's role
+   * and provider, an event, and — when this was the last open blocking
+   * decision of a parked task — the task's return to the state it was
+   * interrupted in.
+   */
+  async answer(options: AnswerDecisionOptions): Promise<Task> {
+    const answerMd = options.text?.trim() || options.optionId
+    if (!answerMd) throw new DecisionAnswerEmptyError(options.decisionId)
+
+    return this.resolveDecision(
+      options.taskId,
+      options.decisionId,
+      options.actor,
+      'answered',
+      answerMd,
+    )
+  }
+
+  /** Dismissal resolves a decision for the purpose of resuming, recorded distinctly from an answer. */
+  async dismiss(options: DismissDecisionOptions): Promise<Task> {
+    return this.resolveDecision(
+      options.taskId,
+      options.decisionId,
+      options.actor,
+      'dismissed',
+      options.reason?.trim() || null,
+    )
+  }
+
+  private async resolveDecision(
+    taskId: string,
+    decisionId: string,
+    actor: string,
+    status: 'answered' | 'dismissed',
+    answerMd: string | null,
+  ): Promise<Task> {
+    return this.withTaskLock(taskId, async (tx) => {
+      const [decision] = await tx
+        .select()
+        .from(decisions)
+        .where(and(eq(decisions.id, decisionId), eq(decisions.taskId, taskId)))
+        .limit(1)
+      if (!decision) throw new DecisionNotFoundError(decisionId)
+      if (decision.status !== 'open') throw new DecisionNotOpenError(decisionId, decision.status)
+
+      const now = new Date()
+      const resolved = await tx
+        .update(decisions)
+        .set({ status, answerMd, answeredBy: actor, answeredAt: now })
+        .where(and(eq(decisions.id, decisionId), eq(decisions.status, 'open')))
+        .returning({ id: decisions.id })
+      if (resolved.length === 0) throw new DecisionNotOpenError(decisionId, decision.status)
+
+      if (status === 'answered' && decision.stageId) {
+        const [stage] = await tx
+          .select({ role: stages.role, provider: stages.provider })
+          .from(stages)
+          .where(eq(stages.id, decision.stageId))
+          .limit(1)
+        await tx.insert(feedback).values({
+          taskId,
+          stageId: decision.stageId,
+          role: stage?.role,
+          provider: stage?.provider,
+          kind: 'decision_answer',
+          textMd: answerMd ?? '',
+          target: { decisionId },
+        })
+      }
+
+      await emitEvent(tx, {
+        taskId,
+        stageId: decision.stageId ?? undefined,
+        type: status === 'answered' ? 'decision.answered' : 'decision.dismissed',
+        payload: { decisionId, nodeKey: decision.nodeKey, key: decision.key, actor },
+      })
+
+      const { task, graph } = await this.taskWithGraph(taskId, tx)
+      if (task.status !== 'waiting_human') return task
+
+      const openDecisions = await tx
+        .select()
+        .from(decisions)
+        .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+      if (blockingOpen(openDecisions)) return task
+
+      const to = task.resumeStatus
+      if (!to) throw new NoResumeStateError(taskId)
+
+      await this.applyTransition(tx, task, graph.dag, to, {
+        cause: status === 'answered' ? 'decision_answered' : 'decision_dismissed',
+        actor,
+      })
+      const [resumed] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+
+      return resumed ?? { ...task, status: to }
     })
   }
 
@@ -2236,6 +2464,38 @@ export class Engine {
         ...(opts.payload ?? {}),
       },
     })
+
+    // A terminal task leaves nothing open behind it: an inbox that
+    // accumulates dead questions from finished tasks is an inbox nobody reads.
+    if (isTerminal(to)) await this.dismissOpenDecisions(db, task.id, opts.actor ?? 'system')
+  }
+
+  private async dismissOpenDecisions(db: DbClient, taskId: string, actor: string): Promise<void> {
+    const dismissed = await db
+      .update(decisions)
+      .set({ status: 'dismissed', answeredBy: actor, answeredAt: new Date() })
+      .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+      .returning({
+        id: decisions.id,
+        stageId: decisions.stageId,
+        nodeKey: decisions.nodeKey,
+        key: decisions.key,
+      })
+
+    for (const decision of dismissed) {
+      await emitEvent(db, {
+        taskId,
+        stageId: decision.stageId ?? undefined,
+        type: 'decision.dismissed',
+        payload: {
+          decisionId: decision.id,
+          nodeKey: decision.nodeKey,
+          key: decision.key,
+          actor,
+          cause: 'terminal',
+        },
+      })
+    }
   }
 
   /**
@@ -2332,6 +2592,59 @@ function stageDefect(node: StageNode, execution: StageExecution): StageDefectRec
   }
 
   return null
+}
+
+/**
+ * What `escalationForPark` needs for a park no agent requested, built from
+ * exactly what `completeStage` already has: the just-computed round record,
+ * the node's loop edge, and the caps and rounds `advance()` was itself given.
+ * Empty only if `advance()` parked a stage with no loop edge, which cannot
+ * happen — `escalate`, `cap_exhausted`, and `repeated_finding` are all
+ * returned only from the loop-edge branch.
+ */
+function escalationEvidence(
+  reason: 'escalate' | 'cap_exhausted' | 'repeated_finding',
+  node: StageNode,
+  record: RoundToRecord | undefined,
+  rounds: readonly RecordedRound[],
+  caps: Caps,
+): EscalationInput[] {
+  if (!record || !node.loopEdge) return []
+
+  const { loop } = node.loopEdge
+  if (reason === 'escalate') {
+    return [
+      {
+        cause: 'escalate',
+        nodeKey: node.key,
+        loop,
+        round: record.round,
+        verdict: record.verdict,
+        findings: record.findings,
+      },
+    ]
+  }
+  if (reason === 'cap_exhausted') {
+    return [
+      {
+        cause: 'cap_exhausted',
+        nodeKey: node.key,
+        loop,
+        round: record.round,
+        cap: caps[LOOP_CAPS[loop]],
+      },
+    ]
+  }
+
+  const countedRounds = rounds.filter((round) => round.loop === loop && round.counted !== false)
+
+  return stalledFindings(record, countedRounds, caps.repeated_finding_threshold).map((finding) => ({
+    cause: 'repeated_finding' as const,
+    nodeKey: node.key,
+    loop,
+    round: record.round,
+    finding,
+  }))
 }
 
 function usageRecord(telemetry: StageTelemetry | null | undefined): StageUsage {

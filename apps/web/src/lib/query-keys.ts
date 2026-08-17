@@ -7,6 +7,7 @@ export const queryKeys = {
   conversation: (taskId: string, conversationId: string) =>
     ['tasks', taskId, 'conversations', conversationId] as const,
   artifacts: (taskId: string) => ['tasks', taskId, 'artifacts'] as const,
+  decisions: (taskId: string) => ['tasks', taskId, 'decisions'] as const,
   artifact: (taskId: string, artifactId: string) =>
     ['tasks', taskId, 'artifacts', artifactId] as const,
 }

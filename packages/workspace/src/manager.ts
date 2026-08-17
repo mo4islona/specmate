@@ -9,6 +9,7 @@ import { ensureExcludes, ensureMirror, resolveBaseCommit } from './mirror.ts'
 import {
   changeDir,
   conversationWorktreePath,
+  DECISION_LOG_FILE,
   mirrorPath,
   SCHEMA_MARKER,
   taskBranch,
@@ -198,6 +199,21 @@ export class WorkspaceManager {
     await this.withMirrorLock(workspace.mirrorPath, async () => {
       await this.git.run(['reset', '--hard', '--quiet', commit], { cwd: workspace.path })
       await this.git.run(['clean', '-fdq'], { cwd: workspace.path })
+    })
+  }
+
+  /**
+   * Overwrites the change folder's decision log with the store's rendering.
+   * Called before every stage dispatch, so a role's own edits to the file
+   * never survive into the next stage's context — the store stays
+   * authoritative, and a re-provisioned workspace reproduces the log rather
+   * than losing it with the tree.
+   */
+  async writeDecisionLog(workspace: Workspace, markdown: string): Promise<void> {
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      const folder = join(workspace.path, workspace.changeDir)
+      await mkdir(folder, { recursive: true })
+      await writeFile(join(folder, DECISION_LOG_FILE), markdown)
     })
   }
 

@@ -20,6 +20,7 @@ export interface FakeWorkspaces {
     conversationReleased: string[]
     discarded: string[]
     released: string[]
+    decisionLogs: { slug: string; markdown: string }[]
   }
   readonly workspaces: EngineWorkspaces
   failNextConversationRelease(error?: Error): void
@@ -33,6 +34,7 @@ export function fakeWorkspaces(): FakeWorkspaces {
     conversationReleased: [] as string[],
     discarded: [] as string[],
     released: [] as string[],
+    decisionLogs: [] as { slug: string; markdown: string }[],
   }
   const workspace = (slug: string): Workspace => ({
     slug,
@@ -75,6 +77,9 @@ export function fakeWorkspaces(): FakeWorkspaces {
       },
       async discard(ws) {
         calls.discarded.push(ws.slug)
+      },
+      async writeDecisionLog(ws, markdown) {
+        calls.decisionLogs.push({ slug: ws.slug, markdown })
       },
       async release(taskId) {
         calls.released.push(taskId)
