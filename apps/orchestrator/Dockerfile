@@ -19,8 +19,10 @@ FROM oven/bun:1.3.9-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV WORKSPACE_ROOT=/var/lib/specmate/workspaces
-# Workspaces are real git worktrees driven by the git CLI over ssh.
-RUN apk add --no-cache git openssh-client
+# Workspaces are real git worktrees driven by the git CLI over ssh. The docker
+# client is how RUNNER_BACKEND=docker starts a stage: this process talks to the
+# host daemon over the mounted socket, so the CLI has to be in the image.
+RUN apk add --no-cache git openssh-client docker-cli
 COPY --from=deps /app /app
 COPY packages packages
 COPY apps/orchestrator apps/orchestrator
