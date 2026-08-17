@@ -350,8 +350,27 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const messages = conversation.data?.messages ?? []
   const actions = conversation.data?.actions ?? []
   const decisionRows = decisions.data.decisions
-  const decisionBusy = answerOption.isPending || answerText.isPending || dismiss.isPending
-  const decisionError = (answerOption.error ?? answerText.error ?? dismiss.error)?.message
+
+  // answerOption, answerText, and dismiss are one mutation instance each,
+  // shared by every open decision on this task — busy/error state has to be
+  // scoped to the decision id each call actually targeted, or resolving one
+  // card would disable and misattribute errors to every other open card.
+  function decisionBusy(decisionId: string): boolean {
+    return (
+      (answerOption.isPending && answerOption.variables?.decisionId === decisionId) ||
+      (answerText.isPending && answerText.variables?.decisionId === decisionId) ||
+      (dismiss.isPending && dismiss.variables === decisionId)
+    )
+  }
+
+  function decisionError(decisionId: string): string | undefined {
+    const fromOption =
+      answerOption.variables?.decisionId === decisionId ? answerOption.error : undefined
+    const fromText = answerText.variables?.decisionId === decisionId ? answerText.error : undefined
+    const fromDismiss = dismiss.variables === decisionId ? dismiss.error : undefined
+
+    return (fromOption ?? fromText ?? fromDismiss)?.message
+  }
 
   function discussDecision(decisionConversationId: string | null): void {
     if (decisionConversationId) setActiveConversationId(decisionConversationId)
@@ -470,29 +489,32 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       {decisionRows.length > 0 && (
         <section aria-label="Decisions">
           <ol className="grid gap-4">
-            {decisionRows.map((decision) => (
-              <DecisionCard
-                key={decision.id}
-                decision={decision}
-                parkedOnThis={
-                  decision.status === 'open' &&
-                  decision.blocking &&
-                  detail.data.task.status === 'waiting_human'
-                }
-                busy={decisionBusy}
-                error={decisionError}
-                onAnswerOption={(optionId) =>
-                  answerOption.mutate({ decisionId: decision.id, optionId })
-                }
-                onAnswerText={(text) => answerText.mutate({ decisionId: decision.id, text })}
-                onDismiss={() => dismiss.mutate(decision.id)}
-                onDiscuss={
-                  decision.conversationId
-                    ? () => discussDecision(decision.conversationId)
-                    : undefined
-                }
-              />
-            ))}
+            {decisionRows.map((decision) => {
+              const parkedOnThis =
+                decision.status === 'open' &&
+                decision.blocking &&
+                detail.data.task.status === 'waiting_human'
+
+              return (
+                <DecisionCard
+                  key={decision.id}
+                  decision={decision}
+                  parkedOnThis={parkedOnThis}
+                  busy={decisionBusy(decision.id)}
+                  error={decisionError(decision.id)}
+                  onAnswerOption={(optionId) =>
+                    answerOption.mutate({ decisionId: decision.id, optionId })
+                  }
+                  onAnswerText={(text) => answerText.mutate({ decisionId: decision.id, text })}
+                  onDismiss={() => dismiss.mutate(decision.id)}
+                  onDiscuss={
+                    decision.conversationId
+                      ? () => discussDecision(decision.conversationId)
+                      : undefined
+                  }
+                />
+              )
+            })}
           </ol>
         </section>
       )}

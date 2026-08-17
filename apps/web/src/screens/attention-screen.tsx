@@ -55,7 +55,7 @@ export function AttentionScreen() {
       ) : (
         <ol className="grid gap-3 xl:grid-cols-2">
           {attention.data.items.map((item) => (
-            <li key={`${item.task.id}-${item.reason.kind}`}>
+            <li key={item.id}>
               <Link
                 href={`/tasks/${item.task.id}`}
                 className="panel attention-pulse group block h-full border-l-2 border-l-amber p-5 transition-colors hover:border-phosphor/50 hover:bg-elevated"

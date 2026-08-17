@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { DecisionItem } from '../lib/api-client.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
@@ -33,6 +33,13 @@ export function DecisionCard({
 }: DecisionCardProps) {
   const [text, setText] = useState('')
   const isOpen = decision.status === 'open'
+
+  // Cleared only once the decision actually resolves — answerText is
+  // fire-and-forget, so clearing on click would drop the owner's draft the
+  // moment a submit fails (e.g. a 409 from a stale decision).
+  useEffect(() => {
+    if (!isOpen) setText('')
+  }, [isOpen])
 
   return (
     <li
@@ -88,10 +95,7 @@ export function DecisionCard({
               type="button"
               className="button-primary"
               disabled={busy || !text.trim()}
-              onClick={() => {
-                onAnswerText(text.trim())
-                setText('')
-              }}
+              onClick={() => onAnswerText(text.trim())}
             >
               Answer
             </button>

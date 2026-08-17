@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { ConversationResult, checkReviseHasFindings, parseStageResult } from '../src/result.ts'
+import {
+  ConversationResult,
+  checkDecisionsPresent,
+  checkReviseHasFindings,
+  parseStageResult,
+} from '../src/result.ts'
 import { ARTIFACT_KINDS, pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
 
 const minimal = {
@@ -60,6 +65,63 @@ describe('RESULT.json contract', () => {
   test('accepts a verdict-less result from a role that need not return one', () => {
     const parsed = parseStageResult(JSON.stringify(minimal))
     expect(parsed.ok).toBe(true)
+  })
+
+  test('rejects needs_decision with no decisions_needed, naming the role', () => {
+    const parsed = parseStageResult(JSON.stringify({ ...minimal, status: 'needs_decision' }))
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('researcher')
+    expect(parsed.error).toContain('needs_decision')
+  })
+
+  test('accepts needs_decision backed by at least one decision request', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'Which repo owns this?' }],
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+  })
+})
+
+describe('checkDecisionsPresent', () => {
+  const needsDecision = {
+    schema_version: 1 as const,
+    role: 'researcher' as const,
+    status: 'needs_decision' as const,
+    artifacts_changed: [],
+    decisions_needed: [],
+    findings: [],
+    notes_md: '',
+    usage: {},
+  }
+
+  test('rejects needs_decision with an empty decisions_needed', () => {
+    expect(checkDecisionsPresent(needsDecision)).toContain('researcher')
+  })
+
+  test('accepts needs_decision with at least one decision request', () => {
+    const withRequest = {
+      ...needsDecision,
+      decisions_needed: [
+        {
+          key: 'scope',
+          kind: 'question' as const,
+          prompt_md: 'Which repo?',
+          options: [],
+          blocking: true,
+        },
+      ],
+    }
+    expect(checkDecisionsPresent(withRequest)).toBeNull()
+  })
+
+  test('ignores ok and failed statuses regardless of decisions_needed', () => {
+    expect(checkDecisionsPresent({ ...needsDecision, status: 'ok' })).toBeNull()
+    expect(checkDecisionsPresent({ ...needsDecision, status: 'failed' })).toBeNull()
   })
 })
 

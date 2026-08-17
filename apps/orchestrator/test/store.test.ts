@@ -171,7 +171,6 @@ describeDb('task store', () => {
 
       expect(second.created).toBe(false)
       expect(second.decision.id).toBe(first.decision.id)
-      expect(second.decision.promptMd).toBe(request.promptMd)
       const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
       expect(rows).toHaveLength(1)
       const conversationRows = await db
@@ -179,6 +178,38 @@ describeDb('task store', () => {
         .from(conversations)
         .where(eq(conversations.taskId, task.id))
       expect(conversationRows).toHaveLength(1)
+    })
+
+    test('a re-ask carrying a changed prompt, options, kind, or blocking flag updates the still-open decision in place', async () => {
+      const { task } = await make()
+
+      const first = await raiseDecision(db, task.id, null, request)
+      const second = await raiseDecision(db, task.id, null, {
+        ...request,
+        promptMd: 'A corrected question',
+        options: [{ id: 'a', label: 'Option A' }],
+        blocking: false,
+      })
+
+      expect(second.created).toBe(false)
+      expect(second.decision.id).toBe(first.decision.id)
+      expect(second.decision).toMatchObject({
+        promptMd: 'A corrected question',
+        options: [{ id: 'a', label: 'Option A' }],
+        blocking: false,
+      })
+      const [stored] = await db.select().from(decisions).where(eq(decisions.id, first.decision.id))
+      expect(stored).toMatchObject({ promptMd: 'A corrected question', blocking: false })
+    })
+
+    test('a re-ask carrying no changes leaves the decision untouched', async () => {
+      const { task } = await make()
+
+      const first = await raiseDecision(db, task.id, null, request)
+      const second = await raiseDecision(db, task.id, null, request)
+
+      expect(second.created).toBe(false)
+      expect(second.decision).toEqual(first.decision)
     })
 
     test('asking again after an answer opens a fresh decision, leaving the old one readable', async () => {

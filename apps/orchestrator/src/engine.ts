@@ -6,6 +6,7 @@ import {
   type ConversationActionOption,
   type ConversationActionProposal,
   canTransition,
+  type DecisionOption,
   decisionFromRequest,
   type EscalationInput,
   type ExecutionUsage,
@@ -1270,6 +1271,7 @@ export class Engine {
           status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
           verdict: result.verdict,
           findings: result.findings,
+          hasBlockingDecision: result.decisions_needed.some((request) => request.blocking),
         },
         rounds,
         liveTask.caps,
@@ -1351,6 +1353,12 @@ export class Engine {
    * One dispatch is one attempt, whatever the runner retried internally.
    * While attempts remain the workspace is discarded and the next tick
    * re-dispatches; a spent cap fails the task naming the stage — never silently.
+   *
+   * The stage-failed record, the cap check, and (if the cap is spent) the
+   * task's own move to `failed` — including dismissing its open decisions —
+   * are one atomic step: a crash between them must never leave the task
+   * failed with decisions still open, or failed with no `stage.failed` event
+   * to explain it.
    */
   private async failAttempt(
     task: Task,
@@ -1362,45 +1370,56 @@ export class Engine {
     workspace: Workspace | undefined,
     telemetry: StageTelemetry | null | undefined,
   ): Promise<void> {
-    const { db, workspaces, log } = this.deps
-    const failed = await db
-      .update(stages)
-      .set({
-        status: 'failed',
-        finishedAt: new Date(),
-        cost: { ...usageRecord(telemetry), failure: { reason, detail } },
-        updatedAt: new Date(),
+    const { workspaces, log } = this.deps
+
+    const outcome = await this.withTaskLock(task.id, async (tx) => {
+      const failed = await tx
+        .update(stages)
+        .set({
+          status: 'failed',
+          finishedAt: new Date(),
+          cost: { ...usageRecord(telemetry), failure: { reason, detail } },
+          updatedAt: new Date(),
+        })
+        .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
+        .returning({ id: stages.id })
+      if (failed.length === 0) {
+        if (telemetry) {
+          await tx
+            .update(stages)
+            .set({ cost: usageRecord(telemetry), updatedAt: new Date() })
+            .where(and(eq(stages.id, row.id), eq(stages.status, 'interrupted')))
+        }
+
+        return 'interrupted' as const
+      }
+      await emitEvent(tx, {
+        taskId: task.id,
+        stageId: row.id,
+        type: 'stage.failed',
+        payload: { node: node.key, attempt: row.attempt, reason, detail: detail ?? null },
       })
-      .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
-      .returning({ id: stages.id })
-    if (failed.length === 0) {
-      if (telemetry) {
-        await db
-          .update(stages)
-          .set({ cost: usageRecord(telemetry), updatedAt: new Date() })
-          .where(and(eq(stages.id, row.id), eq(stages.status, 'interrupted')))
+
+      if (await this.capSpent(tx, task.id, graph.id, node.key)) {
+        await this.applyTransition(tx, task, graph.dag, 'failed', {
+          cause: reason,
+          resume: node.key,
+          stageId: row.id,
+          payload: { stage: node.key, reason, detail: detail ?? null },
+        })
+
+        return 'exhausted' as const
       }
 
-      return
-    }
-    await emitEvent(db, {
-      taskId: task.id,
-      stageId: row.id,
-      type: 'stage.failed',
-      payload: { node: node.key, attempt: row.attempt, reason, detail: detail ?? null },
+      return 'retry' as const
     })
 
-    if (await this.capSpent(task.id, graph.id, node.key)) {
-      await this.applyTransition(db, task, graph.dag, 'failed', {
-        cause: reason,
-        resume: node.key,
-        stageId: row.id,
-        payload: { stage: node.key, reason, detail: detail ?? null },
-      })
+    if (outcome === 'exhausted') {
       await this.failTerminalQueuedResponses(task.id)
 
       return
     }
+    if (outcome === 'interrupted') return
 
     // Only while attempts remain: a task out of attempts leaves its tree as
     // evidence, which is what the human will be asked to look at.
@@ -1447,8 +1466,13 @@ export class Engine {
     return { streak, lastAttempt: rows[0]?.attempt ?? -1 }
   }
 
-  private async capSpent(taskId: string, graphId: string, nodeKey: string): Promise<boolean> {
-    const { streak } = await this.attemptHistory(this.deps.db, taskId, graphId, nodeKey)
+  private async capSpent(
+    db: DbClient,
+    taskId: string,
+    graphId: string,
+    nodeKey: string,
+  ): Promise<boolean> {
+    const { streak } = await this.attemptHistory(db, taskId, graphId, nodeKey)
 
     return streak >= this.deps.settings.stageAttemptCap
   }
@@ -1599,7 +1623,7 @@ export class Engine {
   }
 
   private async settleOrphan(task: Task, row: Stage): Promise<void> {
-    const { db, workspaces, killOrphans, log } = this.deps
+    const { workspaces, killOrphans, log } = this.deps
     log?.(
       `sweep: task ${task.id} node ${row.nodeKey} attempt ${row.attempt} was recorded running with no live execution`,
     )
@@ -1610,40 +1634,48 @@ export class Engine {
       }).catch(() => [])) ?? []
     for (const id of killed) log?.(`sweep: killed ${id}`)
 
-    await db
-      .update(stages)
-      .set({
-        status: 'failed',
-        finishedAt: new Date(),
-        cost: { ...(row.cost ?? {}), failure: { reason: 'orphaned' } },
-        updatedAt: new Date(),
+    // The stage-failed record, the cap check, and the task's own move to
+    // `failed` are one atomic step — see failAttempt's identical concern.
+    const outcome = await this.withTaskLock(task.id, async (tx) => {
+      await tx
+        .update(stages)
+        .set({
+          status: 'failed',
+          finishedAt: new Date(),
+          cost: { ...(row.cost ?? {}), failure: { reason: 'orphaned' } },
+          updatedAt: new Date(),
+        })
+        .where(eq(stages.id, row.id))
+      await emitEvent(tx, {
+        taskId: task.id,
+        stageId: row.id,
+        type: 'stage.failed',
+        payload: { node: row.nodeKey, attempt: row.attempt, reason: 'orphaned' },
       })
-      .where(eq(stages.id, row.id))
-    await emitEvent(db, {
-      taskId: task.id,
-      stageId: row.id,
-      type: 'stage.failed',
-      payload: { node: row.nodeKey, attempt: row.attempt, reason: 'orphaned' },
-    })
 
-    // The cap is judged against the orphaned row's own graph and node — the
-    // latest graph and task.status may have diverged from it (a replan).
-    if (await this.capSpent(task.id, row.graphId, row.nodeKey)) {
-      const graph = await latestGraph(db, task.id)
+      // The cap is judged against the orphaned row's own graph and node — the
+      // latest graph and task.status may have diverged from it (a replan).
+      if (!(await this.capSpent(tx, task.id, row.graphId, row.nodeKey))) return 'retry' as const
+
+      const graph = await latestGraph(tx, task.id)
       if (graph && canTransition(graph.dag, task.status, 'failed')) {
-        await this.applyTransition(db, task, graph.dag, 'failed', {
+        await this.applyTransition(tx, task, graph.dag, 'failed', {
           cause: 'orphaned',
           resume: row.nodeKey as TaskState,
           stageId: row.id,
           payload: { stage: row.nodeKey, reason: 'orphaned' },
         })
-        await this.failTerminalQueuedResponses(task.id)
+
+        return 'exhausted' as const
       }
 
-      // Out of attempts: the tree stays exactly as the dead attempt left it —
-      // the evidence a human will be asked to look at, as in failAttempt.
-      return
-    }
+      return 'exhausted-no-transition' as const
+    })
+
+    if (outcome === 'exhausted') await this.failTerminalQueuedResponses(task.id)
+    // Out of attempts: the tree stays exactly as the dead attempt left it —
+    // the evidence a human will be asked to look at, as in failAttempt.
+    if (outcome !== 'retry') return
 
     // Attempts remain: reset the tree so the retry starts from committed state.
     try {
@@ -2253,27 +2285,21 @@ export class Engine {
    * interrupted in.
    */
   async answer(options: AnswerDecisionOptions): Promise<Task> {
-    const answerMd = options.text?.trim() || options.optionId
-    if (!answerMd) throw new DecisionAnswerEmptyError(options.decisionId)
+    if (!options.text?.trim() && !options.optionId) {
+      throw new DecisionAnswerEmptyError(options.decisionId)
+    }
 
-    return this.resolveDecision(
-      options.taskId,
-      options.decisionId,
-      options.actor,
-      'answered',
-      answerMd,
-    )
+    return this.resolveDecision(options.taskId, options.decisionId, options.actor, 'answered', {
+      text: options.text,
+      optionId: options.optionId,
+    })
   }
 
   /** Dismissal resolves a decision for the purpose of resuming, recorded distinctly from an answer. */
   async dismiss(options: DismissDecisionOptions): Promise<Task> {
-    return this.resolveDecision(
-      options.taskId,
-      options.decisionId,
-      options.actor,
-      'dismissed',
-      options.reason?.trim() || null,
-    )
+    return this.resolveDecision(options.taskId, options.decisionId, options.actor, 'dismissed', {
+      text: options.reason,
+    })
   }
 
   private async resolveDecision(
@@ -2281,7 +2307,7 @@ export class Engine {
     decisionId: string,
     actor: string,
     status: 'answered' | 'dismissed',
-    answerMd: string | null,
+    input: { text?: string; optionId?: string },
   ): Promise<Task> {
     return this.withTaskLock(taskId, async (tx) => {
       const [decision] = await tx
@@ -2292,6 +2318,7 @@ export class Engine {
       if (!decision) throw new DecisionNotFoundError(decisionId)
       if (decision.status !== 'open') throw new DecisionNotOpenError(decisionId, decision.status)
 
+      const answerMd = resolveAnswerMd(input, decision.options)
       const now = new Date()
       const resolved = await tx
         .update(decisions)
@@ -2336,6 +2363,7 @@ export class Engine {
       const to = task.resumeStatus
       if (!to) throw new NoResumeStateError(taskId)
 
+      await emitEvent(tx, { taskId, type: 'task.resumed', payload: { to, actor } })
       await this.applyTransition(tx, task, graph.dag, to, {
         cause: status === 'answered' ? 'decision_answered' : 'decision_dismissed',
         actor,
@@ -2654,4 +2682,22 @@ function usageRecord(telemetry: StageTelemetry | null | undefined): StageUsage {
     costUsd: telemetry?.costUsd ?? null,
     raw: telemetry?.raw ?? null,
   }
+}
+
+/**
+ * Free text wins when both are given; an option answer is stored as its
+ * label so the resolved card and the next stage's prompt read like the
+ * owner's choice, not the id they clicked. An id with no match in the
+ * decision's own option set (stale by the time it was answered) falls back
+ * to the raw id rather than losing the answer.
+ */
+function resolveAnswerMd(
+  input: { text?: string; optionId?: string },
+  options: readonly DecisionOption[],
+): string | null {
+  const text = input.text?.trim()
+  if (text) return text
+  if (!input.optionId) return null
+
+  return options.find((option) => option.id === input.optionId)?.label ?? input.optionId
 }

@@ -8,12 +8,13 @@ import {
   createDb,
   type Database,
   decisions,
+  events,
   feedback,
   stages,
   tasks,
 } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import {
   DecisionAnswerEmptyError,
   DecisionNotOpenError,
@@ -93,6 +94,16 @@ describeDb('decision-records', () => {
       .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
   }
 
+  async function eventTypes(taskId: string): Promise<string[]> {
+    const rows = await db
+      .select({ type: events.type })
+      .from(events)
+      .where(eq(events.taskId, taskId))
+      .orderBy(asc(events.seq))
+
+    return rows.map((row) => row.type)
+  }
+
   test('a blocking request parks the task, records waiting_human on the stage, and keeps the committed result', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'research' })
@@ -139,6 +150,26 @@ describeDb('decision-records', () => {
     const open = await openDecisions(task.id)
     expect(open).toHaveLength(1)
     expect(open[0]).toMatchObject({ blocking: false, status: 'open' })
+  })
+
+  test('an ok status carrying a blocking decision still parks the task, not just needs_decision', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'ok',
+        decisions_needed: [{ key: 'scope', prompt_md: 'Which repo?', blocking: true }],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
+    const open = await openDecisions(task.id)
+    expect(open).toHaveLength(1)
+    expect(open[0]).toMatchObject({ blocking: true, status: 'open' })
   })
 
   test('escalate, cap_exhausted, and repeated_finding each leave exactly one open escalation', async () => {
@@ -264,6 +295,66 @@ describeDb('decision-records', () => {
       expect(row.role).toBe('researcher')
       expect(row.provider).toBe('claude-code')
     }
+  })
+
+  test('answering with an option id stores the option label, not the id', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [
+          {
+            key: 'scope',
+            prompt_md: 'Which repo?',
+            options: [
+              { id: 'opt-whole', label: 'The whole repository' },
+              { id: 'opt-frontend', label: 'Frontend only' },
+            ],
+          },
+        ],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      optionId: 'opt-frontend',
+    })
+
+    const stored = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+    expect(stored?.answerMd).toBe('Frontend only')
+  })
+
+  test('resolving the last blocking decision emits task.resumed alongside decision.answered', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'needs_decision',
+        decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      text: 'The whole repo.',
+    })
+
+    expect(await eventTypes(task.id)).toContain('task.resumed')
   })
 
   test('resolving twice, and answering with neither an option nor text, are rejected without writing anything', async () => {

@@ -456,6 +456,14 @@ describeDb('api', () => {
               status: 'research',
               updatedAt: new Date('2026-08-16T11:15:00.000Z'),
             },
+            {
+              slug: 'attention-parked-on-decision',
+              title: 'Parked-on-decision fixture',
+              type: 'feature',
+              repoUrl: 'https://github.com/example/parked-decision-fixture',
+              status: 'waiting_human',
+              updatedAt: new Date('2026-08-16T11:25:00.000Z'),
+            },
           ])
           .returning()
         const bySlug = new Map(seeded.map((task) => [task.slug, task]))
@@ -464,18 +472,37 @@ describeDb('api', () => {
         const stalledTask = bySlug.get('attention-stalled')
         const healthyTask = bySlug.get('attention-healthy')
         const decisionTask = bySlug.get('attention-decision')
-        if (!gateTask || !failedTask || !stalledTask || !healthyTask || !decisionTask) {
+        const parkedOnDecisionTask = bySlug.get('attention-parked-on-decision')
+        if (
+          !gateTask ||
+          !failedTask ||
+          !stalledTask ||
+          !healthyTask ||
+          !decisionTask ||
+          !parkedOnDecisionTask
+        ) {
           throw new Error('attention fixtures were not inserted')
         }
-        await tx.insert(decisions).values({
-          taskId: decisionTask.id,
-          nodeKey: 'research',
-          key: 'style-nit',
-          kind: 'question',
-          promptMd: 'Worth a follow-up task?',
-          blocking: false,
-          createdAt: new Date('2026-08-16T11:20:00.000Z'),
-        })
+        await tx.insert(decisions).values([
+          {
+            taskId: decisionTask.id,
+            nodeKey: 'research',
+            key: 'style-nit',
+            kind: 'question',
+            promptMd: 'Worth a follow-up task?',
+            blocking: false,
+            createdAt: new Date('2026-08-16T11:20:00.000Z'),
+          },
+          {
+            taskId: parkedOnDecisionTask.id,
+            nodeKey: 'research',
+            key: 'scope',
+            kind: 'question',
+            promptMd: 'Which repo does this cover?',
+            blocking: true,
+            createdAt: new Date('2026-08-16T11:25:00.000Z'),
+          },
+        ])
 
         await tx.insert(events).values([
           {
@@ -523,8 +550,9 @@ describeDb('api', () => {
             since: string
           }[]
         }
-        expect(body.items).toHaveLength(4)
+        expect(body.items).toHaveLength(5)
         expect(body.items.map((item) => item.reason.kind).sort()).toEqual([
+          'decision',
           'decision',
           'failed',
           'gate',
@@ -539,6 +567,15 @@ describeDb('api', () => {
         expect(failedItem?.reason.detail).toBe('attempt cap exhausted')
         expect(decisionItem?.since).toBe('2026-08-16T11:20:00.000Z')
         expect(decisionItem?.reason.detail).toBe('Worth a follow-up task?')
+
+        // A waiting_human task carries no separate 'gate' item: its open
+        // decision is the entire explanation, not a second redundant one.
+        const parkedItems = body.items.filter((item) => item.task.id === parkedOnDecisionTask.id)
+        expect(parkedItems).toHaveLength(1)
+        expect(parkedItems[0]?.reason).toMatchObject({
+          kind: 'decision',
+          detail: 'Which repo does this cover?',
+        })
 
         throw rollback
       })
@@ -863,6 +900,45 @@ describeDb('api', () => {
     const open = relistedDecisions.find((d) => d.id === second.id)
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
     expect(open).toMatchObject({ status: 'open', conversationId: conversation.id })
+  })
+
+  test('answering the last blocker of a task with no recorded resume state surfaces a stable conflict code, not a bare 500', async () => {
+    const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `decision-no-resume-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'No resume state fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/no-resume-fixture',
+        status: 'waiting_human',
+        resumeStatus: null,
+      })
+      .returning()
+    if (!task) throw new Error('no-resume task insert returned no row')
+    createdTaskIds.push(task.id)
+    await db.insert(runGraphs).values({ taskId: task.id, dag })
+
+    const [decision] = await db
+      .insert(decisions)
+      .values({
+        taskId: task.id,
+        nodeKey: 'research',
+        key: 'scope',
+        kind: 'question',
+        promptMd: 'What does this cover?',
+      })
+      .returning()
+    if (!decision) throw new Error('decision insert returned no row')
+
+    const response = await app.request(`/api/v1/decisions/${decision.id}/answer`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ text: 'The whole repository.' }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'conflict', detail: expect.any(String) })
   })
 
   test('a confirmed answer_decision conversation action resumes the task exactly like the direct control', async () => {

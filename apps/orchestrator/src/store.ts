@@ -1,8 +1,10 @@
 import {
   Budgets,
   Caps,
+  ConversationSubjectConflictError,
   type DecisionInsert,
   instantiateDefinition,
+  isUniqueViolation,
   nodeAt,
   PIPELINE_CATALOG,
   type PinnedGraph,
@@ -12,6 +14,7 @@ import {
   type TaskType,
 } from '@specmate/core'
 import {
+  type Conversation,
   conversations,
   type Database,
   type DbClient,
@@ -294,7 +297,31 @@ export async function raiseDecision(
       ),
     )
     .limit(1)
-  if (open) return { decision: open, created: false }
+  if (open) {
+    // A re-ask at the same (node, key) attaches to the still-open decision
+    // rather than duplicating it — but a retried or corrected stage may have
+    // changed what it's asking, and that update must not be lost underneath
+    // an unchanged identity.
+    const unchanged =
+      open.kind === input.kind &&
+      open.promptMd === input.promptMd &&
+      open.blocking === input.blocking &&
+      JSON.stringify(open.options) === JSON.stringify(input.options)
+    if (unchanged) return { decision: open, created: false }
+
+    const [updated] = await db
+      .update(decisions)
+      .set({
+        kind: input.kind,
+        promptMd: input.promptMd,
+        options: [...input.options],
+        blocking: input.blocking,
+      })
+      .where(eq(decisions.id, open.id))
+      .returning()
+
+    return { decision: updated ?? open, created: false }
+  }
 
   const [created] = await db
     .insert(decisions)
@@ -324,10 +351,22 @@ export async function raiseDecision(
     },
   })
 
-  const [conversation] = await db
-    .insert(conversations)
-    .values({ taskId, subjectKind: 'decision', subjectId: created.id })
-    .returning()
+  let conversation: Conversation | undefined
+  try {
+    ;[conversation] = await db
+      .insert(conversations)
+      .values({ taskId, subjectKind: 'decision', subjectId: created.id })
+      .returning()
+  } catch (error) {
+    // Mirrors insertConversationOrConflict: the store has no typed "already
+    // exists" result, so the partial unique index's violation is the only
+    // signal a race collided with an existing conversation for this decision.
+    if (isUniqueViolation(error)) {
+      throw new ConversationSubjectConflictError(taskId, 'decision', created.id)
+    }
+
+    throw error
+  }
   if (!conversation) throw new Error(`conversation for decision ${created.id} could not be created`)
 
   await emitEvent(db, {
