@@ -77,6 +77,30 @@ describe('local backend', () => {
     expect(seen.env.DATABASE_URL).toBeUndefined()
     expect(seen.env.HOME).toBeDefined()
   })
+
+  test('cancels one exact run, settles it once, and leaves a differently labeled run alive', async () => {
+    const workspacePath = await tempDir('cancel')
+    const backend = new LocalBackend(makeConfig())
+    const first = backend.start(
+      spec({ workspacePath, label: 'stage-a', env: { SPECMATE_STUB_MODE: 'hang' } }),
+    )
+    const second = backend.start(
+      spec({ workspacePath, label: 'stage-b', env: { SPECMATE_STUB_MODE: 'hang' } }),
+    )
+    let secondSettled = false
+    void second.result.finally(() => {
+      secondSettled = true
+    })
+
+    await first.cancel()
+    await first.cancel()
+    expect((await first.result).timedOut).toBe(false)
+    await Bun.sleep(50)
+    expect(secondSettled).toBe(false)
+
+    await second.cancel()
+    await second.result
+  })
 })
 
 describe('docker backend', () => {
@@ -223,5 +247,22 @@ describe('docker deadline', () => {
 
     expect(result.timedOut).toBe(true)
     expect(killed).toEqual(['specmate-stage-9'])
+  })
+
+  test('a cancellable handle reaches the exact container and settles', async () => {
+    const workspacePath = await tempDir('docker-cancel')
+    const killed: string[] = []
+    const backend = new DockerBackend(
+      makeConfig({ backend: 'docker', dockerCli: STUB, forwardEnv: ['SPECMATE_STUB_MODE'] }),
+      (name) => killed.push(name),
+    )
+    process.env.SPECMATE_STUB_MODE = 'hang'
+    const execution = backend.start(
+      spec({ workspacePath, timeoutMs: 5_000, argv: [STUB], label: 'stage-cancelled' }),
+    )
+
+    await execution.cancel()
+    await execution.result
+    expect(killed).toEqual(['specmate-stage-cancelled'])
   })
 })

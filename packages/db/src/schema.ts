@@ -1,9 +1,14 @@
 import {
   type Budgets,
   type Caps,
+  type ConversationActionStatus,
+  type ConversationActionTarget,
+  type ConversationExpectedVersion,
+  type ConversationStatus,
   DEFAULT_BUDGETS,
   DEFAULT_CAPS,
   type ExecutionEnvironment,
+  type ExecutionUsage,
   type PinnedGraph,
   type ReviewFinding,
   type StageResult,
@@ -99,6 +104,41 @@ export const stageStatusEnum = pgEnum('stage_status', [
   'failed',
   'skipped',
   'waiting_human',
+  'interrupted',
+])
+export const stageCleanupStatusEnum = pgEnum('stage_cleanup_status', [
+  'pending',
+  'succeeded',
+  'failed',
+])
+export const conversationStatusEnum = pgEnum('conversation_status', ['open', 'closed'])
+export const conversationMessageRoleEnum = pgEnum('conversation_message_role', [
+  'owner',
+  'assistant',
+  'system',
+])
+export const conversationMessageStatusEnum = pgEnum('conversation_message_status', [
+  'completed',
+  'queued',
+  'responding',
+  'failed',
+])
+export const conversationActionKindEnum = pgEnum('conversation_action_kind', [
+  'answer_decision',
+  'dismiss_decision',
+  'approve_gate',
+  'redirect_gate',
+  'rework_gate',
+  'instruct_next_run',
+  'restart_stage',
+])
+export const conversationActionStatusEnum = pgEnum('conversation_action_status', [
+  'proposed',
+  'confirmed',
+  'applying',
+  'applied',
+  'conflict',
+  'failed',
 ])
 export const loopEnum = pgEnum('loop_kind', ['spec', 'impl'])
 export const verdictEnum = pgEnum('review_verdict', ['approve', 'revise', 'escalate'])
@@ -127,6 +167,8 @@ export const feedbackKindEnum = pgEnum('feedback_kind', [
   'rework',
   'overrule',
   'comment',
+  'conversation',
+  'intervention',
 ])
 
 // ─── providers (single owner: no accounts table) ──────────────────────────────
@@ -174,6 +216,98 @@ export const tasks = pgTable(
 
 // ─── planned graph & execution ────────────────────────────────────────────────
 
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    subjectKind: text('subject_kind'),
+    subjectId: text('subject_id'),
+    status: conversationStatusEnum().notNull().default('open').$type<ConversationStatus>(),
+    lastSequence: integer('last_sequence').notNull().default(0),
+    contextCommit: text('context_commit'),
+    contextTaskState: taskStatusEnum('context_task_state').$type<TaskState>(),
+    summaryMd: text('summary_md'),
+    summaryThrough: integer('summary_through').notNull().default(0),
+    providerSession: jsonb('provider_session').$type<Record<string, unknown>>(),
+    ...timestamps,
+  },
+  (t) => [
+    index('conversations_task_status_created_idx').on(t.taskId, t.status, t.createdAt),
+    uniqueIndex('conversations_subject_idx')
+      .on(t.taskId, t.subjectKind, t.subjectId)
+      .where(sql`${t.subjectKind} is not null and ${t.subjectId} is not null`),
+  ],
+)
+
+export const conversationMessages = pgTable(
+  'conversation_messages',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    sequence: integer().notNull(),
+    replyToMessageId: uuid('reply_to_message_id'),
+    role: conversationMessageRoleEnum().notNull(),
+    contentMd: text('content_md').notNull().default(''),
+    status: conversationMessageStatusEnum().notNull(),
+    stageId: uuid('stage_id'),
+    taskState: taskStatusEnum('task_state').notNull().$type<TaskState>(),
+    contextCommit: text('context_commit'),
+    provider: providerEnum(),
+    telemetry: jsonb().$type<ExecutionUsage[]>().notNull().default([]),
+    failureReason: text('failure_reason'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('conversation_messages_order_idx').on(t.conversationId, t.sequence),
+    uniqueIndex('conversation_messages_reply_idx')
+      .on(t.replyToMessageId)
+      .where(sql`${t.replyToMessageId} is not null`),
+    uniqueIndex('conversation_messages_one_active_idx')
+      .on(t.conversationId)
+      .where(sql`${t.status} = 'responding'`),
+    index('conversation_messages_queue_idx').on(t.status, t.createdAt),
+  ],
+)
+
+export const conversationActions = pgTable(
+  'conversation_actions',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => conversationMessages.id, { onDelete: 'cascade' }),
+    kind: conversationActionKindEnum().notNull(),
+    target: jsonb().$type<ConversationActionTarget>().notNull(),
+    instruction: text(),
+    expectedVersion: jsonb('expected_version').$type<ConversationExpectedVersion>().notNull(),
+    actor: text(),
+    status: conversationActionStatusEnum()
+      .notNull()
+      .default('proposed')
+      .$type<ConversationActionStatus>(),
+    outcome: jsonb().$type<Record<string, unknown>>(),
+    idempotencyKey: text('idempotency_key'),
+    ...timestamps,
+  },
+  (t) => [
+    index('conversation_actions_conversation_idx').on(t.conversationId, t.createdAt),
+    uniqueIndex('conversation_actions_idempotency_idx')
+      .on(t.taskId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
+  ],
+)
+
 export const runGraphs = pgTable(
   'run_graphs',
   {
@@ -193,14 +327,7 @@ export const runGraphs = pgTable(
  * Execution telemetry per attempt (persistence spec). Absent values are null —
  * never zero — so "no data" stays distinguishable from "free".
  */
-export interface StageUsage {
-  model?: string | null
-  tokens?: Record<string, number> | null
-  costUsd?: number | null
-  /** The provider's raw envelope, for what the normalized fields missed. */
-  raw?: unknown
-  failure?: { reason: string; detail?: string } | null
-}
+export type StageUsage = ExecutionUsage
 
 export const stages = pgTable(
   'stages',
@@ -223,6 +350,15 @@ export const stages = pgTable(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     cost: jsonb().$type<StageUsage>().notNull().default({}),
     result: jsonb().$type<StageResult>(),
+    /** Task branch HEAD captured before this attempt starts. */
+    workspaceCommit: text('workspace_commit'),
+    acceptedCommit: text('accepted_commit'),
+    interruptedBy: text('interrupted_by'),
+    interruptionActionId: uuid('interruption_action_id').references(() => conversationActions.id, {
+      onDelete: 'set null',
+    }),
+    interruptionCleanupStatus: stageCleanupStatusEnum('interruption_cleanup_status'),
+    interruptionFailure: text('interruption_failure'),
     ...timestamps,
   },
   (t) => [
@@ -342,9 +478,17 @@ export const feedback = pgTable(
     textMd: text('text_md').notNull(),
     /** Which role-prompt / policy versions this feedback corrects (§12.4). */
     promptVersions: jsonb('prompt_versions').$type<Record<string, string>>().notNull().default({}),
+    target: jsonb().$type<Record<string, unknown>>(),
+    idempotencyKey: text('idempotency_key'),
+    consumedByStageId: uuid('consumed_by_stage_id'),
     createdAt: timestamps.createdAt,
   },
-  (t) => [index('feedback_role_created_idx').on(t.role, t.createdAt)],
+  (t) => [
+    index('feedback_role_created_idx').on(t.role, t.createdAt),
+    uniqueIndex('feedback_task_idempotency_idx')
+      .on(t.taskId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
+  ],
 )
 
 // ─── audit / replay / UI stream ───────────────────────────────────────────────
@@ -365,6 +509,9 @@ export const events = pgTable(
 
 export type Task = typeof tasks.$inferSelect
 export type NewTask = typeof tasks.$inferInsert
+export type Conversation = typeof conversations.$inferSelect
+export type ConversationMessage = typeof conversationMessages.$inferSelect
+export type ConversationAction = typeof conversationActions.$inferSelect
 export type Stage = typeof stages.$inferSelect
 export type Decision = typeof decisions.$inferSelect
 export type SpecEvent = typeof events.$inferSelect

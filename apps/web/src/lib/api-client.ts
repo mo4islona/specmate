@@ -77,6 +77,22 @@ type EventsResponse = InferResponseType<
   (typeof apiClient.api.v1.tasks)[':id']['events']['$get'],
   200
 >
+export type ConversationsResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['conversations']['$get'],
+  200
+>
+type CreateConversationResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['conversations']['$post'],
+  201
+>
+export type ConversationResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['conversations'][':conversationId']['$get'],
+  200
+>
+type ConversationMessageResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['conversations'][':conversationId']['messages']['$post'],
+  201
+>
 type ArtifactsResponse = InferResponseType<
   (typeof apiClient.api.v1.tasks)[':id']['artifacts']['$get'],
   200
@@ -87,6 +103,9 @@ type ArtifactResponse = InferResponseType<
 >
 type CreateTaskRequest = InferRequestType<typeof apiClient.api.v1.tasks.$post>
 type FeedbackRequest = InferRequestType<(typeof apiClient.api.v1.tasks)[':id']['feedback']['$post']>
+type ConversationMessageRequest = InferRequestType<
+  (typeof apiClient.api.v1.tasks)[':id']['conversations'][':conversationId']['messages']['$post']
+>
 type FeedbackResponse = InferResponseType<
   (typeof apiClient.api.v1.tasks)[':id']['feedback']['$post'],
   201
@@ -97,18 +116,30 @@ type RedirectRequest = InferRequestType<
 type ReworkRequest = InferRequestType<
   (typeof apiClient.api.v1.tasks)[':id']['gates']['rework']['$post']
 >
+type StopStageRequest = InferRequestType<
+  (typeof apiClient.api.v1.tasks)[':id']['stages']['stop']['$post']
+>
+type RestartStageRequest = InferRequestType<
+  (typeof apiClient.api.v1.tasks)[':id']['stages']['restart']['$post']
+>
 
 export type TaskSummary = TasksResponse['tasks'][number]
 export type AttentionItem = AttentionResponse['items'][number]
 export type TaskDetail = TaskResponse
 export type TimelineEvent = EventsResponse['events'][number]
 export type TimelineResponse = EventsResponse
+export type ConversationItem = ConversationsResponse['conversations'][number]
+export type ConversationMessage = ConversationResponse['messages'][number]
+export type ConversationAction = ConversationResponse['actions'][number]
 export type ArtifactSummary = ArtifactsResponse['artifacts'][number]
 export type ArtifactDetail = ArtifactResponse['artifact']
 export type CreateTaskInput = CreateTaskRequest['json']
 export type FeedbackInput = FeedbackRequest['json']
+export type ConversationMessageInput = Omit<ConversationMessageRequest['json'], 'idempotencyKey'>
 export type RedirectInput = RedirectRequest['json']
 export type ReworkInput = ReworkRequest['json']
+export type StopStageInput = StopStageRequest['json']
+export type RestartStageInput = RestartStageRequest['json']
 
 export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   const response = await apiClient.api.v1.tasks.$get(undefined, { init: { signal } })
@@ -144,6 +175,86 @@ export async function listEvents(taskId: string, signal?: AbortSignal): Promise<
   )
 
   return readJson<EventsResponse>(response)
+}
+
+export async function listConversations(taskId: string): Promise<ConversationsResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations.$get({ param: { id: taskId } })
+
+  return readJson<ConversationsResponse>(response)
+}
+
+export async function createConversation(taskId: string): Promise<CreateConversationResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations.$post({
+    param: { id: taskId },
+    json: { idempotencyKey: crypto.randomUUID() },
+  })
+
+  return readJson<CreateConversationResponse>(response)
+}
+
+export async function getConversation(
+  taskId: string,
+  conversationId: string,
+): Promise<ConversationResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations[':conversationId'].$get({
+    param: { id: taskId, conversationId },
+  })
+
+  return readJson<ConversationResponse>(response)
+}
+
+export async function postConversationMessage(
+  taskId: string,
+  conversationId: string,
+  input: ConversationMessageInput,
+): Promise<ConversationMessageResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations[
+    ':conversationId'
+  ].messages.$post({
+    param: { id: taskId, conversationId },
+    json: { ...input, idempotencyKey: crypto.randomUUID() },
+  })
+
+  return readJson<ConversationMessageResponse>(response)
+}
+
+export async function confirmConversationAction(
+  taskId: string,
+  conversationId: string,
+  actionId: string,
+): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations[':conversationId'].actions[
+    ':actionId'
+  ].confirm.$post({
+    param: { id: taskId, conversationId, actionId },
+    json: { idempotencyKey: `confirm:${actionId}` },
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
+}
+
+export async function stopStage(
+  taskId: string,
+  input: StopStageInput,
+): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.tasks[':id'].stages.stop.$post({
+    param: { id: taskId },
+    json: input,
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
+}
+
+export async function restartStage(
+  taskId: string,
+  input: RestartStageInput,
+): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.tasks[':id'].stages.restart.$post({
+    param: { id: taskId },
+    json: input,
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
 }
 
 export async function postFeedback(

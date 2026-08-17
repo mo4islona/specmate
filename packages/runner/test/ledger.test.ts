@@ -13,6 +13,7 @@ const BASE: LedgerSnapshot = {
   harnessStatus: 'partial',
   caps: { ...DEFAULT_CAPS },
   rounds: [],
+  interventions: [],
 }
 
 describe('ledger', () => {
@@ -65,6 +66,22 @@ describe('ledger', () => {
     expect(ledger).toContain('The reviewer recorded no findings.')
     expect(ledger).not.toContain('stdout')
     expect(ledger).not.toContain('$ ')
+  })
+
+  test('renders only a confirmed intervention, never its surrounding conversation', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      interventions: [
+        {
+          id: 'intervention-1',
+          instruction: 'Use the bounded variant.',
+          target: { nodeKey: 'implement' },
+        },
+      ],
+    })
+
+    expect(ledger).toContain('Intervention intervention-1: Use the bounded variant.')
+    expect(ledger).not.toContain('Why did we discuss this?')
   })
 
   test('announces a ledger it had to truncate', () => {

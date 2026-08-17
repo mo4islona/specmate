@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { checkReviseHasFindings, parseStageResult } from '../src/result.ts'
-import { pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
+import { ConversationResult, checkReviseHasFindings, parseStageResult } from '../src/result.ts'
+import { ARTIFACT_KINDS, pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
 
 const minimal = {
   schema_version: 1,
@@ -28,6 +28,11 @@ describe('RESULT.json contract', () => {
   test('rejects an unknown role', () => {
     const parsed = parseStageResult(JSON.stringify({ ...minimal, role: 'architect' }))
     expect(parsed.ok).toBe(false)
+  })
+
+  test('accepts the answer-only role', () => {
+    const parsed = parseStageResult(JSON.stringify({ ...minimal, role: 'answerer' }))
+    expect(parsed.ok).toBe(true)
   })
 
   test('carries reviewer verdict and findings', () => {
@@ -89,6 +94,11 @@ describe('checkReviseHasFindings', () => {
 })
 
 describe('role contracts', () => {
+  test('answerer reads every artifact kind and may write nothing', () => {
+    expect(ROLE_CONTRACTS.answerer).toMatchObject({ writes: [], writesCode: false })
+    expect(ROLE_CONTRACTS.answerer.reads).toEqual(ARTIFACT_KINDS)
+  })
+
   test('only implementer and verifier may touch product code', () => {
     const codeWriters = Object.values(ROLE_CONTRACTS)
       .filter((c) => c.writesCode)
@@ -123,5 +133,33 @@ describe('role contracts', () => {
 
   test('a single available provider degrades to same-provider review', () => {
     expect(pickReviewProvider('codex', ['codex'])).toBe('codex')
+  })
+})
+
+describe('conversation result contract', () => {
+  test('rejects unknown action kinds and task states', () => {
+    const base = {
+      message_md: 'Done.',
+      actions: [
+        {
+          kind: 'delete_task',
+          target: { taskId: 'task-1' },
+          expectedVersion: { taskStatus: 'research' },
+        },
+      ],
+    }
+    expect(ConversationResult.safeParse(base).success).toBe(false)
+    expect(
+      ConversationResult.safeParse({
+        ...base,
+        actions: [
+          {
+            kind: 'instruct_next_run',
+            target: { taskId: 'task-1', nodeKey: 'implement' },
+            expectedVersion: { taskStatus: 'teleporting' },
+          },
+        ],
+      }).success,
+    ).toBe(false)
   })
 })

@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import * as schema from './schema.ts'
 
+export * from './conversation-store.ts'
 export * from './schema.ts'
 export { schema }
 

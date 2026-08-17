@@ -12,11 +12,17 @@ export const AGENT_ROLES = [
   'verifier',
   'reviewer',
   'summarizer',
+  'answerer',
   'retro',
 ] as const
 
 export const AgentRole = z.enum(AGENT_ROLES)
 export type AgentRole = z.infer<typeof AgentRole>
+/** Answer-only runs sit outside the pinned stage graph. */
+export type PipelineRole = Exclude<AgentRole, 'answerer'>
+export const PIPELINE_ROLES: readonly PipelineRole[] = AGENT_ROLES.filter(
+  (role): role is PipelineRole => role !== 'answerer',
+)
 
 export const PROVIDERS = ['claude-code', 'codex', 'copilot'] as const
 
@@ -133,6 +139,17 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     corroborated: false,
     defaultProvider: 'claude-code',
     promptFile: 'roles/summarizer.md',
+  },
+  answerer: {
+    role: 'answerer',
+    reads: ARTIFACT_KINDS,
+    writes: [],
+    writesCode: false,
+    injectSpecSkill: false,
+    returnsVerdict: false,
+    corroborated: false,
+    defaultProvider: 'claude-code',
+    promptFile: 'roles/answerer.md',
   },
   retro: {
     role: 'retro',

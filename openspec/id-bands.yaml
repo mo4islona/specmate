@@ -16,3 +16,8 @@ bands:
   operator-ui: 900
   task-surface: 1000
   verification: 1100
+  decisions: 1200
+  kickoff-brief: 1300
+  harness-coverage: 1400
+  budgets: 1500
+  task-qa: 1600

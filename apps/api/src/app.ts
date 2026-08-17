@@ -1,6 +1,22 @@
-import { isAwaitingHuman, isTerminal, TaskState } from '@specmate/core'
+import {
+  appendOwnerMessage,
+  ConversationNotFoundError,
+  ConversationSubjectConflictError,
+  ConversationTaskNotFoundError,
+  EmptyConversationMessageError,
+  isAwaitingHuman,
+  isTerminal,
+  listConversations,
+  openConversation,
+  readConversation,
+  TaskState,
+  TerminalTaskConversationError,
+} from '@specmate/core'
 import {
   artifacts,
+  conversationActions,
+  conversations,
+  createConversationStore,
   type Database,
   events,
   feedback,
@@ -31,7 +47,10 @@ export interface AppDeps {
   stream?: Partial<StreamSettings>
 }
 
-export type GateOperations = Pick<Engine, 'approve' | 'redirect' | 'rework'>
+export type GateOperations = Pick<
+  Engine,
+  'approve' | 'redirect' | 'rework' | 'confirmAction' | 'stopStage' | 'restartInterruptedStage'
+>
 
 interface StreamSettings {
   pollIntervalMs: number
@@ -64,12 +83,40 @@ const CreateComment = z.object({
   stageId: z.uuid().optional(),
 })
 
+const CreateConversation = z.object({
+  subjectKind: z.string().trim().min(1).max(64).optional(),
+  subjectId: z.string().trim().min(1).max(200).optional(),
+  idempotencyKey: z.string().trim().min(1).max(200),
+})
+
+const CreateConversationMessage = z.object({
+  message: z.string().trim().min(1).max(20_000),
+  idempotencyKey: z.string().trim().min(1).max(200),
+})
+
 const GateComment = z.object({
   comment: z.string().trim().min(1).max(20_000),
 })
 
 const ReworkGate = GateComment.extend({
   target: TaskState,
+})
+
+const ConfirmConversationAction = z.object({
+  idempotencyKey: z.string().trim().min(1).max(200),
+})
+
+const StopStage = z.object({
+  stageId: z.uuid(),
+  graphId: z.uuid(),
+  nodeKey: TaskState,
+  attempt: z.number().int().nonnegative(),
+})
+
+const RestartStage = z.object({
+  stageId: z.uuid(),
+  guidance: z.string().trim().max(20_000).optional(),
+  idempotencyKey: z.string().trim().min(1).max(200),
 })
 
 const GATE_CONFLICT_ERRORS = new Set([
@@ -79,6 +126,9 @@ const GATE_CONFLICT_ERRORS = new Set([
   'RedirectCapExhaustedError',
   'ReworkTargetError',
   'StaleTransitionError',
+  'ActionConflictError',
+  'StageStopConflictError',
+  'StageRestartConflictError',
 ])
 
 const OWNER_ACTOR = 'owner'
@@ -156,6 +206,11 @@ function serializeStage(stage: Stage) {
     attempt: stage.attempt,
     skillSha: stage.skillSha,
     result: stage.result,
+    acceptedCommit: stage.acceptedCommit,
+    startedAt: stage.startedAt,
+    finishedAt: stage.finishedAt,
+    interruptionCleanupStatus: stage.interruptionCleanupStatus,
+    interruptionFailure: stage.interruptionFailure,
     createdAt: stage.createdAt,
     updatedAt: stage.updatedAt,
     telemetry: hasTelemetry
@@ -201,6 +256,7 @@ export function createApp({
   stream: streamOverrides,
 }: AppDeps) {
   const app = new Hono()
+  const conversationStore = createConversationStore(db)
   const streamSettings: StreamSettings = {
     pollIntervalMs: 1_000,
     heartbeatIntervalMs: 15_000,
@@ -216,12 +272,39 @@ export function createApp({
     return task
   }
 
-  async function performGateAction(action: () => Promise<void>): Promise<void> {
+  async function performGateAction<T>(action: () => Promise<T>): Promise<T> {
     try {
-      await action()
+      return await action()
     } catch (error) {
       if (error instanceof Error && GATE_CONFLICT_ERRORS.has(error.name)) {
         throw new ApiError('conflict', error.message, { status: 409 })
+      }
+
+      throw error
+    }
+  }
+
+  async function performConversationOperation<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      if (error instanceof EmptyConversationMessageError) {
+        throw new ApiError('validation', error.message, {
+          status: 400,
+          fields: { message: [error.message] },
+        })
+      }
+      if (
+        error instanceof TerminalTaskConversationError ||
+        error instanceof ConversationSubjectConflictError
+      ) {
+        throw new ApiError('conflict', error.message, { status: 409 })
+      }
+      if (
+        error instanceof ConversationTaskNotFoundError ||
+        error instanceof ConversationNotFoundError
+      ) {
+        throw new ApiError('not_found', error.message, { status: 404 })
       }
 
       throw error
@@ -458,6 +541,131 @@ export function createApp({
       }
 
       return c.json({ artifact })
+    })
+
+    .post(
+      '/tasks/:id/conversations',
+      validator('json', validateJson(CreateConversation)),
+      async (c) => {
+        const input = c.req.valid('json')
+        const conversation = await performConversationOperation(() =>
+          openConversation(conversationStore, { taskId: c.req.param('id'), ...input }),
+        )
+
+        return c.json({ conversation }, 201)
+      },
+    )
+
+    .get('/tasks/:id/conversations', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+
+      return c.json({ conversations: await listConversations(conversationStore, task.id) })
+    })
+
+    .post(
+      '/tasks/:id/conversations/:conversationId/messages',
+      validator('json', validateJson(CreateConversationMessage)),
+      async (c) => {
+        const task = await requireTask(c.req.param('id'))
+        const [conversation] = await db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.id, c.req.param('conversationId')),
+              eq(conversations.taskId, task.id),
+            ),
+          )
+          .limit(1)
+        if (!conversation) {
+          throw new ApiError('not_found', 'conversation was not found for this task', {
+            status: 404,
+          })
+        }
+        const result = await performConversationOperation(() =>
+          appendOwnerMessage(conversationStore, {
+            conversationId: conversation.id,
+            content: c.req.valid('json').message,
+            idempotencyKey: c.req.valid('json').idempotencyKey,
+          }),
+        )
+
+        return c.json({ message: result.owner, response: result.response }, 201)
+      },
+    )
+
+    .get('/tasks/:id/conversations/:conversationId', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const [conversation] = await db
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.id, c.req.param('conversationId')),
+            eq(conversations.taskId, task.id),
+          ),
+        )
+        .limit(1)
+      if (!conversation) {
+        throw new ApiError('not_found', 'conversation was not found for this task', { status: 404 })
+      }
+
+      return c.json({
+        conversation,
+        ...(await readConversation(conversationStore, conversation.id)),
+      })
+    })
+
+    .post(
+      '/tasks/:id/conversations/:conversationId/actions/:actionId/confirm',
+      validator('json', validateJson(ConfirmConversationAction)),
+      async (c) => {
+        const task = await requireTask(c.req.param('id'))
+        const [action] = await db
+          .select({ id: conversationActions.id })
+          .from(conversationActions)
+          .where(
+            and(
+              eq(conversationActions.id, c.req.param('actionId')),
+              eq(conversationActions.taskId, task.id),
+              eq(conversationActions.conversationId, c.req.param('conversationId')),
+            ),
+          )
+          .limit(1)
+        if (!action) {
+          throw new ApiError('not_found', 'conversation action was not found', { status: 404 })
+        }
+        await performGateAction(() =>
+          gates.confirmAction({
+            taskId: task.id,
+            actionId: c.req.param('actionId'),
+            actor: OWNER_ACTOR,
+            idempotencyKey: c.req.valid('json').idempotencyKey,
+          }),
+        )
+
+        return c.json({ task: await requireTask(task.id) })
+      },
+    )
+
+    .post('/tasks/:id/stages/stop', validator('json', validateJson(StopStage)), async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const input = c.req.valid('json')
+      const result = await performGateAction(() =>
+        gates.stopStage({ taskId: task.id, actor: OWNER_ACTOR, ...input }),
+      )
+
+      return c.json(result)
+    })
+
+    .post('/tasks/:id/stages/restart', validator('json', validateJson(RestartStage)), async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const input = c.req.valid('json')
+      const restarted = await performGateAction(() =>
+        gates.restartInterruptedStage({ taskId: task.id, actor: OWNER_ACTOR, ...input }),
+      )
+
+      return c.json({ task: restarted })
     })
 
     .post('/tasks/:id/feedback', validator('json', validateJson(CreateComment)), async (c) => {

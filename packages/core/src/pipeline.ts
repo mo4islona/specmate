@@ -1,5 +1,11 @@
 import type { ReviewFinding, ReviewVerdict } from './result.ts'
-import { type AgentRole, type ProviderId, pickReviewProvider, ROLE_CONTRACTS } from './roles.ts'
+import {
+  PIPELINE_ROLES,
+  type PipelineRole,
+  type ProviderId,
+  pickReviewProvider,
+  ROLE_CONTRACTS,
+} from './roles.ts'
 import { type Caps, isTerminal, TASK_STATES, type TaskState } from './state.ts'
 
 /**
@@ -36,7 +42,7 @@ export interface StageNode {
   readonly kind: 'stage'
   /** Node keys are task-status values: the pinned graph names which of the enum's values a task visits. */
   readonly key: TaskState
-  readonly role: AgentRole
+  readonly role: PipelineRole
   readonly binding: ProviderBinding
   readonly loopEdge?: LoopEdge
 }
@@ -122,6 +128,8 @@ export function validateDefinition(def: PipelineDefinition): string[] {
     }
     if (node.kind === 'stage' && !(node.role in ROLE_CONTRACTS)) {
       at(`node ${node.key}`, `role "${node.role}" is not in the role catalog`)
+    } else if (node.kind === 'stage' && !PIPELINE_ROLES.some((role) => role === node.role)) {
+      at(`node ${node.key}`, `role "${node.role}" is not a pipeline role`)
     }
     // The cross-provider rule reads the writer off the loop edge's target; a
     // cross_review stage without one would silently fall back to the default

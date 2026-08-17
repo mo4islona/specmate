@@ -4,7 +4,14 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DeclaredToolchain, ExecutionEnvironment, ResolvedToolchain } from '@specmate/core'
 import { detectToolchains } from '@specmate/workspace'
-import { type ExecBackend, type ExecResult, type ExecSpec, spawnBounded } from './backend.ts'
+import {
+  type ExecBackend,
+  type ExecHandle,
+  type ExecResult,
+  type ExecSpec,
+  spawnBounded,
+  spawnBoundedHandle,
+} from './backend.ts'
 import type { RunnerConfig } from './config.ts'
 import {
   exactVersion,
@@ -155,9 +162,9 @@ export class DockerBackend implements ExecBackend {
     return `docker backend: runtime ${version.stdout.trim()}, image ${this.config.image}`
   }
 
-  async run(spec: ExecSpec): Promise<ExecResult> {
+  start(spec: ExecSpec): ExecHandle {
     const name = containerName(spec.label)
-    return spawnBounded({
+    const execution = spawnBoundedHandle({
       argv: this.argv(spec),
       stdin: spec.stdin,
       // `docker run` is a client; the working directory that matters is the
@@ -170,6 +177,18 @@ export class DockerBackend implements ExecBackend {
       // to reach the container itself.
       onTimeout: () => this.kill(name),
     })
+
+    return {
+      result: execution.result,
+      cancel: async () => {
+        this.kill(name)
+        await execution.cancel()
+      },
+    }
+  }
+
+  run(spec: ExecSpec): Promise<ExecResult> {
+    return this.start(spec).result
   }
 
   async resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment> {
@@ -337,6 +356,11 @@ export async function killContainersByLabels(
     '--filter',
     `label=${key}=${value}`,
   ])
+  // A cleanup caller (cleanupInterruptedAttempt) treats this resolving as proof
+  // the target is dead. Swallowing a `docker ps`/`docker kill` failure into an
+  // empty result would let it delete the workspace and mark cleanup succeeded
+  // while the old attempt's container is still running — throwing instead
+  // routes the caller into its own retry path.
   const found = await spawnBounded({
     argv: [config.dockerCli, 'ps', '--quiet', ...filters],
     stdin: '',
@@ -344,8 +368,12 @@ export async function killContainersByLabels(
     env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
     timeoutMs: 30_000,
     outputLimitBytes: 64 * 1024,
-  }).catch(() => null)
-  if (found?.exitCode !== 0) return []
+  })
+  if (found.exitCode !== 0) {
+    throw new Error(
+      `docker ps failed listing containers to clean up: ${found.stderr || `exit ${found.exitCode}`}`,
+    )
+  }
 
   const ids = found.stdout
     .split('\n')
@@ -353,6 +381,7 @@ export async function killContainersByLabels(
     .filter((id) => id.length > 0)
 
   const killed: string[] = []
+  const failures: string[] = []
   for (const id of ids) {
     const result = await spawnBounded({
       argv: [config.dockerCli, 'kill', id],
@@ -361,10 +390,17 @@ export async function killContainersByLabels(
       env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
       timeoutMs: 30_000,
       outputLimitBytes: 16 * 1024,
-    }).catch(() => null)
-    if (result?.exitCode === 0) {
+    }).catch((error: Error) => ({ exitCode: -1, stdout: '', stderr: error.message }))
+    if (result.exitCode === 0) {
       killed.push(id)
+    } else {
+      failures.push(`${id}: ${result.stderr || `exit ${result.exitCode}`}`)
     }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `docker kill failed for ${failures.length} container(s): ${failures.join('; ')}`,
+    )
   }
 
   return killed

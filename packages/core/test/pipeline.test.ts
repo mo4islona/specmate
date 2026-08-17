@@ -95,6 +95,23 @@ describe('definition validation', () => {
     expect(validateDefinition(broken).join('\n')).toMatch(/spec_review.*cross_review.*loopEdge/)
   })
 
+  test('the answer-only role cannot enter a pinned pipeline', () => {
+    const broken = def({
+      nodes: [
+        {
+          kind: 'stage',
+          key: 'research',
+          role: 'answerer' as StageNode['role'],
+          binding: 'role_default',
+        },
+      ],
+    })
+
+    expect(validateDefinition(broken)).toContain(
+      'fixture: node research: role "answerer" is not a pipeline role',
+    )
+  })
+
   test('a forward loop edge is rejected naming the edge', () => {
     const broken = def({
       nodes: [

@@ -1,6 +1,6 @@
 import type { Caps, ReviewFinding, ReviewVerdict } from '@specmate/core'
-import { type Database, iterations, tasks } from '@specmate/db'
-import { asc, eq } from 'drizzle-orm'
+import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
+import { and, asc, eq } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
 import { truncate } from './truncate.ts'
 
@@ -28,17 +28,36 @@ export interface LedgerSnapshot {
   readonly harnessStatus: string
   readonly caps: Caps
   readonly rounds: readonly LedgerRound[]
+  readonly interventions: readonly {
+    id: string
+    instruction: string
+    target: Record<string, unknown> | null
+  }[]
 }
 
 export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<LedgerSnapshot> {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
   if (!task) throw new TaskNotFoundError(taskId)
 
-  const rounds = await db
-    .select()
-    .from(iterations)
-    .where(eq(iterations.taskId, taskId))
-    .orderBy(asc(iterations.loop), asc(iterations.round))
+  const [rounds, interventions] = await Promise.all([
+    db
+      .select()
+      .from(iterations)
+      .where(eq(iterations.taskId, taskId))
+      .orderBy(asc(iterations.loop), asc(iterations.round)),
+    db
+      .select({ id: feedback.id, instruction: feedback.textMd, target: feedback.target })
+      .from(feedback)
+      .innerJoin(stages, eq(feedback.consumedByStageId, stages.id))
+      .where(
+        and(
+          eq(feedback.taskId, taskId),
+          eq(feedback.kind, 'intervention'),
+          eq(stages.status, 'running'),
+        ),
+      )
+      .orderBy(asc(feedback.createdAt)),
+  ])
 
   return {
     title: task.title,
@@ -55,6 +74,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
       verdict: round.reviewerVerdict,
       findings: round.findings,
     })),
+    interventions,
   }
 }
 
@@ -95,6 +115,18 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
   } else {
     lines.push(`- Loop: ${last.loop}, round ${last.round}`, `- Verdict: ${last.verdict}`, '')
     lines.push(...renderFindings(last.findings))
+  }
+
+  lines.push('', '## Confirmed interventions', '')
+  if (snapshot.interventions.length === 0) {
+    lines.push('No confirmed intervention targets this run.')
+  } else {
+    for (const intervention of snapshot.interventions) {
+      lines.push(
+        `- Intervention ${intervention.id}: ${intervention.instruction}`,
+        `  Target: ${JSON.stringify(intervention.target ?? {})}`,
+      )
+    }
   }
 
   return truncate(`${lines.join('\n')}\n`, config.ledgerBytesLimit, 'ledger')

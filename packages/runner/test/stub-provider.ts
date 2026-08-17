@@ -55,6 +55,54 @@ async function writeResult(body: string): Promise<void> {
   await writeFile(join(cwd, 'RESULT.json'), body)
 }
 
+async function writeConversation(
+  message: string,
+  providerSession?: Record<string, unknown>,
+  actions: readonly unknown[] = [],
+): Promise<void> {
+  const match = prompt.match(
+    /Write the structured conversation result to `([^`]+\/CONVERSATION\.json)`\./,
+  )
+  if (!match?.[1]) throw new Error('conversation prompt did not name its scratch path')
+
+  const path = join(cwd, match[1])
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(
+    path,
+    JSON.stringify({
+      message_md: message,
+      actions,
+      ...(providerSession ? { provider_session: providerSession } : {}),
+    }),
+  )
+}
+
+async function commitStrayChange(): Promise<void> {
+  for (const args of [
+    ['add', '-A'],
+    ['commit', '--quiet', '-m', 'conversation response must stay detached'],
+  ]) {
+    const process = Bun.spawn({
+      cmd: [
+        'git',
+        '-c',
+        'user.name=Answer Stub',
+        '-c',
+        'user.email=answer-stub@localhost',
+        ...args,
+      ],
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [exitCode, stderr] = await Promise.all([
+      process.exited,
+      new Response(process.stderr).text(),
+    ])
+    if (exitCode !== 0) throw new Error(`stub git ${args[0]} failed: ${stderr.trim()}`)
+  }
+}
+
 function role(): string {
   return process.env.SPECMATE_STUB_ROLE ?? 'researcher'
 }
@@ -117,6 +165,73 @@ async function writeVerification(verdict: string): Promise<void> {
 }
 
 switch (mode) {
+  case 'conversation': {
+    await writeConversation('The artifacts choose the safer option.\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'conversation-session': {
+    await writeConversation('The artifacts choose the safer option.\n', {
+      id: 'opaque-session-reference',
+    })
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'conversation-action': {
+    await writeConversation('I can pass that guidance to implementation.\n', undefined, [
+      {
+        kind: 'instruct_next_run',
+        target: {
+          taskId: '55555555-5555-4555-8555-555555555555',
+          graphId: '77777777-7777-4777-8777-777777777777',
+          nodeKey: 'implement',
+        },
+        instruction: 'Keep the compatibility adapter.',
+        expectedVersion: {
+          taskStatus: 'research',
+          graphId: '77777777-7777-4777-8777-777777777777',
+        },
+      },
+    ])
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'conversation-invented-action': {
+    await writeConversation('I can restart that stage.\n', undefined, [
+      {
+        kind: 'restart_stage',
+        target: { taskId: 'invented-task', stageId: 'invented-stage' },
+        expectedVersion: { taskStatus: 'paused' },
+      },
+    ])
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'empty-conversation': {
+    await writeConversation('   \n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'conversation-stray': {
+    await writeFile(join(cwd, 'src/app.ts'), 'export const a = 99\n')
+    await writeConversation('The change would be unsafe.\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'conversation-commit': {
+    await writeFile(join(cwd, 'src/app.ts'), 'export const a = 99\n')
+    await writeConversation('The change would be unsafe.\n')
+    await writeResult(validResult())
+    await commitStrayChange()
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
   case 'approve':
   case 'revise':
   case 'escalate': {

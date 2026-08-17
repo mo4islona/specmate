@@ -1,20 +1,32 @@
 import {
   advance,
   bindStageProvider,
+  type ConversationActionOption,
+  type ConversationActionProposal,
   canTransition,
+  type ExecutionUsage,
   type GateNode,
   isRestartable,
+  isTerminal,
   nodeAt,
   type PinnedGraph,
   type ProviderId,
   RESERVED_STATES,
+  ROLE_CONTRACTS,
   type StageNode,
   type StageTelemetry,
   type TaskState,
+  TERMINAL_STATES,
 } from '@specmate/core'
 import {
+  type ConversationAction,
+  type ConversationMessage,
+  conversationActions,
+  conversationMessages,
+  conversations,
   type Database,
   type DbClient,
+  decisions,
   feedback,
   type Stage,
   type StageUsage,
@@ -22,9 +34,9 @@ import {
   type Task,
   tasks,
 } from '@specmate/db'
-import type { StageExecution } from '@specmate/runner'
-import type { Workspace } from '@specmate/workspace'
-import { and, asc, count, desc, eq, notInArray, sql } from 'drizzle-orm'
+import type { ConversationExecution, StageExecution } from '@specmate/runner'
+import type { ConversationWorkspace, StageCommit, StageRef, Workspace } from '@specmate/workspace'
+import { and, asc, count, desc, eq, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
 import {
   countRedirects,
   emitEvent,
@@ -110,6 +122,38 @@ export class StaleTransitionError extends Error {
   }
 }
 
+export class StageStopConflictError extends Error {
+  override readonly name = 'StageStopConflictError'
+
+  constructor(stageId: string) {
+    super(`stage ${stageId} is no longer the exact running attempt`)
+  }
+}
+
+export class StageRestartConflictError extends Error {
+  override readonly name = 'StageRestartConflictError'
+
+  constructor(stageId: string) {
+    super(`stage ${stageId} is not a safely cleaned interrupted attempt`)
+  }
+}
+
+export class StopCleanupError extends Error {
+  override readonly name = 'StopCleanupError'
+
+  constructor(stageId: string, detail: string) {
+    super(`stage ${stageId} stopped but cleanup failed: ${detail}`)
+  }
+}
+
+export class ActionConflictError extends Error {
+  override readonly name = 'ActionConflictError'
+
+  constructor(actionId: string, detail: string) {
+    super(`action ${actionId} conflicts with live task state: ${detail}`)
+  }
+}
+
 /** What the engine needs from the workspace layer; the entry point adapts `WorkspaceService`. */
 export interface EngineWorkspaces {
   provision(request: {
@@ -118,7 +162,11 @@ export interface EngineWorkspaces {
     repoUrl: string
     baseBranch: string
   }): Promise<Workspace>
-  discard(workspace: Workspace): Promise<void>
+  provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace>
+  releaseConversation(task: { slug: string; repoUrl: string }, key: string): Promise<void>
+  discard(workspace: Workspace, commit?: string): Promise<void>
+  headCommit?(workspace: Workspace): Promise<string>
+  commitStage?(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
   release(taskId: string): Promise<void>
 }
 
@@ -135,10 +183,46 @@ export interface StageDispatch {
 
 export type StageDispatcher = (dispatch: StageDispatch) => Promise<StageExecution>
 
+export interface ConversationDispatch {
+  readonly task: Task
+  readonly conversationId: string
+  readonly response: ConversationMessage
+  readonly ownerMessage: ConversationMessage
+  readonly context: string
+  readonly previousAnchorCommit: string | null
+  readonly previousTaskState: TaskState | null
+  readonly currentAnchorCommit: string
+  readonly currentTaskState: TaskState
+  readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
+  readonly actionOptions: readonly ConversationActionOption[]
+  readonly attempt: number
+  readonly provider: ProviderId
+  readonly startedAt: Date
+  readonly workspace: ConversationWorkspace
+}
+
+export type ConversationDispatcher = (
+  dispatch: ConversationDispatch,
+) => Promise<ConversationExecution>
+
+interface ConversationRunContext {
+  readonly task: Task
+  readonly conversationId: string
+  readonly response: ConversationMessage
+  readonly ownerMessage: ConversationMessage
+  readonly context: string
+  readonly previousAnchorCommit: string | null
+  readonly previousTaskState: TaskState | null
+  readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
+  readonly provider: ProviderId
+  readonly startedAt: Date
+}
+
 export interface EngineSettings {
   readonly stageConcurrency: number
   readonly stageAttemptCap: number
   readonly availableProviders: readonly ProviderId[]
+  readonly conversationConcurrency?: number
 }
 
 export interface ReworkOptions {
@@ -148,12 +232,39 @@ export interface ReworkOptions {
   readonly comment?: string
 }
 
+export interface StopStageOptions {
+  readonly taskId: string
+  readonly stageId: string
+  readonly graphId: string
+  readonly nodeKey: string
+  readonly attempt: number
+  readonly actor: string
+}
+
+export interface RestartInterruptedStageOptions {
+  readonly taskId: string
+  readonly stageId: string
+  readonly actor: string
+  readonly guidance?: string
+  readonly idempotencyKey: string
+  readonly actionId?: string
+}
+
+export interface ConfirmActionOptions {
+  readonly taskId: string
+  readonly actionId: string
+  readonly actor: string
+  readonly idempotencyKey: string
+}
+
 export interface EngineDeps {
   readonly db: Database
   readonly workspaces: EngineWorkspaces
   readonly settings: EngineSettings
   /** Absent in ops-only contexts (the admin CLI); tick() requires it. */
   readonly dispatcher?: StageDispatcher
+  /** Answer-only runs use a disposable task snapshot and never enter the pinned graph. */
+  readonly conversationDispatcher?: ConversationDispatcher
   /** Kills executions found by label during the sweep; absent means nothing to kill. */
   readonly killOrphans?: (labels: Record<string, string>) => Promise<string[]>
   readonly log?: (message: string) => void
@@ -166,6 +277,14 @@ export interface EngineDeps {
  */
 const NOT_RUNNABLE: TaskState[] = [...RESERVED_STATES]
 
+const CONVERSATION_ATTEMPT_CAP = 2
+
+/** Below this age a 'failed' interruption cleanup might still be the retry that's currently running; above it, the next sweep tries again. */
+const INTERRUPTION_CLEANUP_RETRY_MS = 60_000
+
+/** An action can only sit in 'applying' while a single confirmAction call is on the stack; past this age that call has crashed. */
+const STUCK_ACTION_TIMEOUT_MS = 5 * 60_000
+
 /**
  * The loop. Picks up runnable tasks, walks each along its pinned graph through
  * dispatch → outcome → advance, and exposes the gate operations the future UI
@@ -174,74 +293,149 @@ const NOT_RUNNABLE: TaskState[] = [...RESERVED_STATES]
  */
 export class Engine {
   private readonly inFlight = new Set<Promise<void>>()
+  private readonly stageRuns = new Map<string, Promise<void>>()
 
   constructor(private readonly deps: EngineDeps) {}
 
-  /** Waits for every dispatched stage to settle; tests and shutdown use this. */
+  /** Waits for every dispatched stage or answer to settle; tests and shutdown use this. */
   async idle(): Promise<void> {
     while (this.inFlight.size > 0) await Promise.allSettled([...this.inFlight])
   }
 
   /**
-   * One poll: select tasks positioned at a stage node with nothing in flight,
-   * claim under a per-task advisory lock, dispatch up to the concurrency cap.
-   * Stage executions run detached — a stage takes minutes, a tick must not.
+   * One poll: reconcile terminal queues, dispatch runnable stages, then use a
+   * separate response pool for idle tasks. Conversation snapshots never consume stage
+   * slots, so newly runnable pipeline work can always overtake an answer.
    */
   async tick(): Promise<number> {
-    const { db, settings, dispatcher } = this.deps
+    const { conversationDispatcher, db, settings, dispatcher } = this.deps
     if (!dispatcher) throw new Error('this engine has no dispatcher; tick() is not available')
 
-    const [running] = await db
-      .select({ n: count() })
-      .from(stages)
-      .where(eq(stages.status, 'running'))
-    const slots = settings.stageConcurrency - (running?.n ?? 0)
-    if (slots <= 0) return 0
+    await this.recoverPendingInterruptions()
+    await this.recoverStuckActions()
+    await this.failTerminalQueuedResponses()
 
-    const candidates = await db
-      .select()
-      .from(tasks)
-      .where(notInArray(tasks.status, NOT_RUNNABLE))
-      .orderBy(asc(tasks.updatedAt))
-    if (candidates.length === 0) return 0
+    const [[runningStages], [runningResponses]] = await Promise.all([
+      db.select({ n: count() }).from(stages).where(eq(stages.status, 'running')),
+      db
+        .select({ n: count() })
+        .from(conversationMessages)
+        .where(eq(conversationMessages.status, 'responding')),
+    ])
+    const stageSlots = settings.stageConcurrency - (runningStages?.n ?? 0)
+    const responseSlots =
+      (settings.conversationConcurrency ?? settings.stageConcurrency) - (runningResponses?.n ?? 0)
+    let dispatched = 0
+    let stagesDispatched = 0
+    if (stageSlots > 0) {
+      const candidates = await db
+        .select()
+        .from(tasks)
+        .where(notInArray(tasks.status, NOT_RUNNABLE))
+        .orderBy(asc(tasks.updatedAt))
 
-    // One round trip for every candidate's graph, and the read-only provider
-    // resolution overlapped across candidates — claim() alone stays serial,
-    // since it is the actual dispatch decision and must respect `slots`.
-    const graphs = await latestGraphsFor(
-      db,
-      candidates.map((task) => task.id),
-    )
+      const graphs = await latestGraphsFor(
+        db,
+        candidates.map((task) => task.id),
+      )
+      const runnable: { task: Task; graph: RunGraphRow; node: StageNode }[] = []
+      for (const task of candidates) {
+        const graph = graphs.get(task.id)
+        if (!graph) continue
+        const node = nodeAt(graph.dag, task.status)
+        if (node?.kind !== 'stage') continue
+        runnable.push({ task, graph, node })
+      }
+      const dispatchable = await Promise.all(
+        runnable.map(async (candidate) => ({
+          ...candidate,
+          provider: await this.resolveProvider(candidate.graph, candidate.node),
+        })),
+      )
 
-    const runnable: { task: Task; graph: RunGraphRow; node: StageNode }[] = []
-    for (const task of candidates) {
-      const graph = graphs.get(task.id)
-      if (!graph) continue
+      for (const { task, graph, node, provider } of dispatchable) {
+        if (stagesDispatched >= stageSlots) break
+        const claimed = await this.claim(task, graph, node, provider)
+        if (!claimed) continue
 
-      const node = nodeAt(graph.dag, task.status)
-      if (node?.kind !== 'stage') continue
-
-      runnable.push({ task, graph, node })
+        dispatched += 1
+        stagesDispatched += 1
+        const run = this.runStage(task, graph, node, claimed, dispatcher)
+          .catch((e: Error) => {
+            this.deps.log?.(
+              `stage ${task.id}/${node.key} attempt ${claimed.attempt} did not settle: ${e.message}`,
+            )
+          })
+          .finally(() => {
+            this.inFlight.delete(run)
+            if (this.stageRuns.get(claimed.id) === run) this.stageRuns.delete(claimed.id)
+          })
+        this.inFlight.add(run)
+        this.stageRuns.set(claimed.id, run)
+      }
     }
 
-    const dispatchable = await Promise.all(
-      runnable.map(async (candidate) => ({
-        ...candidate,
-        provider: await this.resolveProvider(candidate.graph, candidate.node),
-      })),
-    )
+    if (responseSlots <= 0) return dispatched
 
-    let dispatched = 0
-    for (const { task, graph, node, provider } of dispatchable) {
-      if (dispatched >= slots) break
-      const claimed = await this.claim(task, graph, node, provider)
-      if (!claimed) continue
+    const pending = await db
+      .select({ response: conversationMessages, conversation: conversations, task: tasks })
+      .from(conversationMessages)
+      .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+      .innerJoin(tasks, eq(conversations.taskId, tasks.id))
+      .where(eq(conversationMessages.status, 'queued'))
+      .orderBy(
+        asc(conversationMessages.createdAt),
+        asc(conversationMessages.sequence),
+        asc(conversationMessages.id),
+      )
+    if (pending.length > 0 && !conversationDispatcher) {
+      throw new Error('this engine has no conversation dispatcher; queued responses cannot run')
+    }
 
+    const consideredConversations = new Set<string>()
+    let responsesDispatched = 0
+    for (const candidate of pending) {
+      if (responsesDispatched >= responseSlots) break
+      if (consideredConversations.has(candidate.conversation.id)) continue
+      consideredConversations.add(candidate.conversation.id)
+      if (isTerminal(candidate.task.status)) continue
+
+      const provider = this.resolveAnswerProvider()
+      const claimed = await this.claimResponse(candidate.response, provider)
+      if (!claimed || !conversationDispatcher) continue
+      const [ownerMessage] = await db
+        .select()
+        .from(conversationMessages)
+        .where(eq(conversationMessages.id, claimed.replyToMessageId ?? ''))
+        .limit(1)
+      if (!ownerMessage) throw new Error(`response ${claimed.id} has no owner message`)
+
+      const context = await this.conversationContext(
+        candidate.conversation.id,
+        ownerMessage.sequence,
+      )
+
+      const startedAt = new Date()
       dispatched += 1
-      const run = this.runStage(task, graph, node, claimed, dispatcher)
-        .catch((e: Error) => {
+      responsesDispatched += 1
+      const run = this.runConversation(
+        {
+          task: candidate.task,
+          conversationId: candidate.conversation.id,
+          response: claimed,
+          ownerMessage,
+          context: context.text,
+          previousAnchorCommit: candidate.conversation.contextCommit,
+          previousTaskState: candidate.conversation.contextTaskState,
+          contextPath: context.path,
+          provider,
+          startedAt,
+        },
+        conversationDispatcher,
+      )
+        .catch((error: Error) => {
           this.deps.log?.(
-            `stage ${task.id}/${node.key} attempt ${claimed.attempt} did not settle: ${e.message}`,
+            `conversation response ${claimed.id} attempt ${claimed.telemetry.length} did not settle: ${error.message}`,
           )
         })
         .finally(() => {
@@ -251,6 +445,65 @@ export class Engine {
     }
 
     return dispatched
+  }
+
+  private async failTerminalQueuedResponses(taskId?: string): Promise<void> {
+    const rows = await this.deps.db
+      .select({
+        response: conversationMessages,
+        task: tasks,
+      })
+      .from(conversationMessages)
+      .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+      .innerJoin(tasks, eq(conversations.taskId, tasks.id))
+      .where(
+        and(
+          eq(conversationMessages.status, 'queued'),
+          inArray(tasks.status, [...TERMINAL_STATES]),
+          taskId ? eq(tasks.id, taskId) : undefined,
+        ),
+      )
+
+    for (const { response, task } of rows) {
+      let cleaned = true
+      for (let attempt = 0; attempt < response.telemetry.length; attempt += 1) {
+        await this.deps.workspaces
+          .releaseConversation(task, `${response.id}-${attempt}`)
+          .catch((error: Error) => {
+            cleaned = false
+            this.deps.log?.(`terminal response ${response.id} cleanup failed: ${error.message}`)
+          })
+      }
+      if (!cleaned) continue
+
+      await this.deps.db.transaction(async (tx) => {
+        const [failed] = await tx
+          .update(conversationMessages)
+          .set({
+            status: 'failed',
+            failureReason: `task became ${task.status}`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(conversationMessages.id, response.id),
+              eq(conversationMessages.status, 'queued'),
+            ),
+          )
+          .returning({ id: conversationMessages.id })
+        if (!failed) return
+
+        await emitEvent(tx, {
+          taskId: task.id,
+          type: 'conversation.response.failed',
+          payload: {
+            conversationId: response.conversationId,
+            messageId: response.id,
+            reason: `task became ${task.status}`,
+          },
+        })
+      })
+    }
   }
 
   /**
@@ -293,7 +546,6 @@ export class Engine {
 
       const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
       if (history.streak >= this.deps.settings.stageAttemptCap) return null
-
       const [row] = await tx
         .insert(stages)
         .values({
@@ -307,6 +559,20 @@ export class Engine {
           startedAt: new Date(),
         })
         .returning()
+
+      if (row) {
+        await tx
+          .update(feedback)
+          .set({ consumedByStageId: row.id })
+          .where(
+            and(
+              eq(feedback.taskId, task.id),
+              eq(feedback.kind, 'intervention'),
+              sql`${feedback.consumedByStageId} is null`,
+              sql`${feedback.target}->>'nodeKey' = ${node.key}`,
+            ),
+          )
+      }
 
       return row ?? null
     })
@@ -338,6 +604,459 @@ export class Engine {
     return bindStageProvider(node, writer, this.deps.settings.availableProviders)
   }
 
+  private resolveAnswerProvider(): ProviderId {
+    const preferred = ROLE_CONTRACTS.answerer.defaultProvider
+    if (this.deps.settings.availableProviders.includes(preferred)) return preferred
+
+    const fallback = this.deps.settings.availableProviders[0]
+    if (!fallback) throw new Error('no provider is available for answer-only runs')
+
+    return fallback
+  }
+
+  /** Claims FIFO per conversation without taking ownership of the task workspace. */
+  private async claimResponse(
+    candidate: ConversationMessage,
+    provider: ProviderId,
+  ): Promise<ConversationMessage | null> {
+    return this.deps.db.transaction(async (tx) => {
+      const locked = await tx.execute(
+        sql`select pg_try_advisory_xact_lock(hashtextextended(${candidate.conversationId}, 0)) as locked`,
+      )
+      const [lock] = locked as { locked?: boolean }[]
+      if (!lock?.locked) return null
+
+      // The queue scan is only a snapshot. Re-check the owning task under the
+      // conversation lock so a terminal transition cannot race into a new run.
+      const [owner] = await tx
+        .select({ taskStatus: tasks.status })
+        .from(conversations)
+        .innerJoin(tasks, eq(conversations.taskId, tasks.id))
+        .where(eq(conversations.id, candidate.conversationId))
+        .limit(1)
+      if (!owner || isTerminal(owner.taskStatus)) return null
+
+      const [runningResponse] = await tx
+        .select({ id: conversationMessages.id })
+        .from(conversationMessages)
+        .where(
+          and(
+            eq(conversationMessages.conversationId, candidate.conversationId),
+            eq(conversationMessages.status, 'responding'),
+          ),
+        )
+        .limit(1)
+      if (runningResponse) return null
+
+      const [claimed] = await tx
+        .update(conversationMessages)
+        .set({ status: 'responding', provider, updatedAt: new Date() })
+        .where(
+          and(eq(conversationMessages.id, candidate.id), eq(conversationMessages.status, 'queued')),
+        )
+        .returning()
+
+      return claimed ?? null
+    })
+  }
+
+  private async conversationContext(
+    conversationId: string,
+    throughSequence: number,
+  ): Promise<{ text: string; path: 'stored' | 'reconstructed' | 'none' }> {
+    const [conversation] = await this.deps.db
+      .select({ summaryMd: conversations.summaryMd, summaryThrough: conversations.summaryThrough })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1)
+    const summaryThrough = conversation?.summaryMd ? conversation.summaryThrough : 0
+    const rows = await this.deps.db
+      .select()
+      .from(conversationMessages)
+      .where(
+        and(
+          eq(conversationMessages.conversationId, conversationId),
+          sql`${conversationMessages.sequence} > ${summaryThrough}`,
+          sql`${conversationMessages.sequence} < ${throughSequence}`,
+          sql`${conversationMessages.status} <> 'queued'`,
+        ),
+      )
+      .orderBy(asc(conversationMessages.sequence))
+
+    const transcript = rows
+      .map(
+        (message) =>
+          `## ${message.role} #${message.sequence} (task: ${message.taskState}; commit: ${message.contextCommit ?? 'none'})\n\n${message.contentMd}`,
+      )
+      .join('\n\n')
+    const summary = conversation?.summaryMd
+      ? `## Stored summary through #${conversation.summaryThrough}\n\n${conversation.summaryMd}`
+      : ''
+
+    // A stored summary is always used when present, even alongside a transcript
+    // tail; a bare transcript with no summary was built fresh from raw
+    // messages; neither present means this is the conversation's first turn.
+    const path = conversation?.summaryMd ? 'stored' : transcript ? 'reconstructed' : 'none'
+
+    return { text: [summary, transcript].filter(Boolean).join('\n\n'), path }
+  }
+
+  private async runConversation(
+    context: ConversationRunContext,
+    dispatcher: ConversationDispatcher,
+  ): Promise<void> {
+    const { task, response, provider, startedAt } = context
+    const { workspaces } = this.deps
+    let workspace: ConversationWorkspace | undefined
+    let currentTaskState = task.status
+    let preparationFailure: ConversationExecution['failure'] = 'cleanup_failed'
+    let execution: ConversationExecution
+    try {
+      for (let priorAttempt = 0; priorAttempt < response.telemetry.length; priorAttempt += 1) {
+        await workspaces.releaseConversation(task, `${response.id}-${priorAttempt}`)
+      }
+      preparationFailure = 'provider_error'
+      const primary = await workspaces.provision({
+        taskId: task.id,
+        slug: task.slug,
+        repoUrl: task.repoUrl,
+        baseBranch: task.baseBranch,
+      })
+      workspace = await workspaces.provisionConversation(
+        primary,
+        `${response.id}-${response.telemetry.length}`,
+      )
+      const [liveTask] = await this.deps.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, task.id))
+        .limit(1)
+      const currentTask = liveTask ?? task
+      currentTaskState = currentTask.status
+      const actionOptions = await this.conversationActionOptions(currentTask)
+      await this.deps.db
+        .update(conversationMessages)
+        .set({
+          contextCommit: workspace.branch,
+          taskState: currentTaskState,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(conversationMessages.id, response.id),
+            eq(conversationMessages.status, 'responding'),
+          ),
+        )
+      execution = await dispatcher({
+        task,
+        conversationId: context.conversationId,
+        response,
+        ownerMessage: context.ownerMessage,
+        context: context.context,
+        previousAnchorCommit: context.previousAnchorCommit,
+        previousTaskState: context.previousTaskState,
+        currentAnchorCommit: workspace.branch,
+        currentTaskState,
+        contextPath: context.contextPath,
+        actionOptions,
+        attempt: response.telemetry.length,
+        provider,
+        startedAt,
+        workspace,
+      })
+    } catch (error) {
+      execution = {
+        status: 'failed',
+        failure: preparationFailure,
+        detail: (error as Error).message,
+        durationMs: Date.now() - startedAt.getTime(),
+      }
+    }
+
+    if (workspace) {
+      try {
+        await workspaces.releaseConversation(task, workspace.key)
+      } catch (error) {
+        // A teardown failure is real but must not launder over an already-good
+        // answer: replacing a succeeded execution here would discard a valid
+        // reply and burn attempt budget for work that already finished.
+        if (execution.status !== 'succeeded') {
+          execution = {
+            status: 'failed',
+            failure: 'cleanup_failed',
+            detail: (error as Error).message,
+            durationMs: execution.durationMs,
+            telemetry: execution.telemetry,
+          }
+        } else {
+          this.deps.log?.(
+            `conversation response ${response.id} succeeded but workspace cleanup failed: ${(error as Error).message}`,
+          )
+        }
+      }
+    }
+
+    const finishedAt = new Date()
+    const defect = conversationDefect(execution)
+    const telemetry = conversationUsage({
+      provider,
+      startedAt,
+      finishedAt,
+      execution,
+      defect,
+      contextPath: context.contextPath,
+    })
+    if (!defect && execution.message) {
+      await this.completeConversationResponse(
+        context,
+        execution,
+        telemetry,
+        workspace?.branch ?? null,
+        currentTaskState,
+      )
+
+      return
+    }
+
+    const reason = defect?.reason ?? 'missing_message'
+    const detail = defect?.detail
+    const attempts = [...response.telemetry, telemetry]
+    if (attempts.length >= CONVERSATION_ATTEMPT_CAP) {
+      await this.deps.db.transaction(async (tx) => {
+        await tx
+          .update(conversationMessages)
+          .set({
+            status: 'failed',
+            failureReason: detail ? `${reason}: ${detail}` : reason,
+            telemetry: attempts,
+            updatedAt: finishedAt,
+          })
+          .where(eq(conversationMessages.id, response.id))
+        await emitEvent(tx, {
+          taskId: task.id,
+          type: 'conversation.response.failed',
+          payload: {
+            conversationId: response.conversationId,
+            messageId: response.id,
+            reason,
+            detail: detail ?? null,
+          },
+        })
+      })
+
+      return
+    }
+
+    await this.deps.db
+      .update(conversationMessages)
+      .set({ status: 'queued', telemetry: attempts, failureReason: null, updatedAt: finishedAt })
+      .where(eq(conversationMessages.id, response.id))
+  }
+
+  private async conversationActionOptions(task: Task): Promise<ConversationActionOption[]> {
+    const graph = await latestGraph(this.deps.db, task.id)
+    if (!graph) return []
+
+    const [openDecisions, interruptedStages] = await Promise.all([
+      this.deps.db
+        .select({
+          id: decisions.id,
+          promptMd: decisions.promptMd,
+          options: decisions.options,
+        })
+        .from(decisions)
+        .where(and(eq(decisions.taskId, task.id), eq(decisions.status, 'open')))
+        .orderBy(asc(decisions.createdAt)),
+      task.status === 'paused' && task.resumeStatus
+        ? this.deps.db
+            .select()
+            .from(stages)
+            .where(
+              and(
+                eq(stages.taskId, task.id),
+                eq(stages.graphId, graph.id),
+                eq(stages.nodeKey, task.resumeStatus),
+                eq(stages.status, 'interrupted'),
+                eq(stages.interruptionCleanupStatus, 'succeeded'),
+              ),
+            )
+            .orderBy(desc(stages.attempt))
+            .limit(1)
+        : Promise.resolve([]),
+    ])
+    const expectedTask = { taskStatus: task.status, graphId: graph.id }
+    const actionOptions: ConversationActionOption[] = []
+
+    for (const decision of openDecisions) {
+      const choices = decision.options.map((option) => `${option.id}: ${option.label}`).join('; ')
+      const description = choices
+        ? `Answer the open decision: ${decision.promptMd} Options: ${choices}`
+        : `Answer the open decision: ${decision.promptMd}`
+      const target = { taskId: task.id, graphId: graph.id, decisionId: decision.id }
+      const expectedVersion = { ...expectedTask, decisionStatus: 'open' }
+      actionOptions.push(
+        {
+          kind: 'answer_decision',
+          target,
+          expectedVersion,
+          instruction: 'required',
+          description,
+        },
+        {
+          kind: 'dismiss_decision',
+          target,
+          expectedVersion,
+          instruction: 'omit',
+          description: `Dismiss the open decision without answering it: ${decision.promptMd}`,
+        },
+      )
+    }
+
+    const currentNode = nodeAt(graph.dag, task.status)
+    if (currentNode?.kind === 'gate') {
+      const target = { taskId: task.id, graphId: graph.id, gate: currentNode.key }
+      actionOptions.push({
+        kind: 'approve_gate',
+        target,
+        expectedVersion: expectedTask,
+        instruction: 'omit',
+        description: `Approve gate ${currentNode.key} and continue to ${currentNode.approve}.`,
+      })
+      if (currentNode.redirect) {
+        actionOptions.push({
+          kind: 'redirect_gate',
+          target,
+          expectedVersion: expectedTask,
+          instruction: 'optional',
+          description: `Redirect gate ${currentNode.key} to ${currentNode.redirect.target}.`,
+        })
+      }
+      for (const nodeKey of currentNode.rework ?? []) {
+        actionOptions.push({
+          kind: 'rework_gate',
+          target: { ...target, nodeKey },
+          expectedVersion: expectedTask,
+          instruction: 'optional',
+          description: `Send gate ${currentNode.key} back to ${nodeKey} for rework.`,
+        })
+      }
+    }
+
+    for (const node of graph.dag.nodes) {
+      if (node.kind !== 'stage') continue
+      actionOptions.push({
+        kind: 'instruct_next_run',
+        target: { taskId: task.id, graphId: graph.id, nodeKey: node.key },
+        expectedVersion: expectedTask,
+        instruction: 'required',
+        description: `Attach guidance to the next run of stage ${node.key}.`,
+      })
+    }
+
+    const [interruptedStage] = interruptedStages
+    if (interruptedStage) {
+      actionOptions.push({
+        kind: 'restart_stage',
+        target: {
+          taskId: task.id,
+          graphId: graph.id,
+          nodeKey: interruptedStage.nodeKey,
+          stageId: interruptedStage.id,
+        },
+        expectedVersion: {
+          ...expectedTask,
+          stageId: interruptedStage.id,
+          attempt: interruptedStage.attempt,
+        },
+        instruction: 'optional',
+        description: `Restart interrupted stage ${interruptedStage.nodeKey}, attempt ${interruptedStage.attempt}.`,
+      })
+    }
+
+    return actionOptions
+  }
+
+  private async completeConversationResponse(
+    context: ConversationRunContext,
+    execution: ConversationExecution,
+    telemetry: ExecutionUsage,
+    contextCommit: string | null,
+    contextTaskState: TaskState,
+  ): Promise<void> {
+    const { response, task } = context
+    await this.deps.db.transaction(async (tx) => {
+      const [completed] = await tx
+        .update(conversationMessages)
+        .set({
+          status: 'completed',
+          contentMd: execution.message ?? '',
+          telemetry: [...response.telemetry, telemetry],
+          contextCommit,
+          taskState: contextTaskState,
+          failureReason: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(conversationMessages.id, response.id),
+            eq(conversationMessages.status, 'responding'),
+          ),
+        )
+        .returning()
+      if (!completed) return
+
+      for (const proposal of execution.actions ?? []) {
+        const [action] = await tx
+          .insert(conversationActions)
+          .values({
+            taskId: task.id,
+            conversationId: response.conversationId,
+            messageId: response.id,
+            kind: proposal.kind,
+            target: proposal.target,
+            instruction: proposal.instruction,
+            expectedVersion:
+              proposal.expectedVersion as ConversationActionProposal['expectedVersion'] & {
+                taskStatus: TaskState
+              },
+          })
+          .returning({ id: conversationActions.id })
+        if (action) {
+          await emitEvent(tx, {
+            taskId: task.id,
+            type: 'conversation.action.proposed',
+            payload: {
+              conversationId: response.conversationId,
+              messageId: response.id,
+              actionId: action.id,
+              kind: proposal.kind,
+            },
+          })
+        }
+      }
+      await tx
+        .update(conversations)
+        .set({
+          contextCommit,
+          contextTaskState,
+          providerSession: execution.providerSession ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(conversations.id, response.conversationId))
+      await emitEvent(tx, {
+        taskId: task.id,
+        type: 'conversation.response.completed',
+        payload: {
+          conversationId: response.conversationId,
+          messageId: response.id,
+          sequence: response.sequence,
+          contextCommit,
+          taskState: contextTaskState,
+        },
+      })
+    })
+  }
+
   private async runStage(
     task: Task,
     graph: RunGraphRow,
@@ -362,6 +1081,26 @@ export class Engine {
         repoUrl: task.repoUrl,
         baseBranch: task.baseBranch,
       })
+      if (workspaces.headCommit) {
+        const workspaceCommit = await workspaces.headCommit(workspace)
+        const stamped = await db
+          .update(stages)
+          .set({ workspaceCommit, updatedAt: new Date() })
+          .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
+          .returning({ id: stages.id })
+
+        // A concurrent stopStage() already moved this attempt to 'interrupted'
+        // between claim() and here; cleanupInterruptedAttempt owns it now, and
+        // dispatching would run the agent over a workspace mid-discard.
+        if (stamped.length === 0) {
+          log?.(
+            `stage ${task.id}/${node.key} attempt ${row.attempt} was interrupted before dispatch`,
+          )
+
+          return
+        }
+        row = { ...row, workspaceCommit }
+      }
       execution = await dispatcher({
         task,
         graphId: graph.id,
@@ -398,7 +1137,7 @@ export class Engine {
     // rewrite that outcome into a failed attempt: the records already written
     // are enough for the next tick or the startup sweep to continue from.
     try {
-      await this.completeStage(task, graph, node, row, execution)
+      await this.completeStage(task, graph, node, row, execution, workspace)
     } catch (e) {
       log?.(
         `bookkeeping after ${task.id}/${node.key} attempt ${row.attempt}: ${(e as Error).message}`,
@@ -412,67 +1151,104 @@ export class Engine {
     node: StageNode,
     row: Stage,
     execution: StageExecution,
+    workspace: Workspace | undefined,
   ): Promise<void> {
-    const { db } = this.deps
     const result = execution.result
     if (!result) throw new Error(`stage ${row.id} succeeded without a result`)
 
-    await db
-      .update(stages)
-      .set({
-        status: 'succeeded',
-        finishedAt: new Date(),
-        cost: usageRecord(execution.telemetry),
-        result,
-        updatedAt: new Date(),
+    const accepted = await this.withTaskLock(task.id, async (tx) => {
+      const [liveStage] = await tx
+        .select({ id: stages.id })
+        .from(stages)
+        .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
+        .limit(1)
+      if (!liveStage) {
+        if (execution.telemetry) {
+          await tx
+            .update(stages)
+            .set({ cost: usageRecord(execution.telemetry), updatedAt: new Date() })
+            .where(and(eq(stages.id, row.id), eq(stages.status, 'interrupted')))
+        }
+
+        return null
+      }
+
+      const { task: liveTask, graph: liveGraph } = await this.taskWithGraph(task.id, tx)
+      if (liveGraph.id !== graph.id || liveTask.status !== node.key) return null
+
+      let acceptedCommit = execution.commit ?? null
+      if (execution.commitDeferred) {
+        if (!workspace || !this.deps.workspaces.commitStage) {
+          throw new Error(`stage ${row.id} deferred its commit without an accepting workspace`)
+        }
+        const commit = await this.deps.workspaces.commitStage(task.id, workspace, {
+          stageId: row.id,
+          role: node.role,
+          provider: row.provider,
+          attempt: row.attempt,
+        })
+        acceptedCommit = commit.committed ? commit.commit : null
+      }
+
+      const completed = await tx
+        .update(stages)
+        .set({
+          status: 'succeeded',
+          finishedAt: new Date(),
+          cost: usageRecord(execution.telemetry),
+          result,
+          acceptedCommit,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
+        .returning({ id: stages.id })
+      if (completed.length === 0) return null
+
+      await emitEvent(tx, {
+        taskId: task.id,
+        stageId: row.id,
+        type: 'stage.completed',
+        payload: {
+          node: node.key,
+          attempt: row.attempt,
+          verdict: result.verdict ?? null,
+          commit: acceptedCommit,
+        },
       })
-      .where(eq(stages.id, row.id))
-    await emitEvent(db, {
-      taskId: task.id,
-      stageId: row.id,
-      type: 'stage.completed',
-      payload: { node: node.key, attempt: row.attempt, verdict: result.verdict ?? null },
-    })
 
-    const reworkedAt = await lastReworkAt(db, task.id)
-    const rounds = await roundsFor(db, task.id, reworkedAt)
-    const decision = advance(
-      graph.dag,
-      node.key,
-      {
-        status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
-        verdict: result.verdict,
-        findings: result.findings,
-      },
-      rounds,
-      task.caps,
-    )
+      const reworkedAt = await lastReworkAt(tx, task.id)
+      const rounds = await roundsFor(tx, task.id, reworkedAt)
+      const decision = advance(
+        liveGraph.dag,
+        node.key,
+        {
+          status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
+          verdict: result.verdict,
+          findings: result.findings,
+        },
+        rounds,
+        liveTask.caps,
+      )
 
-    // The round and the transition it drove commit together: a crash or a
-    // concurrent cancel between them must not leave a recorded round with no
-    // matching transition (it would double-count against the loop's cap the
-    // next time this node is entered).
-    if (decision.kind === 'park') {
-      await db.transaction(async (tx) => {
-        if (decision.record) await recordRound(tx, task.id, decision.record)
-        await this.applyTransition(tx, task, graph.dag, 'waiting_human', {
+      if (decision.record) await recordRound(tx, task.id, decision.record)
+      if (decision.kind === 'park') {
+        await this.applyTransition(tx, liveTask, liveGraph.dag, 'waiting_human', {
           cause: decision.reason,
           resume: decision.resume,
           stageId: row.id,
         })
-      })
 
-      return
-    }
+        return { task: liveTask, graph: liveGraph, to: 'waiting_human' as TaskState }
+      }
 
-    await db.transaction(async (tx) => {
-      if (decision.record) await recordRound(tx, task.id, decision.record)
-      await this.applyTransition(tx, task, graph.dag, decision.to, {
+      await this.applyTransition(tx, liveTask, liveGraph.dag, decision.to, {
         cause: decision.kind === 'loop' ? 'revise' : 'advance',
         stageId: row.id,
       })
+
+      return { task: liveTask, graph: liveGraph, to: decision.to }
     })
-    await this.releaseIfTerminal(task, graph.dag, decision.to)
+    if (accepted) await this.releaseIfTerminal(accepted.task, accepted.graph.dag, accepted.to)
   }
 
   /**
@@ -491,7 +1267,7 @@ export class Engine {
     telemetry: StageTelemetry | null | undefined,
   ): Promise<void> {
     const { db, workspaces, log } = this.deps
-    await db
+    const failed = await db
       .update(stages)
       .set({
         status: 'failed',
@@ -499,7 +1275,18 @@ export class Engine {
         cost: { ...usageRecord(telemetry), failure: { reason, detail } },
         updatedAt: new Date(),
       })
-      .where(eq(stages.id, row.id))
+      .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))
+      .returning({ id: stages.id })
+    if (failed.length === 0) {
+      if (telemetry) {
+        await db
+          .update(stages)
+          .set({ cost: usageRecord(telemetry), updatedAt: new Date() })
+          .where(and(eq(stages.id, row.id), eq(stages.status, 'interrupted')))
+      }
+
+      return
+    }
     await emitEvent(db, {
       taskId: task.id,
       stageId: row.id,
@@ -514,6 +1301,7 @@ export class Engine {
         stageId: row.id,
         payload: { stage: node.key, reason, detail: detail ?? null },
       })
+      await this.failTerminalQueuedResponses(task.id)
 
       return
     }
@@ -521,7 +1309,7 @@ export class Engine {
     // Only while attempts remain: a task out of attempts leaves its tree as
     // evidence, which is what the human will be asked to look at.
     if (workspace) {
-      await workspaces.discard(workspace).catch((e: Error) => {
+      await workspaces.discard(workspace, row.workspaceCommit ?? undefined).catch((e: Error) => {
         log?.(`discard after failed attempt on ${task.id}/${node.key}: ${e.message}`)
       })
     }
@@ -570,18 +1358,26 @@ export class Engine {
   }
 
   /**
-   * Startup sweep: a stage recorded running with no orchestrator behind it is
-   * a failed attempt. Kill whatever its labels still name, update the record
-   * in place, and let the next tick re-dispatch under the same cap. Parked and
-   * gated tasks are not touched.
+   * Startup sweep: a stage or conversation response recorded running with no orchestrator behind
+   * it is a failed attempt. Kill whatever its labels still name, update the
+   * record in place, and let the next tick re-dispatch under the same cap.
+   * Tasks without an orphaned execution are untouched.
    */
   async sweep(): Promise<number> {
     const { db, log } = this.deps
-    const orphans = await db
-      .select({ stage: stages, task: tasks })
-      .from(stages)
-      .innerJoin(tasks, eq(stages.taskId, tasks.id))
-      .where(eq(stages.status, 'running'))
+    const [orphans, orphanedResponses] = await Promise.all([
+      db
+        .select({ stage: stages, task: tasks })
+        .from(stages)
+        .innerJoin(tasks, eq(stages.taskId, tasks.id))
+        .where(eq(stages.status, 'running')),
+      db
+        .select({ response: conversationMessages, task: tasks })
+        .from(conversationMessages)
+        .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+        .innerJoin(tasks, eq(conversations.taskId, tasks.id))
+        .where(eq(conversationMessages.status, 'responding')),
+    ])
 
     // Each orphan belongs to a different task, so settling them has nothing to
     // serialize on; running them concurrently keeps /readyz from waiting on
@@ -600,7 +1396,82 @@ export class Engine {
       )
     }
 
-    return orphans.length
+    for (const { response, task } of orphanedResponses) {
+      try {
+        await this.settleOrphanResponse(task, response)
+      } catch (error) {
+        log?.(`sweep: settling response ${response.id} failed: ${(error as Error).message}`)
+      }
+    }
+
+    const recoveredInterruptions = await this.recoverPendingInterruptions()
+    const recoveredActions = await this.recoverStuckActions()
+
+    return orphans.length + orphanedResponses.length + recoveredInterruptions + recoveredActions
+  }
+
+  /**
+   * Retries both a freshly-interrupted stage (`pending`) and one whose last
+   * cleanup attempt errored (`failed`, past the backoff window) — otherwise a
+   * transient docker/git error strands the task in 'paused' forever, since
+   * nothing else ever revisits a 'failed' cleanup.
+   */
+  private async recoverPendingInterruptions(): Promise<number> {
+    if (!this.deps.killOrphans) return 0
+
+    const retryCutoff = new Date(Date.now() - INTERRUPTION_CLEANUP_RETRY_MS)
+    const pending = await this.deps.db
+      .select({ stage: stages, task: tasks })
+      .from(stages)
+      .innerJoin(tasks, eq(stages.taskId, tasks.id))
+      .where(
+        and(
+          eq(stages.status, 'interrupted'),
+          or(
+            eq(stages.interruptionCleanupStatus, 'pending'),
+            and(eq(stages.interruptionCleanupStatus, 'failed'), lt(stages.updatedAt, retryCutoff)),
+          ),
+        ),
+      )
+
+    for (const { task, stage } of pending) {
+      await this.cleanupInterruptedAttempt(task, stage).catch((error: Error) => {
+        this.deps.log?.(`interruption cleanup for ${stage.id} failed: ${error.message}`)
+      })
+    }
+
+    return pending.length
+  }
+
+  /**
+   * An action can only be seen mid-'applying' by a later tick if the process
+   * that set it crashed before recording an outcome — confirmAction itself
+   * runs the whole apply-and-record sequence in one call. Past the timeout,
+   * treat it like any other failed confirmation: visible and retryable by a
+   * fresh confirmAction call, rather than silently stuck forever.
+   */
+  private async recoverStuckActions(): Promise<number> {
+    const stuckCutoff = new Date(Date.now() - STUCK_ACTION_TIMEOUT_MS)
+    const stuck = await this.deps.db
+      .update(conversationActions)
+      .set({
+        status: 'conflict',
+        outcome: { detail: 'action was left applying after an orchestrator restart' },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(conversationActions.status, 'applying'),
+          lt(conversationActions.updatedAt, stuckCutoff),
+        ),
+      )
+      .returning({ id: conversationActions.id })
+
+    for (const row of stuck) {
+      this.deps.log?.(`action ${row.id} was stuck in applying; marked conflict for retry`)
+    }
+
+    return stuck.length
   }
 
   private async settleOrphan(task: Task, row: Stage): Promise<void> {
@@ -642,6 +1513,7 @@ export class Engine {
           stageId: row.id,
           payload: { stage: row.nodeKey, reason: 'orphaned' },
         })
+        await this.failTerminalQueuedResponses(task.id)
       }
 
       // Out of attempts: the tree stays exactly as the dead attempt left it —
@@ -657,10 +1529,515 @@ export class Engine {
         repoUrl: task.repoUrl,
         baseBranch: task.baseBranch,
       })
-      await workspaces.discard(workspace)
+      await workspaces.discard(workspace, row.workspaceCommit ?? undefined)
     } catch (e) {
       log?.(`sweep: workspace discard for ${task.id} failed: ${(e as Error).message}`)
     }
+  }
+
+  private async settleOrphanResponse(task: Task, response: ConversationMessage): Promise<void> {
+    const { killOrphans, log, workspaces } = this.deps
+    const attempt = response.telemetry.length
+    log?.(`sweep: conversation response ${response.id} attempt ${attempt} had no live execution`)
+    const killed =
+      (await killOrphans?.({
+        'specmate.task': task.id,
+        'specmate.node': 'conversation',
+        'specmate.attempt': String(attempt),
+      }).catch(() => [])) ?? []
+    for (const id of killed) log?.(`sweep: killed ${id}`)
+
+    // Mirrors failTerminalQueuedResponses: a response is only finalized once
+    // its workspace is actually gone, so a failed cleanup leaves the row for
+    // the next sweep to retry instead of leaking the worktree permanently.
+    let cleaned = true
+    try {
+      await workspaces.releaseConversation(task, `${response.id}-${attempt}`)
+    } catch (error) {
+      cleaned = false
+      log?.(
+        `sweep: response workspace cleanup for ${response.id} failed: ${(error as Error).message}`,
+      )
+    }
+    if (!cleaned) return
+
+    const finishedAt = new Date()
+    const telemetry: ExecutionUsage = {
+      provider: this.resolveAnswerProvider(),
+      model: null,
+      startedAt: null,
+      finishedAt: finishedAt.toISOString(),
+      durationMs: null,
+      tokens: null,
+      costUsd: null,
+      raw: null,
+      failure: { reason: 'orphaned' },
+    }
+    const attempts = [...response.telemetry, telemetry]
+    const terminal = isTerminal(task.status)
+    if (terminal || attempts.length >= CONVERSATION_ATTEMPT_CAP) {
+      const reason = terminal ? `task became ${task.status}` : 'orphaned'
+      await this.deps.db.transaction(async (tx) => {
+        await tx
+          .update(conversationMessages)
+          .set({
+            status: 'failed',
+            failureReason: reason,
+            telemetry: attempts,
+            updatedAt: finishedAt,
+          })
+          .where(eq(conversationMessages.id, response.id))
+        await emitEvent(tx, {
+          taskId: task.id,
+          type: 'conversation.response.failed',
+          payload: {
+            conversationId: response.conversationId,
+            messageId: response.id,
+            reason,
+          },
+        })
+      })
+
+      return
+    }
+
+    await this.deps.db
+      .update(conversationMessages)
+      .set({ status: 'queued', telemetry: attempts, updatedAt: finishedAt })
+      .where(eq(conversationMessages.id, response.id))
+  }
+
+  async stopStage(options: StopStageOptions): Promise<{ stage: Stage; task: Task }> {
+    const claimed = await this.withTaskLock(options.taskId, async (tx) => {
+      const [task] = await tx.select().from(tasks).where(eq(tasks.id, options.taskId)).limit(1)
+      if (!task) throw new TaskNotFoundError(options.taskId)
+
+      const [stage] = await tx
+        .update(stages)
+        .set({
+          status: 'interrupted',
+          finishedAt: new Date(),
+          interruptedBy: options.actor,
+          interruptionCleanupStatus: 'pending',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stages.id, options.stageId),
+            eq(stages.taskId, options.taskId),
+            eq(stages.graphId, options.graphId),
+            eq(stages.nodeKey, options.nodeKey),
+            eq(stages.attempt, options.attempt),
+            eq(stages.status, 'running'),
+          ),
+        )
+        .returning()
+      if (!stage || task.status !== options.nodeKey)
+        throw new StageStopConflictError(options.stageId)
+      const graph = await latestGraph(tx, task.id)
+      if (!graph || graph.id !== options.graphId) throw new StageStopConflictError(options.stageId)
+
+      await emitEvent(tx, {
+        taskId: task.id,
+        stageId: stage.id,
+        type: 'stage.stopping',
+        payload: { node: stage.nodeKey, attempt: stage.attempt, actor: options.actor },
+      })
+      await this.applyTransition(tx, task, graph.dag, 'paused', {
+        cause: 'owner_interrupted',
+        actor: options.actor,
+        resume: stage.nodeKey as TaskState,
+        stageId: stage.id,
+      })
+
+      return { task, stage }
+    })
+
+    // API processes can claim the stop without owning the execution. The live
+    // orchestrator sees the durable pending row on its next tick and performs
+    // the exact-label kill and cleanup; startup sweep repeats the same work.
+    const stage = this.deps.killOrphans
+      ? await this.cleanupInterruptedAttempt(claimed.task, claimed.stage)
+      : claimed.stage
+    const [currentTask] = await this.deps.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, claimed.task.id))
+      .limit(1)
+
+    return { stage, task: currentTask ?? claimed.task }
+  }
+
+  private async cleanupInterruptedAttempt(task: Task, stage: Stage): Promise<Stage> {
+    try {
+      await this.deps.killOrphans?.({
+        'specmate.task': task.id,
+        'specmate.node': stage.nodeKey,
+        'specmate.attempt': String(stage.attempt),
+      })
+      await this.stageRuns.get(stage.id)
+      const workspace = await this.deps.workspaces.provision({
+        taskId: task.id,
+        slug: task.slug,
+        repoUrl: task.repoUrl,
+        baseBranch: task.baseBranch,
+      })
+      await this.deps.workspaces.discard(workspace, stage.workspaceCommit ?? undefined)
+      const [cleaned] = await this.deps.db
+        .update(stages)
+        .set({
+          interruptionCleanupStatus: 'succeeded',
+          interruptionFailure: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stages.id, stage.id),
+            eq(stages.status, 'interrupted'),
+            eq(stages.interruptionCleanupStatus, 'pending'),
+          ),
+        )
+        .returning()
+      if (!cleaned) {
+        const [current] = await this.deps.db
+          .select()
+          .from(stages)
+          .where(eq(stages.id, stage.id))
+          .limit(1)
+
+        return current ?? stage
+      }
+      await emitEvent(this.deps.db, {
+        taskId: task.id,
+        stageId: stage.id,
+        type: 'stage.interrupted',
+        payload: { node: stage.nodeKey, attempt: stage.attempt },
+      })
+
+      return cleaned
+    } catch (error) {
+      const detail = (error as Error).message
+      await this.deps.db
+        .update(stages)
+        .set({
+          interruptionCleanupStatus: 'failed',
+          interruptionFailure: detail,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(stages.id, stage.id), eq(stages.interruptionCleanupStatus, 'pending')))
+      await emitEvent(this.deps.db, {
+        taskId: task.id,
+        stageId: stage.id,
+        type: 'stage.cleanup_failed',
+        payload: { node: stage.nodeKey, attempt: stage.attempt, detail },
+      })
+      throw new StopCleanupError(stage.id, detail)
+    }
+  }
+
+  async restartInterruptedStage(options: RestartInterruptedStageOptions): Promise<Task> {
+    return this.withTaskLock(options.taskId, async (tx) => {
+      const [existing] = await tx
+        .select({ id: feedback.id })
+        .from(feedback)
+        .where(
+          and(
+            eq(feedback.taskId, options.taskId),
+            eq(feedback.idempotencyKey, options.idempotencyKey),
+          ),
+        )
+        .limit(1)
+      const { task, graph } = await this.taskWithGraph(options.taskId, tx)
+      if (existing) return task
+
+      const [stage] = await tx
+        .select()
+        .from(stages)
+        .where(and(eq(stages.id, options.stageId), eq(stages.taskId, task.id)))
+        .limit(1)
+      if (
+        task.status !== 'paused' ||
+        !stage ||
+        stage.status !== 'interrupted' ||
+        stage.interruptionCleanupStatus !== 'succeeded' ||
+        task.resumeStatus !== stage.nodeKey
+      ) {
+        throw new StageRestartConflictError(options.stageId)
+      }
+
+      const instruction = options.guidance?.trim() ?? ''
+      await tx.insert(feedback).values({
+        taskId: task.id,
+        stageId: stage.id,
+        kind: 'intervention',
+        textMd: instruction,
+        target: {
+          graphId: stage.graphId,
+          nodeKey: stage.nodeKey,
+          stageId: stage.id,
+          attempt: stage.attempt,
+        },
+        idempotencyKey: options.idempotencyKey,
+      })
+      if (options.actionId) {
+        await tx
+          .update(conversationActions)
+          .set({ status: 'applied', actor: options.actor, updatedAt: new Date() })
+          .where(eq(conversationActions.id, options.actionId))
+      }
+      await emitEvent(tx, {
+        taskId: task.id,
+        stageId: stage.id,
+        type: 'stage.restart_confirmed',
+        payload: {
+          node: stage.nodeKey,
+          attempt: stage.attempt,
+          instruction,
+          actor: options.actor,
+          actionId: options.actionId ?? null,
+        },
+      })
+      await this.applyTransition(tx, task, graph.dag, stage.nodeKey as TaskState, {
+        cause: 'restart_interrupted',
+        actor: options.actor,
+        stageId: stage.id,
+      })
+      const [updated] = await tx.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+
+      return updated ?? { ...task, status: stage.nodeKey as TaskState, resumeStatus: null }
+    })
+  }
+
+  async confirmAction(options: ConfirmActionOptions): Promise<void> {
+    const confirmation = await this.withTaskLock(options.taskId, async (tx) => {
+      const [action] = await tx
+        .select()
+        .from(conversationActions)
+        .where(
+          and(
+            eq(conversationActions.id, options.actionId),
+            eq(conversationActions.taskId, options.taskId),
+          ),
+        )
+        .limit(1)
+      if (!action) throw new ActionConflictError(options.actionId, 'action does not exist')
+
+      if (action.status === 'applied') return { action, conflictReason: null, shouldApply: false }
+
+      if (action.status === 'applying' && action.idempotencyKey === options.idempotencyKey) {
+        return { action, conflictReason: null, shouldApply: false }
+      }
+      if (action.status !== 'proposed' && action.status !== 'confirmed') {
+        throw new ActionConflictError(action.id, `action is ${action.status}`)
+      }
+      const [task] = await tx.select().from(tasks).where(eq(tasks.id, options.taskId)).limit(1)
+      if (!task) throw new TaskNotFoundError(options.taskId)
+
+      const versionConflict = await this.actionVersionConflict(tx, task, action)
+      if (versionConflict) {
+        await tx
+          .update(conversationActions)
+          .set({
+            status: 'conflict',
+            actor: options.actor,
+            outcome: versionConflict.outcome,
+            idempotencyKey: options.idempotencyKey,
+            updatedAt: new Date(),
+          })
+          .where(eq(conversationActions.id, action.id))
+        return {
+          action: { ...action, status: 'conflict' as const },
+          conflictReason: versionConflict.reason,
+          shouldApply: false,
+        }
+      }
+      const [confirmed] = await tx
+        .update(conversationActions)
+        .set({
+          status: 'applying',
+          actor: options.actor,
+          idempotencyKey: options.idempotencyKey,
+          updatedAt: new Date(),
+        })
+        .where(eq(conversationActions.id, action.id))
+        .returning()
+      await emitEvent(tx, {
+        taskId: task.id,
+        type: 'conversation.action.confirmed',
+        payload: { actionId: action.id, kind: action.kind, actor: options.actor },
+      })
+
+      return { action: confirmed ?? action, conflictReason: null, shouldApply: true }
+    })
+    const { action, conflictReason, shouldApply } = confirmation
+    if (conflictReason) throw new ActionConflictError(action.id, conflictReason)
+
+    if (!shouldApply) return
+
+    try {
+      switch (action.kind) {
+        case 'approve_gate':
+          await this.approve(options.taskId, options.actor)
+          break
+        case 'redirect_gate':
+          await this.redirect(options.taskId, options.actor, action.instruction ?? undefined)
+          break
+        case 'rework_gate': {
+          const target = action.target.nodeKey as TaskState | undefined
+          if (!target) throw new ActionConflictError(action.id, 'rework target is missing')
+
+          await this.rework({
+            taskId: options.taskId,
+            actor: options.actor,
+            target,
+            comment: action.instruction ?? undefined,
+          })
+          break
+        }
+        case 'restart_stage': {
+          const stageId = action.target.stageId
+          if (!stageId)
+            throw new ActionConflictError(action.id, 'interrupted stage target is missing')
+          await this.restartInterruptedStage({
+            taskId: options.taskId,
+            stageId,
+            actor: options.actor,
+            guidance: action.instruction ?? undefined,
+            idempotencyKey: options.idempotencyKey,
+            actionId: action.id,
+          })
+          break
+        }
+        case 'answer_decision':
+        case 'dismiss_decision': {
+          const decisionId = action.target.decisionId
+          if (!decisionId) throw new ActionConflictError(action.id, 'decision target is missing')
+
+          const [updated] = await this.deps.db
+            .update(decisions)
+            .set({
+              status: action.kind === 'answer_decision' ? 'answered' : 'dismissed',
+              answerMd: action.instruction,
+              answeredBy: options.actor,
+              answeredAt: new Date(),
+            })
+            .where(
+              and(
+                eq(decisions.id, decisionId),
+                eq(decisions.taskId, options.taskId),
+                eq(decisions.status, 'open'),
+              ),
+            )
+            .returning({ id: decisions.id })
+          if (!updated) throw new ActionConflictError(action.id, 'decision is no longer open')
+
+          break
+        }
+        case 'instruct_next_run': {
+          const target = action.target.nodeKey
+          if (!target) throw new ActionConflictError(action.id, 'future-run target is missing')
+
+          await this.deps.db.insert(feedback).values({
+            taskId: options.taskId,
+            kind: 'intervention',
+            textMd: action.instruction ?? '',
+            target: { ...action.target, actionId: action.id },
+            idempotencyKey: options.idempotencyKey,
+          })
+          break
+        }
+      }
+      await this.deps.db.transaction(async (tx) => {
+        await tx
+          .update(conversationActions)
+          .set({ status: 'applied', outcome: { ok: true }, updatedAt: new Date() })
+          .where(eq(conversationActions.id, action.id))
+        await emitEvent(tx, {
+          taskId: options.taskId,
+          type: 'conversation.action.applied',
+          payload: { actionId: action.id, kind: action.kind },
+        })
+      })
+    } catch (error) {
+      await this.deps.db
+        .update(conversationActions)
+        .set({
+          status: 'conflict',
+          outcome: { detail: (error as Error).message },
+          updatedAt: new Date(),
+        })
+        .where(eq(conversationActions.id, action.id))
+      throw error
+    }
+  }
+
+  private async actionVersionConflict(
+    tx: DbClient,
+    task: Task,
+    action: ConversationAction,
+  ): Promise<{ reason: string; outcome: Record<string, unknown> } | null> {
+    const expected = action.expectedVersion
+    if (task.status !== expected.taskStatus) {
+      return {
+        reason: `expected task ${expected.taskStatus}, got ${task.status}`,
+        outcome: { field: 'taskStatus', expected: expected.taskStatus, actual: task.status },
+      }
+    }
+
+    const graph = await latestGraph(tx, task.id)
+    if (expected.graphId && graph?.id !== expected.graphId) {
+      return {
+        reason: `expected graph ${expected.graphId}, got ${graph?.id ?? 'none'}`,
+        outcome: { field: 'graphId', expected: expected.graphId, actual: graph?.id ?? null },
+      }
+    }
+    if (action.target.gate && task.status !== action.target.gate) {
+      return {
+        reason: `expected gate ${action.target.gate}, got ${task.status}`,
+        outcome: { field: 'gate', expected: action.target.gate, actual: task.status },
+      }
+    }
+
+    const expectedStageId = expected.stageId ?? action.target.stageId
+    if (expectedStageId) {
+      const [stage] = await tx
+        .select()
+        .from(stages)
+        .where(and(eq(stages.id, expectedStageId), eq(stages.taskId, task.id)))
+        .limit(1)
+      if (!stage) {
+        return {
+          reason: `expected stage ${expectedStageId} no longer exists`,
+          outcome: { field: 'stageId', expected: expectedStageId, actual: null },
+        }
+      }
+      if (expected.attempt !== undefined && stage.attempt !== expected.attempt) {
+        return {
+          reason: `expected stage attempt ${expected.attempt}, got ${stage.attempt}`,
+          outcome: { field: 'attempt', expected: expected.attempt, actual: stage.attempt },
+        }
+      }
+    }
+
+    if (expected.decisionStatus && action.target.decisionId) {
+      const [decision] = await tx
+        .select({ status: decisions.status })
+        .from(decisions)
+        .where(and(eq(decisions.id, action.target.decisionId), eq(decisions.taskId, task.id)))
+        .limit(1)
+      if (decision?.status !== expected.decisionStatus) {
+        return {
+          reason: `expected decision ${expected.decisionStatus}, got ${decision?.status ?? 'missing'}`,
+          outcome: {
+            field: 'decisionStatus',
+            expected: expected.decisionStatus,
+            actual: decision?.status ?? null,
+          },
+        }
+      }
+    }
+
+    return null
   }
 
   // ─── gate operations — the API the Phase-2 UI will call ────────────────────
@@ -805,6 +2182,7 @@ export class Engine {
   ): Promise<{ task: Task; graph: RunGraphRow }> {
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
     if (!task) throw new TaskNotFoundError(taskId)
+
     const graph = await latestGraph(db, taskId)
     if (!graph) throw new Error(`task ${taskId} has no pinned run graph`)
 
@@ -869,6 +2247,8 @@ export class Engine {
   private async releaseIfTerminal(task: Task, dag: PinnedGraph, to: TaskState): Promise<void> {
     if (to !== dag.terminal && to !== 'cancelled') return
 
+    await this.failTerminalQueuedResponses(task.id)
+
     await this.deps.workspaces.release(task.id).catch((e: Error) => {
       this.deps.log?.(`workspace release for ${task.id}: ${e.message}`)
     })
@@ -878,6 +2258,46 @@ export class Engine {
 interface StageDefectRecord {
   readonly reason: string
   readonly detail?: string
+}
+
+interface ConversationDefectRecord {
+  readonly reason: string
+  readonly detail?: string
+}
+
+function conversationDefect(execution: ConversationExecution): ConversationDefectRecord | null {
+  if (execution.status !== 'succeeded') {
+    return { reason: execution.failure ?? 'unknown', detail: execution.detail }
+  }
+  if (!execution.message?.trim()) {
+    return { reason: 'missing_message', detail: 'conversation run returned no message' }
+  }
+
+  return null
+}
+
+interface ConversationUsageInput {
+  readonly provider: ProviderId
+  readonly startedAt: Date
+  readonly finishedAt: Date
+  readonly execution: ConversationExecution
+  readonly defect: ConversationDefectRecord | null
+  readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
+}
+
+function conversationUsage(input: ConversationUsageInput): ExecutionUsage {
+  return {
+    provider: input.provider,
+    model: input.execution.telemetry?.model ?? null,
+    startedAt: input.startedAt.toISOString(),
+    finishedAt: input.finishedAt.toISOString(),
+    durationMs: input.execution.durationMs,
+    tokens: input.execution.telemetry?.tokens ? { ...input.execution.telemetry.tokens } : null,
+    costUsd: input.execution.telemetry?.costUsd ?? null,
+    raw: input.execution.telemetry?.raw ?? null,
+    contextPath: input.contextPath,
+    failure: input.defect ? { reason: input.defect.reason, detail: input.defect.detail } : null,
+  }
 }
 
 /** What, if anything, makes this execution a failed attempt instead of a completion. */

@@ -104,6 +104,68 @@ describe('prompt assembly', () => {
     expect(twice).toBe(once)
   })
 
+  test('injects stored conversation context, the current message, and its scratch path', async () => {
+    const { harness, params } = await setup('conversation')
+    const first = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'answerer',
+      conversation: {
+        context: '## assistant #2\n\nOption A was safer.',
+        message: 'Why was option A chosen?',
+        resultPath: '.specmate/message-1-0/CONVERSATION.json',
+        previousAnchorCommit: null,
+        previousTaskState: null,
+        currentAnchorCommit: 'current',
+        currentTaskState: 'research',
+        contextPath: 'stored',
+        actionOptions: [
+          {
+            kind: 'restart_stage',
+            target: {
+              taskId: 'task-1',
+              graphId: 'graph-1',
+              nodeKey: 'research',
+              stageId: 'stage-1',
+            },
+            expectedVersion: {
+              taskStatus: 'paused',
+              graphId: 'graph-1',
+              stageId: 'stage-1',
+              attempt: 2,
+            },
+            instruction: 'optional',
+            description: 'Restart interrupted stage research, attempt 2.',
+          },
+        ],
+      },
+    })
+    const second = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'answerer',
+      conversation: {
+        context: '## assistant #2\n\nOption A was safer.',
+        message: 'What happens under option B?',
+        resultPath: '.specmate/message-2-0/CONVERSATION.json',
+        previousAnchorCommit: null,
+        previousTaskState: null,
+        currentAnchorCommit: 'current',
+        currentTaskState: 'research',
+        contextPath: 'stored',
+        actionOptions: [],
+      },
+    })
+
+    expect(first).toContain('Why was option A chosen?')
+    expect(first).toContain('Option A was safer.')
+    expect(first).toContain('.specmate/message-1-0/CONVERSATION.json')
+    expect(first).toContain('"taskId": "task-1"')
+    expect(first).toContain('"stageId": "stage-1"')
+    expect(first).toContain('Instruction: optional.')
+    expect(second).toContain('What happens under option B?')
+    expect(second).not.toContain('Why was option A chosen?')
+    expect(second).toContain('Return an empty `actions` array.')
+  })
+
   test('announces a diff it had to truncate', async () => {
     const { harness, params } = await setup('capped')
     await writeFiles(harness.workspace.path, { 'src/big.ts': `${'// padding\n'.repeat(2000)}` })

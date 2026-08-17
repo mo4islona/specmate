@@ -15,6 +15,22 @@ const PHASE_ONE: AgentRole[] = [
 ]
 
 describe('role prompts', () => {
+  test('answerer names its scratch product and the no-changes rule', async () => {
+    const body = await readFile(join(ROLES_DIR, 'answerer.md'), 'utf8')
+
+    expect(body).toContain('strictly read-only')
+    expect(body).toContain('Never modify artifacts, product code, task state, gates')
+    expect(body).toContain('separately confirms')
+    expect(body).toContain('CONVERSATION.json')
+    expect(body).toContain('Never invent or alter an identifier')
+    expect(body).toContain('expectedVersion')
+    expect(body).toContain('# Role: Answerer')
+    expect(body).toContain('## What you are given')
+    expect(body).toContain('## What you may write')
+    expect(body).toContain('## How to work')
+    expect(body).toContain('## How to finish')
+  })
+
   test.each(PHASE_ONE)('%s has the prompt file its contract names', async (role) => {
     const contract = ROLE_CONTRACTS[role]
     const file = contract.promptFile.slice(contract.promptFile.lastIndexOf('/') + 1)

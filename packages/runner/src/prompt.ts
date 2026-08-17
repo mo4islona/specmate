@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
-import { type AgentRole, ROLE_CONTRACTS } from '@specmate/core'
+import { type AgentRole, type ConversationActionOption, ROLE_CONTRACTS } from '@specmate/core'
 import { artifactKindForPath, type Git, type Workspace } from '@specmate/workspace'
 import type { RunnerConfig } from './config.ts'
 import { truncate } from './truncate.ts'
@@ -20,6 +20,17 @@ export interface PromptParams {
   readonly workspace: Workspace
   readonly baseBranch: string
   readonly ledger: string
+  readonly conversation?: {
+    readonly context: string
+    readonly message: string
+    readonly resultPath: string
+    readonly previousAnchorCommit: string | null
+    readonly previousTaskState: string | null
+    readonly currentAnchorCommit: string
+    readonly currentTaskState: string
+    readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
+    readonly actionOptions: readonly ConversationActionOption[]
+  }
 }
 
 /**
@@ -66,7 +77,99 @@ export async function assemblePrompt(
     '',
   ]
 
+  if (params.conversation) {
+    const delta = await renderConversationDelta(git, config, params)
+    sections.push(
+      '---',
+      '',
+      '# Conversation context',
+      '',
+      params.conversation.context || 'No earlier messages.',
+      '',
+      '# Task context since the prior response',
+      '',
+      delta,
+      '',
+      '# Available conversation actions',
+      '',
+      renderConversationActionOptions(params.conversation.actionOptions),
+      '',
+      '# Current owner message',
+      '',
+      params.conversation.message,
+      '',
+      `Write the structured conversation result to \`${params.conversation.resultPath}\`.`,
+      '',
+    )
+  }
+
   return `${sections.join('\n')}\n`
+}
+
+function renderConversationActionOptions(options: readonly ConversationActionOption[]): string {
+  if (options.length === 0) {
+    return 'No action is available for this task snapshot. Return an empty `actions` array.'
+  }
+
+  const rendered = options.map((option) => {
+    const skeleton = {
+      kind: option.kind,
+      target: option.target,
+      expectedVersion: option.expectedVersion,
+    }
+
+    return [
+      `## ${option.kind}`,
+      '',
+      option.description,
+      `Instruction: ${option.instruction}.`,
+      'Copy `kind`, `target`, and `expectedVersion` exactly from this skeleton:',
+      '',
+      fence(JSON.stringify(skeleton, null, 2), 'json'),
+    ].join('\n')
+  })
+
+  return [
+    'Only the action skeletons below are valid for this snapshot. Never invent or alter an identifier.',
+    '',
+    ...rendered,
+  ].join('\n\n')
+}
+
+async function renderConversationDelta(
+  git: Git,
+  config: RunnerConfig,
+  params: PromptParams,
+): Promise<string> {
+  const conversation = params.conversation
+  if (!conversation) return ''
+
+  const state = `Task state: ${conversation.previousTaskState ?? 'none'} → ${conversation.currentTaskState}.`
+  const path = `Context path: ${conversation.contextPath}. Current commit: ${conversation.currentAnchorCommit}.`
+  const previous = conversation.previousAnchorCommit
+  if (!previous)
+    return `${state}\n${path}\nThis is the first stored task snapshot for the conversation.`
+  if (!/^[0-9a-f]{40,64}$/i.test(previous)) {
+    return `${state}\n${path}\nThe previous commit anchor is unavailable; current artifacts and product diff are authoritative.`
+  }
+  if (previous === conversation.currentAnchorCommit) {
+    return `${state}\n${path}\nNo committed files changed since the previous response.`
+  }
+
+  const changed = await git.tryRun(
+    ['diff', '--stat', previous, conversation.currentAnchorCommit, '--'],
+    { cwd: params.workspace.path },
+  )
+  const names = await git.tryRun(
+    ['diff', '--name-status', previous, conversation.currentAnchorCommit, '--'],
+    { cwd: params.workspace.path },
+  )
+  if (changed.exitCode !== 0 || names.exitCode !== 0) {
+    return `${state}\n${path}\nThe committed delta could not be computed; current artifacts and product diff are authoritative.`
+  }
+  const body = [changed.stdout.trim(), names.stdout.trim()].filter(Boolean).join('\n\n')
+
+  return `${state}\n${path}\n${truncate(body || 'No committed files changed.', config.diffBytesLimit, 'conversation anchor delta')}`
 }
 
 function basename(path: string): string {

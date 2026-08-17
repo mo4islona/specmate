@@ -1,86 +1,106 @@
 ## Why
 
-Every channel from the human to an agent today mutates the task: redirect regenerates the
-brief, rework re-runs stages, a comment waits for the Retro agent. There is no way to simply
-ask — "why did research choose X?", "what happens to Y under this design?" — and get an
-answer without touching the pipeline. So clarification either doesn't happen or gets forced
-through rework, the most expensive channel available. The questions themselves are also lost
-signal: what the owner has to ask is exactly what the artifacts failed to make clear.
+The task surface looks conversational, but its agent channel is a sequence of unrelated
+one-shot questions. Every follow-up rebuilds the same context, the agent cannot remember what
+was just clarified, and a user's correction cannot affect work already under way. The same gap
+would make an open decision answerable but not discussable: the owner would have to commit to an
+answer before understanding it.
 
-This change adds asks: one-shot, read-only question-and-answer runs over a task's artifacts.
-It sits between Phase 1 and Phase 2 and is not in the `docs/plan.md` roadmap — a deliberate
-addition, stated here per the house rule. It deliberately does not add chat: each ask is a
-stateless run with fresh context assembled from the change folder, exactly like any stage, so
-the "context lives with the task" discipline survives contact with a conversational feature.
+This change replaces asks with durable task conversations. It sits between Phase 1 and Phase 2
+and deliberately extends `docs/plan.md`: a conversation may clarify work without changing it,
+then turn an agreed message into an explicit task action. The pipeline remains artifact-driven;
+conversation history reaches a stage only after the owner confirms an intervention that the
+orchestrator records in the ledger.
 
 ## What Changes
 
-- **Asks as first-class records**: a question posted on an active task is stored durably with
-  a lifecycle (`pending → answering → answered | failed`), answered asynchronously, and
-  mirrored into `feedback` as a new `question` kind — the self-learning signal pattern every
-  other human interaction already follows.
-- **An `answerer` role** in the catalog: reads the change folder and the ledger, receives the
-  question, produces an answer — and may write nothing: no artifacts, no code, no task state.
-  This is the first role whose output is not artifact changes, which requires carving an
-  answer-only run shape into the agent contract.
-- **Execution outside the pinned graph**: the orchestrator picks up pending asks and runs
-  them in the task's workspace when no stage is using it — pipeline stages always win; asks
-  queue and never preempt, block, or advance the pipeline. Any stray modification the run
-  leaves is discarded, nothing is committed.
-- **Answer delivery over the existing surface**: the answer lands in the ask record and as an
-  event, so the task-surface stream carries it to a watching client with no new transport.
-- **UI**: the task view's comment input gains an "ask" action; the timeline renders the
-  question immediately, shows the ask's progress, and renders the answer when it arrives —
-  visually distinct from comments.
-- **Cost honesty**: each ask records the same execution telemetry as a stage attempt (model,
-  timings, token usage, cost) and its spend counts as the task's spend.
+- **BREAKING — asks become conversations**: the one-question `asks` model and endpoints are
+  replaced before release by durable conversations, ordered messages, and recoverable response
+  attempts. A conversation may be scoped to a task or to a process-created subject such as a
+  decision or gate.
+- **A conversational guide role**: the answer-only role reads a task snapshot, ledger, and its
+  own conversation context, then produces an assistant message and optional structured action
+  proposals. It may not modify files or task state.
+- **Bounded session reuse**: one response runs at a time per conversation. A provider session and
+  warm runtime may be reused within a configured idle TTL; Postgres remains authoritative and
+  can rehydrate the conversation after expiry or restart. Artifact deltas since the
+  conversation's context commit replace repeated full-context assembly where possible.
+- **Conversation beside the pipeline**: a response uses a disposable snapshot and separate
+  capacity, so it can answer while a stage owns the task worktree. The response names the commit
+  and task state it understood; the next turn receives any intervening task and artifact changes.
+- **Explicit influence**: an ordinary message never changes the task. The guide may propose an
+  action, but only an owner-confirmed action may delegate to an existing decision or gate
+  operation, attach an instruction to a future run, or interrupt and restart the current stage.
+- **Direct stop, deliberate restart**: a running-stage control lets the owner stop execution
+  without waiting for chat. The orchestrator marks that exact attempt interrupted, stops it,
+  discards uncommitted changes, and leaves the task paused. Restart is a separate explicit action
+  whose form may carry a newly entered instruction or a confirmed conversation proposal and
+  re-enters the same graph node. Only the confirmed instruction reaches the replacement. An
+  interrupted attempt is history and spend, but not a failure and not part of the retry cap.
+- **Durable delivery and UI**: messages and actions are readable from the store and announced on
+  the existing event stream. The task view presents the pinned pipeline with its current node and
+  attempt, one conversation surface, action confirmation, failure/retry state, and the context
+  version each answer used. Its activity timeline distinguishes durable state and accepted
+  commits from a running attempt's invisible, uncommitted file edits.
+- **Cost honesty**: every response attempt and interrupted stage retains the telemetry that is
+  available. Conversation spend counts against the task's budgets; absent usage remains
+  distinguishable from zero.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `task-qa`: what an ask is — how a question is posted, stored, and mirrored to feedback; the
-  read-only, stateless, non-preempting execution contract; how the answer is delivered and
-  read; how asks are surfaced and submitted in the task view.
+- `task-qa` (REQ-1601–REQ-1608): durable task conversations, recoverable session context,
+  read-only concurrent responses, explicit action confirmation, stop-and-restart semantics,
+  delivery, and cost attribution.
 
 ### Modified Capabilities
 
-- `agent-contracts`: the "every role consumes and produces OpenSpec artifacts" requirement
-  gains the answer-only run shape — a role may be declared answer-only, consuming artifacts
-  and a question and producing a structured answer instead of artifact changes.
-- `persistence`: asks become durable records with a status lifecycle, removed with their
-  task; the closed set of feedback kinds gains `question`.
+- `agent-contracts`: REQ-102 gains the answer-only conversational run shape while preserving the
+  rule that pipeline stages never inherit transcripts.
+- `persistence`: fixed sets and cascades gain conversations, messages, actions, and the
+  `interrupted` stage outcome; REQ-309 captures owner conversation and confirmed interventions
+  as structured signal; REQ-312 defines the durable conversation aggregate.
+- `task-lifecycle`: REQ-613 distinguishes an owner interruption from failure and excludes it from
+  the failure cap.
+- `workspace-lifecycle`: REQ-711 applies clean rollback to an interrupted attempt as well as a
+  failed one.
+- `task-surface`: conversations, messages, action confirmation, and conflicts are exposed over
+  the authenticated API and existing resumable event stream.
+- `operator-ui`: the task view gains a real multi-turn conversation and explicit intervention
+  confirmation, plus a direct stop control on every running stage, including interrupt cost and
+  destructive-work disclosure.
 
 ## Impact
 
-- Ordering: this change layers on the in-flight `task-surface` change (stream, feedback
-  capture, timeline) and `orchestrator-loop` (runner execution, telemetry shape). Its
-  `persistence` delta touches the same feedback-kinds requirement `task-surface` modifies, so
-  it MUST archive after `task-surface`; the delta here is written against that future text.
-- `packages/db`: a new `asks` table and a `feedback_kind` value — one migration.
-- `packages/core`: the `answerer` catalog entry (read-only capability bits) and ask
-  operations shared by API and orchestrator.
-- `apps/orchestrator`: an ask executor on the existing tick — queue scan, workspace-idle
-  check, discard after run.
-- `packages/runner` / `roles/`: the answer-only run shape (question in, answer out through
-  the runner scratch area, `RESULT.json` as always) and `roles/answerer.md`.
-- `apps/api` / `apps/web`: two endpoints (post ask, list asks), two-ish event types, and the
-  ask affordance in the task view.
+- Ordering: after the archived `task-surface` and `orchestrator-loop` foundations; before
+  `decision-records`, which creates decision-scoped conversations and relies on explicit
+  resolution remaining separate from discussion. `budget-enforcement` counts conversation and
+  interrupted-run spend through its provider-independent run rule.
+- `packages/db`: replace the unshipped `asks` schema with conversations, messages, and actions;
+  extend stage status and feedback kinds.
+- `packages/core`: conversation operations, action contracts, context/version projection, and
+  interruption state rules.
+- `apps/orchestrator`: a conversation dispatcher, bounded session recovery, exact execution
+  interruption, workspace rollback, and safe re-dispatch of the same node.
+- `packages/runner` / `roles/`: a cancellable execution handle and conversational answer-only
+  run shape whose product is a message plus proposed actions.
+- `apps/api` / `apps/web`: conversation/message/action endpoints, events, hydrated transcript,
+  and the confirmation UI.
 
 ## Non-goals
 
-- **No chat.** No threads, no transcript, no follow-up context: a follow-up is a new ask; the
-  UI may quote the previous answer into the question text, which costs nothing and keeps runs
-  stateless.
-- **No influence on the pipeline.** An answer never changes task state, artifacts, or gate
-  outcomes; if an ask reveals something that should change the work, the existing channels —
-  redirect, rework, gate comments — are the way to act on it.
-- **No asks outside a live task**: terminal tasks (archived, cancelled) refuse asks — their
-  workspace is gone and their artifacts are frozen; the wiki is the record there.
-- **No token-by-token streaming of the answer** — it arrives whole, as an event; the SSE
-  channel stays an event log, not a completion stream.
-- **No budget enforcement** — ask spend is recorded and attributed, but caps act on it only
-  when Phase 2 budget enforcement lands; nothing here blocks an ask on cost.
-- **No cross-task or repo-wide Q&A** — an ask is scoped to one task's change folder and
-  workspace; "ask about the codebase in general" is a different feature with different
-  context assembly.
+- **No live prompt injection into a running stage.** Influence is kill-and-restart from the last
+  accepted commit, not pausing a provider process or continuing its private session.
+- **No silent steering.** Neither user prose nor an assistant proposal mutates task state; every
+  effect names and confirms an action.
+- **No preservation of partial interrupted work.** Uncommitted edits are discarded; checkpoint
+  commits and merging partial attempts are separate problems.
+- **No cross-task or repository-wide assistant.** Every conversation belongs to one task and
+  reads only that task's artifacts, ledger, and product-code diff.
+- **No indefinite warm containers.** Runtime reuse is bounded by idle TTL and capacity; durable
+  recovery never depends on a container surviving.
+- **No token-by-token completion stream.** Durable message and action events remain the transport
+  contract; partial model output is not authoritative.
+- **No budget policy in this change.** Usage is recorded and attributed here; enforcement remains
+  `budget-enforcement`.

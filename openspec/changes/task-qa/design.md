@@ -1,106 +1,198 @@
 ## Context
 
-See `proposal.md` for motivation. This change assumes two in-flight changes as its floor:
-`task-surface` (SSE stream, feedback capture, the timeline and its comment input) and
-`orchestrator-loop` (the tick loop, runner execution through `@specmate/runner`, the
-telemetry shape on stage attempts). The workspace layer already has everything an intruding
-read-only run needs: idempotent provisioning, discard-to-last-commit, and the rule that
-runner scratch never enters a commit.
+See `proposal.md` for motivation. The archived `task-surface` supplies authenticated REST, an
+ordered resumable event stream, feedback capture, and a chat-shaped timeline. The archived
+orchestrator and runner changes supply durable stage attempts, labeled executions, timeouts,
+usage telemetry, disposable worktrees, and cleanup to the last accepted commit.
 
-The binding constraints: fresh context per run (no transcripts), agents never set task
-state, pipeline stages own the workspace when they run, and every run ends with a
-`RESULT.json` naming a catalog role.
+The superseded implementation models each owner question as one `asks` row and one detached
+answer run. Its role and snapshot isolation are useful substrate, but its queue, endpoints,
+prompt, and UI deliberately erase prior turns and cannot steer a task. Because that schema has
+not shipped, this design replaces it rather than adding a compatibility layer.
+
+The binding constraints are:
+
+- pipeline stages remain artifact-and-ledger driven and never inherit transcripts;
+- only the orchestrator changes task or stage state;
+- conversation execution never writes the task branch;
+- every effect from conversation is explicit, versioned, attributable, and recoverable from the
+  store;
+- a user interruption discards an incomplete attempt instead of trying to merge it.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Clarification that costs one agent run, not one rework round.
-- Zero new transport: asks ride the existing store, stream, and runner.
-- The Q&A history reconstructable from the store alone (`asks` table), the live experience
-  carried by events.
+
+- A follow-up is an incremental turn in the same durable conversation.
+- Conversation remains available while a pipeline stage runs.
+- Warm provider/runtime state reduces repeated setup without becoming authoritative.
+- The owner can deliberately turn agreed guidance into a safe, observable task action.
+- Restarting current work has race-free semantics and never consumes the failure cap.
 
 **Non-Goals:**
-- No conversational memory of any kind — not even server-side "include last N asks in
-  context". Quoting is the client's affair.
-- No generalization to "ask about anything" — context assembly is the task's change folder
-  and workspace, full stop.
+
+- Converting the pipeline stage protocol into an interactive provider protocol.
+- Preserving or reviewing uncommitted edits from an interrupted attempt.
+- Letting an assistant directly invoke task mutations without owner confirmation.
+- Sharing one conversation across tasks or treating a transcript as an artifact.
 
 ## Decisions
 
-### `answerer` is a catalog role, not an execution mode
+### The durable aggregate is conversation, message, response attempt, and action
 
-The run must end with a `RESULT.json` naming a catalog role, roles carry the capability bits
-the runner enforces mechanically, and prompts live in `roles/*.md`. Making the answerer a
-first-class entry (`roles/answerer.md`, may-modify-code: false, artifact writes: none) gets
-all three for free; an "answer mode" flag on existing roles would need a parallel enforcement
-path for "this run may write nothing". The contract carve-out lives in the `agent-contracts`
-delta: answer-only roles produce an answer instead of artifact changes.
+`conversations` owns task and optional subject scope, lifecycle, last sequence, context anchor,
+summary metadata, and opaque provider-session metadata. `conversation_messages` is the ordered
+transcript: owner, assistant, and system entries share one sequence; an assistant entry carries
+its response status and attempt telemetry. `conversation_actions` stores proposals and their
+confirmation/application lifecycle separately from prose.
 
-### The answer travels through runner scratch
+The separation is intentional. Messages are append-only communication; actions are idempotent
+commands with expected versions. Editing an assistant message can never manufacture an action,
+and replaying the transcript never re-applies one. The tables, not provider session storage, are
+the recovery boundary.
 
-The answerer writes `ANSWER.md` next to `RESULT.json` in the per-run scratch area — already
-excluded from commits by the workspace contract — and the runner reads it back as the run's
-product. Alternatives: stuffing the answer into `RESULT.json` (its `notes` field is a short
-human-facing note, not a document; abusing it couples answer length to result parsing) or
-committing an answer artifact (asks must leave no trace on the branch).
+The old `asks` row cannot be stretched into this aggregate without turning one row into a thread,
+message, response job, and usage ledger simultaneously. It is replaced before release.
 
-### The `asks` table is the queue
+### The answer-only role becomes a conversational guide
 
-No new queue infrastructure: `asks` rows in `pending` are the work list, exactly as runnable
-tasks are for stages. The orchestrator's existing tick gains one step: for each task whose
-workspace is idle (no stage running or scheduled this tick), take the oldest pending ask,
-mark it `answering`, run it, discard the workspace, store the answer, append the event.
-Stages are scheduled before asks within a tick, which is the whole priority policy. Restart
-recovery mirrors stages: an `answering` ask with no live run behind it is a failed attempt,
-re-run under the single-retry cap.
+The existing answer-only catalog slot stays read-only but its input and output widen. It receives
+the current owner message, stored conversation context, task ledger, declared artifacts, and
+product-code diff. It writes one assistant message plus zero or more structured action proposals
+into runner scratch, alongside `RESULT.json`.
 
-### Telemetry shape is shared, storage is local
+The guide has no mutation tools and no writable artifact kinds. Mechanical snapshot disposal is
+still the final boundary if it writes or commits despite the prompt. A proposal names an action
+kind and arguments, but the runner cannot apply it.
 
-Each answering attempt records the same structured usage record as a stage attempt (model,
-timings, token kinds, cost) — same TypeScript type from `packages/core` — but stored on the
-ask row, not in `stages`: asks are not stages, and giving them stage rows would leak them
-into the pinned graph, iteration counting, and every stage query. "Task spend" queries union
-the two.
+### Conversation context is anchored, incremental, and reconstructable
 
-### API and UI reuse the comment path's shape
+The first response assembles full task context at the task branch's current commit. The
+conversation stores that anchor. A later response receives messages since the recorded summary,
+the summary itself when one exists, and task-state/artifact/code deltas since the prior anchor.
+After assembly, the anchor moves to the snapshot served to that turn.
 
-`POST /api/v1/tasks/:id/asks` and `GET /api/v1/tasks/:id/asks`, validation and structured
-errors as in `task-surface`; events `ask.created`, `ask.answered`, `ask.failed` flow through
-the existing stream and TanStack Query invalidation. In the task view the input becomes a
-segmented control (comment | ask); the timeline renders an ask as a question entry with a
-pending pulse — the mission-control theme's one ornament, reused — that resolves into the
-answer rendered as markdown (same `react-markdown` setup, raw HTML disabled: the answer is
-agent output).
+An opaque provider session reference may preserve provider-side cached context. A configured
+idle TTL may also keep one runtime warm. Both are accelerators: expiry, eviction, provider
+failure, or orchestrator restart clears them and rehydrates from the transcript, summary, and
+current task snapshot. At most one response per conversation runs, so summary position and anchor
+advance in message order.
 
-### Questions mirror into feedback at post time
+A rolling summary is created only at a stable message boundary and records the highest sequence
+it covers. The full transcript is retained. This bounds prompt growth without making an
+uncheckable provider transcript the source of truth.
 
-The `question` feedback row is written by the API in the same transaction as the ask row —
-not by the run, not on answer. The signal is the question's existence; an unanswered or
-failed ask is still signal that the artifacts left something unclear.
+### Conversation snapshots and stages may coexist
+
+Responses use disposable detached worktrees keyed by conversation and response attempt. They do
+not require the task's primary worktree to be idle, so a response can run while a stage does.
+Conversation concurrency is configured separately from stage concurrency; resource policy may
+delay a response globally, but a task's stage does not impose a workspace lock on it.
+
+The response header names its task state and anchor commit. It cannot see a stage's uncommitted
+work. If the stage commits while the response runs, that answer remains honest about its older
+anchor and the next turn receives the delta. This is preferable to waiting until the pipeline
+reaches a gate and presenting a fresh-looking answer much later.
+
+### Confirmed actions are the only bridge into execution
+
+The guide emits proposals such as `answer_decision`, `dismiss_decision`, `approve_gate`,
+`redirect_gate`, `rework_gate`, `instruct_next_run`, or `restart_stage`. Each proposal includes
+the task version and, when relevant, decision, gate, or stage identity it was based on.
+
+Confirmation creates an immutable action record under the task advisory lock. The orchestrator
+compares the expected identity with live state and either delegates to the existing owning
+operation or records a conflict. The API never performs the transition itself. An action has an
+idempotency identity, so retrying a confirmation returns the first outcome instead of applying it
+twice.
+
+Confirmed instructions are rendered into the task ledger with their action identity and target.
+The target stage records which instructions it consumed. The transcript itself never enters a
+pipeline prompt, which preserves REQ-102 and makes the exact steering signal reviewable.
+
+### Stop is immediate; restart is a separate protocol step
+
+The running-stage surface exposes `stop_stage` without involving the guide. It carries the exact
+stage id, graph id, node key, and attempt. Under the task lock, the orchestrator conditionally
+changes that attempt from `running` to `interrupted`, moves the task to `paused` with the same
+node as `resume_status`, and records the stop operation. If the conditional update loses to
+normal completion, the stop becomes a conflict and stops.
+
+After the database claim wins, the orchestrator terminates only the execution labeled with that
+task, node, and attempt. It waits for the runner promise to settle, discards the primary worktree
+to the task branch's last accepted commit, and verifies it is clean. Only then does it mark the
+stop applied and leave the task safely paused. A later `restart_stage` operation may include a
+new instruction entered in the restart form or one selected from a conversation proposal. The
+owner confirms the exact text and interrupted target; the orchestrator stores that intervention,
+returns the task to the stored graph node, and lets the normal tick create a new attempt. Only the
+confirmed instruction and its action identity enter the ledger, never the surrounding transcript.
+
+External termination and workspace cleanup cannot be atomic with Postgres. The intermediate
+`paused` state is the safety barrier: a crash or cleanup error cannot dispatch a replacement over
+an execution or dirty tree that may still exist. Recovery resumes the same termination and
+cleanup protocol from the stored stop. Separating restart also gives the owner an emergency stop
+that does not depend on composing guidance or waiting for a conversational turn.
+
+Every completion path updates a stage only while it is still `running`. If an interrupted runner
+returns success late, that compare-and-set fails; its result is not committed or advanced. This
+guard is required even after an execution kill because exit and confirmation may race.
+
+### Interrupted is an outcome, not a failure
+
+The stage status set gains `interrupted`. It records start and finish times, the owner/action that
+interrupted it, and whatever provider usage was already available. Missing token or cost data is
+absent, never zero. Its duration and disclosed cost count toward task spend because the work ran.
+
+Failure-cap queries count only trailing `failed` attempts. An interrupted attempt increments the
+node's attempt number for uniqueness and history but neither increments nor resets the failure
+streak. This makes repeated owner steering visible without turning it into provider instability.
+
+### The task stream transports durable state, not partial completions
+
+REST creates conversations, appends messages, reads transcript state, and confirms actions.
+Events announce durable transitions: conversation/message creation, response start/completion or
+failure, action proposal, confirmation, conflict, application, and failed cleanup. The existing
+stream cursor and client invalidation pattern carry them.
+
+No token-by-token SSE is added. A partial provider completion is neither durable nor safe to use
+as an action proposal. The UI may show that a response is active, then render its complete stored
+message.
+
+The task view projects the pinned graph rather than reconstructing progress from prose. It marks
+the current node, attempt number, accepted commit, and `running`, `stopping`, `paused`, or terminal
+state. Its chronological activity timeline carries durable stage, stop/cleanup/restart,
+conversation, action, decision, and accepted-artifact events. It is not a live filesystem or
+terminal feed: a running attempt's uncommitted edits remain invisible and cannot be presented as
+accepted changes. When a stage completes and its commit is accepted, the completion event points
+the client at the new commit and refreshed artifacts.
 
 ## Risks / Trade-offs
 
-- [An ask can wait a long time behind a busy pipeline] → accepted: asks are advisory by
-  contract; the pending state is honest in the UI. If it stings in practice, a per-task
-  "answers allowed during stage X" policy is a later, compatible refinement.
-- [The answerer reads the workspace while frozen mid-pipeline, so answers can describe
-  not-yet-reviewed work] → accepted and arguably the point; the answer entry in the timeline
-  is labeled with the stage the task was in when it ran.
-- [Owner asks could become a de-facto steering channel ("do it differently"), bypassing
-  feedback semantics] → the answerer's prompt instructs it to answer, not to promise
-  changes, and to point at redirect/rework for action; the question is captured as feedback
-  either way, so the signal isn't lost.
-- [Two changes touching the feedback-kinds requirement] → explicit archive order
-  (`task-surface` first) stated in the proposal; the delta here contains the full merged
-  text so archiving is mechanical.
-- [Ask spend is invisible to budget caps until Phase 2] → recorded and attributed from day
-  one, so enforcement lands on complete data.
+- [A concurrent answer is stale before it arrives] → every answer displays its state and commit
+  anchor; the next turn receives the delta, and actions use expected versions.
+- [Provider sessions are not portable or may expire early] → they are optional cache metadata;
+  durable context always reconstructs a turn.
+- [A long conversation still grows expensive] → summaries bound old transcript input, task
+  context is sent as deltas, and telemetry distinguishes cached from reconstructed paths.
+- [Termination wins but the execution cannot be killed] → the task remains paused and recovery
+  retries exact-label cleanup; no replacement starts.
+- [An agent commits during a stage before interruption] → only orchestrator-accepted stage output
+  is a restart boundary; the workspace is restored to the recorded accepted task commit.
+- [Frequent user restarts waste spend] → each interrupted attempt remains visible in history and
+  budget totals, and confirmation states the cost and discarded-work consequence.
+- [Action proposal schemas become a second pipeline language] → the set is closed and every
+  action delegates to an existing orchestrator operation; adding a new effect requires a new
+  explicit contract.
 
 ## Migration Plan
 
-1. One migration: the `asks` table plus the `question` enum value — additive; deploys after
-   the `task-surface` migration by the stated change order.
-2. Orchestrator and API deploy together (shared ask operations in `packages/core`); the UI
-   affordance is inert against an older API only until the next compose up, and fails as a
-   structured 404, not silently.
-3. Rollback: previous images; the table and enum value stay behind harmlessly.
+1. Replace the unshipped asks migration and schema with conversations, messages, actions, the
+   `interrupted` stage status, and conversation/intervention feedback kinds.
+2. Land store and core contracts before switching runner/orchestrator dispatch; existing ask code
+   is removed rather than kept as a compatibility path.
+3. Land API and web against the conversation endpoints in the same release; no client is directed
+   to the superseded ask endpoints.
+4. `decision-records` archives afterwards and creates decision-scoped conversations using the
+   subject contract defined here.
+5. Rollback uses the previous application and schema revision; no released conversation data
+   requires conversion.

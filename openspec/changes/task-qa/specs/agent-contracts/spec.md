@@ -1,25 +1,33 @@
 ## MODIFIED Requirements
 
-### Requirement: Every role consumes and produces OpenSpec artifacts
+### Requirement: REQ-102 — Every role consumes and produces OpenSpec artifacts
 
-A role's input SHALL be assembled from the change folder's artifacts plus a structured task
-ledger, and its output SHALL be changes to those artifacts — except for a role declared
-answer-only. An answer-only role additionally receives a question, produces a structured
-answer instead of artifact changes, and MUST NOT modify artifacts, product code, or task
-state; its run still ends with the structured result like any other. No stage or run may
-depend on conversation history from an earlier stage or run.
+A pipeline role's input SHALL be assembled from the change folder's artifacts plus a structured
+task ledger, and its output SHALL be changes to those artifacts. No pipeline stage may depend on
+conversation history from an earlier stage or from an owner conversation. A role declared
+answer-only is the exception to artifact output: it receives the task artifacts, ledger, its own
+conversation context, and the current owner message, then produces an assistant message and
+optional structured action proposals. An answer-only role MUST NOT modify artifacts, product
+code, task state, gates, or decisions; its run SHALL still end with a structured result. A
+confirmed intervention may reach a later pipeline stage only through the ledger rendered by the
+orchestrator, never by injecting the conversation transcript.
 
-#### Scenario: Stage prompt assembly
+#### Scenario: AC-104 — Stage prompt assembly
 
-- **WHEN** a stage is prepared for execution
-- **THEN** its prompt SHALL contain the role prompt, the current artifacts, and the ledger — and nothing carried over from a previous stage's transcript
+- **WHEN** a pipeline stage is prepared for execution
+- **THEN** its prompt SHALL contain the role prompt, current declared artifacts, and the ledger, with no transcript carried from a previous stage or owner conversation
 
-#### Scenario: Rework after a summary
+#### Scenario: AC-105 — Rework after a summary
 
 - **WHEN** a task is sent back for rework
-- **THEN** the affected stages SHALL be re-run with context rebuilt from the updated artifacts, not from accumulated history
+- **THEN** the affected stages SHALL be re-run with context rebuilt from updated artifacts and ledger, not from accumulated history
 
-#### Scenario: Answer-only run leaves no trace
+#### Scenario: AC-126 — Conversational follow-up
 
-- **WHEN** an answer-only role's run completes
-- **THEN** it SHALL have produced a structured answer and a structured result, and the change folder's artifacts SHALL be unchanged
+- **WHEN** an answer-only role handles a follow-up in one conversation
+- **THEN** it SHALL receive that conversation's stored context and produce a message without changing the task workspace
+
+#### Scenario: AC-127 — Confirmed guidance reaches a stage
+
+- **WHEN** the owner confirms an intervention and the target stage is dispatched
+- **THEN** its ledger SHALL contain the confirmed instruction and SHALL NOT contain the surrounding conversation transcript

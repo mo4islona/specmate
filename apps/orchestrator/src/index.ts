@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { PIPELINE_CATALOG } from '@specmate/core'
 import { createDb, databaseUrl, ping, tasks } from '@specmate/db'
 import {
+  ConversationExecutor,
   killContainersByLabels,
   killLocalAgents,
   renderLedgerForTask,
@@ -10,7 +11,12 @@ import {
 import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { Engine, type EngineWorkspaces, type StageDispatcher } from './engine.ts'
+import {
+  type ConversationDispatcher,
+  Engine,
+  type EngineWorkspaces,
+  type StageDispatcher,
+} from './engine.ts'
 import {
   backendFor,
   providerFor,
@@ -29,6 +35,8 @@ const Env = z.object({
   TICK_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   /** Stages in flight at once, across tasks — never more than one per task. */
   STAGE_CONCURRENCY: z.coerce.number().int().positive().default(1),
+  /** Read-only conversation turns have their own global pool. */
+  CONVERSATION_CONCURRENCY: z.coerce.number().int().positive().default(2),
   /** Dispatches per stage before the task fails naming it (the runner's inner retry is separate). */
   STAGE_ATTEMPT_CAP: z.coerce.number().int().positive().default(2),
   /** Root holding repository mirrors and per-task worktrees. */
@@ -112,11 +120,19 @@ try {
 const service = new WorkspaceService(workspaces, db, (workspace, image) =>
   backend.resolveEnvironment(workspace.path, image),
 )
+const provider = providerFor(runnerConfig, backend)
 const executor = new StageExecutor({
   config: runnerConfig,
-  provider: providerFor(runnerConfig, backend),
+  provider,
   git: new Git(workspaces.config),
   workspaces: service,
+  ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
+  deferCommit: true,
+})
+const conversationExecutor = new ConversationExecutor({
+  config: runnerConfig,
+  provider,
+  git: new Git(workspaces.config),
   ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
 })
 
@@ -124,7 +140,11 @@ const executor = new StageExecutor({
 // service can pin the environment on first provision.
 const engineWorkspaces: EngineWorkspaces = {
   provision: (request) => service.provision({ ...request, image: runnerConfig.image }),
-  discard: (workspace) => service.discard(workspace),
+  provisionConversation: (workspace, key) => service.provisionConversation(workspace, key),
+  releaseConversation: (task, key) => service.releaseConversation(task.slug, task.repoUrl, key),
+  discard: (workspace, commit) => service.discard(workspace, commit),
+  headCommit: (workspace) => service.headCommit(workspace),
+  commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
   release: (taskId) => service.release(taskId),
 }
 
@@ -153,15 +173,55 @@ const dispatcher: StageDispatcher = async ({
   })
 }
 
+const conversationDispatcher: ConversationDispatcher = async ({
+  task,
+  conversationId,
+  response,
+  ownerMessage,
+  context,
+  previousAnchorCommit,
+  previousTaskState,
+  currentAnchorCommit,
+  currentTaskState,
+  contextPath,
+  actionOptions,
+  attempt,
+  provider,
+  workspace,
+}) => {
+  const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+
+  return conversationExecutor.execute({
+    taskId: task.id,
+    conversationId,
+    responseId: response.id,
+    message: ownerMessage.contentMd,
+    context,
+    previousAnchorCommit,
+    previousTaskState,
+    currentAnchorCommit,
+    currentTaskState,
+    contextPath,
+    actionOptions,
+    provider,
+    workspace,
+    baseBranch: task.baseBranch,
+    environment: taskRunnerEnvironment(current?.environment ?? null),
+    attempt,
+  })
+}
+
 const engine = new Engine({
   db,
   workspaces: engineWorkspaces,
   settings: {
     stageConcurrency: env.STAGE_CONCURRENCY,
+    conversationConcurrency: env.CONVERSATION_CONCURRENCY,
     stageAttemptCap: env.STAGE_ATTEMPT_CAP,
     availableProviders: ['claude-code'],
   },
   dispatcher,
+  conversationDispatcher,
   // Local agents are detached children that survive a crash exactly like a
   // container does; both backends leave something the sweep must kill.
   killOrphans:
@@ -175,7 +235,7 @@ const engine = new Engine({
 // recorded as running is settled from the store alone.
 try {
   const swept = await engine.sweep()
-  if (swept > 0) console.info(`sweep settled ${swept} orphaned stage attempt(s)`)
+  if (swept > 0) console.info(`sweep settled ${swept} orphaned execution attempt(s)`)
 } catch (e) {
   console.error(`startup sweep failed: ${(e as Error).message}`)
   process.exit(1)

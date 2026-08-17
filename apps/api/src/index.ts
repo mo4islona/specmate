@@ -13,8 +13,12 @@ const workspaceService = new WorkspaceService(workspaceManager, db, () =>
 const gates = new Engine({
   db,
   workspaces: {
-    provision: () => Promise.reject(new Error('the API never provisions workspaces')),
-    discard: () => Promise.reject(new Error('the API never discards workspaces')),
+    provision: (request) => workspaceService.provision({ ...request, image: 'pinned-by-task' }),
+    provisionConversation: () =>
+      Promise.reject(new Error('the API never provisions conversation workspaces')),
+    releaseConversation: (task, key) =>
+      workspaceService.releaseConversation(task.slug, task.repoUrl, key),
+    discard: (workspace) => workspaceService.discard(workspace),
     release: (taskId) => workspaceService.release(taskId),
   },
   settings: {

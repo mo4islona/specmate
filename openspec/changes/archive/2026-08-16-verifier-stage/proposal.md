@@ -69,8 +69,9 @@ claims alone).
   per-round records all exist.
 - Sequencing: depends on the in-flight `orchestrator-loop` change for verdict-driven
   advancement, loop edges, and recorded rounds; its `agent-contracts` delta touches a
-  different requirement than `task-qa`'s, so the two changes do not constrain each other's
-  archive order.
+  different requirement than `task-qa`'s, so their agent-contract deltas do not constrain each
+  other's archive order. `task-qa` now also modifies REQ-613 for owner interruption, while this
+  change leaves task-lifecycle unchanged.
 
 ## Non-goals
 

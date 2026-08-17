@@ -1,5 +1,7 @@
 import { z } from 'zod'
+import { CONVERSATION_ACTION_KINDS } from './conversations.ts'
 import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
+import { TaskState } from './state.ts'
 
 /**
  * RESULT.json — the only structured channel out of an agent run. A stage that
@@ -61,6 +63,34 @@ export const StageResult = z.object({
     .default({}),
 })
 export type StageResult = z.infer<typeof StageResult>
+
+export const ConversationActionProposal = z.object({
+  kind: z.enum(CONVERSATION_ACTION_KINDS),
+  target: z.object({
+    taskId: z.string().min(1),
+    graphId: z.string().min(1).optional(),
+    nodeKey: z.string().min(1).optional(),
+    stageId: z.string().min(1).optional(),
+    decisionId: z.string().min(1).optional(),
+    gate: z.string().min(1).optional(),
+  }),
+  instruction: z.string().trim().min(1).optional(),
+  expectedVersion: z.object({
+    taskStatus: TaskState,
+    graphId: z.string().min(1).optional(),
+    stageId: z.string().min(1).optional(),
+    attempt: z.number().int().nonnegative().optional(),
+    decisionStatus: z.enum(['open', 'answered', 'dismissed']).optional(),
+  }),
+})
+export type ConversationActionProposal = z.infer<typeof ConversationActionProposal>
+
+export const ConversationResult = z.object({
+  message_md: z.string().trim().min(1),
+  actions: z.array(ConversationActionProposal).default([]),
+  provider_session: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+export type ConversationResult = z.infer<typeof ConversationResult>
 
 export type ParsedResult =
   | { ok: true; value: StageResult }

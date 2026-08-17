@@ -1,6 +1,7 @@
 export * from './backend.ts'
 export * from './claude.ts'
 export * from './config.ts'
+export * from './conversation-executor.ts'
 export * from './docker-backend.ts'
 export * from './executor.ts'
 export * from './ledger.ts'
