@@ -585,8 +585,10 @@ describe('advance', () => {
     expect(decision.kind).toBe('loop')
   })
 
-  test('a result that needs a decision parks without recording a round', () => {
-    expect(advance(graph, 'research', { status: 'needs_decision' }, [], caps)).toEqual({
+  test('a needs_decision result with a blocking decision parks without recording a round', () => {
+    expect(
+      advance(graph, 'research', { status: 'needs_decision', hasBlockingDecision: true }, [], caps),
+    ).toEqual({
       kind: 'park',
       reason: 'needs_decision',
       resume: 'research',
@@ -612,6 +614,44 @@ describe('advance', () => {
       caps,
     )
     expect(decision.kind).toBe('advance')
+  })
+
+  test('AC-1206: a needs_decision status with only non-blocking decisions still advances', () => {
+    const decision = advance(
+      graph,
+      'research',
+      { status: 'needs_decision', hasBlockingDecision: false },
+      [],
+      caps,
+    )
+    expect(decision.kind).toBe('advance')
+  })
+
+  test('a blocking decision alongside an escalate verdict still records the round', () => {
+    const decision = advance(
+      graph,
+      'code_review',
+      {
+        status: 'ok',
+        verdict: 'escalate',
+        findings: [{ id: 'f1', severity: 'blocking', title: 'stuck', detail_md: '' }],
+        hasBlockingDecision: true,
+      },
+      [],
+      caps,
+    )
+
+    expect(decision).toEqual({
+      kind: 'park',
+      reason: 'needs_decision',
+      resume: 'code_review',
+      record: {
+        loop: 'impl',
+        round: 1,
+        verdict: 'escalate',
+        findings: [{ id: 'f1', severity: 'blocking', title: 'stuck', detail_md: '' }],
+      },
+    })
   })
 
   test('advancing from a gate is a programming error, not a transition', () => {

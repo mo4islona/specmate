@@ -1,4 +1,9 @@
-import type { Caps, ReviewFinding, ReviewVerdict } from '@specmate/core'
+import {
+  type Caps,
+  type ReviewFinding,
+  type ReviewVerdict,
+  renderFindingBullets,
+} from '@specmate/core'
 import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
 import { and, asc, eq } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
@@ -114,7 +119,12 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     lines.push('No review has run yet.')
   } else {
     lines.push(`- Loop: ${last.loop}, round ${last.round}`, `- Verdict: ${last.verdict}`, '')
-    lines.push(...renderFindings(last.findings))
+    lines.push(
+      ...renderFindingBullets(last.findings, {
+        header: 'Findings the reviewer raised, which this round is expected to address:',
+        empty: 'The reviewer recorded no findings.',
+      }),
+    )
   }
 
   lines.push('', '## Confirmed interventions', '')
@@ -138,19 +148,4 @@ export async function renderLedgerForTask(
   taskId: string,
 ): Promise<string> {
   return renderLedger(config, await loadLedgerSnapshot(db, taskId))
-}
-
-function renderFindings(findings: readonly ReviewFinding[]): string[] {
-  if (findings.length === 0) return ['The reviewer recorded no findings.']
-
-  return [
-    'Findings the reviewer raised, which this round is expected to address:',
-    '',
-    ...findings.map(
-      (finding) =>
-        `- \`${finding.id}\` (${finding.severity}) ${finding.title}${
-          finding.detail_md ? ` — ${finding.detail_md}` : ''
-        }`,
-    ),
-  ]
 }

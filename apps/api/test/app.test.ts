@@ -464,6 +464,16 @@ describeDb('api', () => {
               status: 'waiting_human',
               updatedAt: new Date('2026-08-16T11:25:00.000Z'),
             },
+            {
+              // REQ-1201's invariant broken on purpose: waiting_human with no
+              // open decision at all — the defect reportUnexplainedParks logs.
+              slug: 'attention-orphan-waiting-human',
+              title: 'Orphan waiting_human fixture',
+              type: 'feature',
+              repoUrl: 'https://github.com/example/orphan-fixture',
+              status: 'waiting_human',
+              updatedAt: new Date('2026-08-16T11:35:00.000Z'),
+            },
           ])
           .returning()
         const bySlug = new Map(seeded.map((task) => [task.slug, task]))
@@ -473,13 +483,15 @@ describeDb('api', () => {
         const healthyTask = bySlug.get('attention-healthy')
         const decisionTask = bySlug.get('attention-decision')
         const parkedOnDecisionTask = bySlug.get('attention-parked-on-decision')
+        const orphanWaitingHumanTask = bySlug.get('attention-orphan-waiting-human')
         if (
           !gateTask ||
           !failedTask ||
           !stalledTask ||
           !healthyTask ||
           !decisionTask ||
-          !parkedOnDecisionTask
+          !parkedOnDecisionTask ||
+          !orphanWaitingHumanTask
         ) {
           throw new Error('attention fixtures were not inserted')
         }
@@ -550,11 +562,12 @@ describeDb('api', () => {
             since: string
           }[]
         }
-        expect(body.items).toHaveLength(5)
+        expect(body.items).toHaveLength(6)
         expect(body.items.map((item) => item.reason.kind).sort()).toEqual([
           'decision',
           'decision',
           'failed',
+          'gate',
           'gate',
           'stalled',
         ])
@@ -576,6 +589,13 @@ describeDb('api', () => {
           kind: 'decision',
           detail: 'Which repo does this cover?',
         })
+
+        // The REQ-1201 invariant violation still fails open: the task shows
+        // up rather than silently vanishing from the list.
+        const orphanItems = body.items.filter((item) => item.task.id === orphanWaitingHumanTask.id)
+        expect(orphanItems).toHaveLength(1)
+        expect(orphanItems[0]?.reason).toMatchObject({ kind: 'gate' })
+        expect(orphanItems[0]?.since).toBe('2026-08-16T11:35:00.000Z')
 
         throw rollback
       })
@@ -900,6 +920,68 @@ describeDb('api', () => {
     const open = relistedDecisions.find((d) => d.id === second.id)
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
     expect(open).toMatchObject({ status: 'open', conversationId: conversation.id })
+  })
+
+  test('lists decisions in a deterministic order even when several share the same createdAt', async () => {
+    const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `decision-order-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Decision ordering fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/decision-order-fixture',
+        status: 'waiting_human',
+        resumeStatus: 'research',
+      })
+      .returning()
+    if (!task) throw new Error('decision task insert returned no row')
+    createdTaskIds.push(task.id)
+    await db.insert(runGraphs).values({ taskId: task.id, dag })
+
+    // A single stage result raising several decisions inserts them inside
+    // one transaction, giving them byte-identical createdAt timestamps.
+    const tied = new Date('2026-08-16T12:00:00.000Z')
+    const seededDecisions = await db
+      .insert(decisions)
+      .values([
+        {
+          taskId: task.id,
+          nodeKey: 'research',
+          key: 'a',
+          kind: 'question',
+          promptMd: 'A',
+          createdAt: tied,
+        },
+        {
+          taskId: task.id,
+          nodeKey: 'research',
+          key: 'b',
+          kind: 'question',
+          promptMd: 'B',
+          createdAt: tied,
+        },
+        {
+          taskId: task.id,
+          nodeKey: 'research',
+          key: 'c',
+          kind: 'question',
+          promptMd: 'C',
+          createdAt: tied,
+        },
+      ])
+      .returning()
+    const expectedOrder = [...seededDecisions]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((d) => d.id)
+
+    const first = await app.request(`/api/v1/tasks/${task.id}/decisions`, { headers: auth })
+    const second = await app.request(`/api/v1/tasks/${task.id}/decisions`, { headers: auth })
+    const { decisions: firstDecisions } = (await first.json()) as { decisions: { id: string }[] }
+    const { decisions: secondDecisions } = (await second.json()) as { decisions: { id: string }[] }
+
+    expect(firstDecisions.map((d) => d.id)).toEqual(expectedOrder)
+    expect(secondDecisions.map((d) => d.id)).toEqual(expectedOrder)
   })
 
   test('answering the last blocker of a task with no recorded resume state surfaces a stable conflict code, not a bare 500', async () => {

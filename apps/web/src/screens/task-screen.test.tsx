@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ConversationMessage } from '../lib/api-client.ts'
-import { ConversationMessageItem } from './task-screen.tsx'
+import type { ConversationMessage, DecisionItem, TimelineEvent } from '../lib/api-client.ts'
+import { ConversationMessageItem, EVENT_TITLES, eventDetail } from './task-screen.tsx'
 
 function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
   return {
@@ -57,5 +57,88 @@ describe('conversation message item', () => {
     )
 
     expect(rendered).toContain('Response failed: provider unavailable')
+  })
+})
+
+function timelineEvent(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
+  return {
+    seq: 1,
+    taskId: 'task-1',
+    stageId: null,
+    type: 'decision.raised',
+    payload: {},
+    createdAt: '2026-08-16T10:00:00.000Z',
+    ...overrides,
+  } as TimelineEvent
+}
+
+function decisionItem(overrides: Partial<DecisionItem> = {}): DecisionItem {
+  return {
+    id: 'decision-1',
+    taskId: 'task-1',
+    stageId: null,
+    nodeKey: 'research',
+    key: 'scope',
+    kind: 'question',
+    promptMd: 'What does this cover?',
+    options: [],
+    blocking: true,
+    answerMd: null,
+    answeredBy: null,
+    status: 'open',
+    createdAt: '2026-08-16T10:00:00.000Z',
+    answeredAt: null,
+    conversationId: null,
+    ...overrides,
+  } as DecisionItem
+}
+
+describe('decision timeline events', () => {
+  test('decision.raised shows the actual question, not the raw event type', () => {
+    const decision = decisionItem({ promptMd: 'Worth a follow-up task?' })
+    const event = timelineEvent({
+      type: 'decision.raised',
+      payload: { decisionId: decision.id, nodeKey: 'research', key: 'style-nit', blocking: false },
+    })
+
+    expect(EVENT_TITLES[event.type]).toBe('Decision raised')
+    expect(eventDetail(event, new Map([[decision.id, decision]]))).toBe('Worth a follow-up task?')
+  })
+
+  test('decision.answered shows the actor and the recorded answer', () => {
+    const decision = decisionItem({ status: 'answered', answerMd: 'The whole repository.' })
+    const event = timelineEvent({
+      type: 'decision.answered',
+      payload: { decisionId: decision.id, nodeKey: 'research', key: 'scope', actor: 'evgeny' },
+    })
+
+    expect(EVENT_TITLES[event.type]).toBe('Decision answered')
+    expect(eventDetail(event, new Map([[decision.id, decision]]))).toBe(
+      'Answered by evgeny: The whole repository.',
+    )
+  })
+
+  test('decision.dismissed with no matching decision row still reads as dismissed, not the raw payload keys', () => {
+    const event = timelineEvent({
+      type: 'decision.dismissed',
+      payload: {
+        decisionId: 'missing-decision',
+        nodeKey: 'research',
+        key: 'scope',
+        actor: 'evgeny',
+      },
+    })
+
+    expect(EVENT_TITLES[event.type]).toBe('Decision dismissed')
+    expect(eventDetail(event, new Map())).toBe('Dismissed by evgeny.')
+  })
+
+  test('other event types keep falling back through the existing payload chain', () => {
+    const event = timelineEvent({
+      type: 'gate.redirected',
+      payload: { comment: 'Needs another pass' },
+    })
+
+    expect(eventDetail(event, new Map())).toBe('Needs another pass')
   })
 })

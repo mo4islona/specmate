@@ -43,6 +43,25 @@ export const ReviewFinding = z.object({
 })
 export type ReviewFinding = z.infer<typeof ReviewFinding>
 
+/** A finding list as markdown bullets, one line per array entry — shared by the decision log and the runner's ledger, each with its own header and empty-state text. */
+export function renderFindingBullets(
+  findings: readonly ReviewFinding[],
+  text: { header: string; empty: string },
+): string[] {
+  if (findings.length === 0) return [text.empty]
+
+  return [
+    text.header,
+    '',
+    ...findings.map(
+      (finding) =>
+        `- \`${finding.id}\` (${finding.severity}) ${finding.title}${
+          finding.detail_md ? ` — ${finding.detail_md}` : ''
+        }`,
+    ),
+  ]
+}
+
 export const StageResult = z.object({
   schema_version: z.literal(1),
   role: AgentRole,
@@ -128,9 +147,9 @@ export function checkVerdictPresent(result: StageResult): string | null {
 }
 
 /**
- * `advance()` parks any `needs_decision` outcome regardless of what it
- * carries; a status with nothing in `decisions_needed` would park the task
- * with no decision for the owner to answer and no way back.
+ * `advance()` parks on a blocking decision, not on this status alone; but a
+ * `needs_decision` status with nothing in `decisions_needed` would still
+ * leave the agent's own signal unexplained, so it is rejected at parse time.
  */
 export function checkDecisionsPresent(result: StageResult): string | null {
   if (result.status !== 'needs_decision') return null

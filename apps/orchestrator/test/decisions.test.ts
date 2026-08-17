@@ -104,6 +104,37 @@ describeDb('decision-records', () => {
     return rows.map((row) => row.type)
   }
 
+  test('the decision log is regenerated before every dispatch, even an empty one — an agent must never see a stale or scribbled copy', async () => {
+    const { engine, ws, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'ok',
+        decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    // Nothing was open yet when this dispatch's pre-check ran, so the first
+    // write is the empty placeholder, not the decision this stage goes on
+    // to raise.
+    const first = ws.calls.decisionLogs.filter((entry) => entry.slug === task.slug)
+    expect(first).toHaveLength(1)
+    expect(first[0]?.markdown).toContain('No decisions have been raised')
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+
+    stagesDispatcher.plan(() => result({ role: 'reviewer', status: 'ok', verdict: 'approve' }))
+    await engine.tick()
+    await engine.idle()
+
+    const written = ws.calls.decisionLogs.filter((entry) => entry.slug === task.slug)
+    expect(written).toHaveLength(2)
+    expect(written[1]?.markdown).toContain('Worth a follow-up?')
+  })
+
   test('a blocking request parks the task, records waiting_human on the stage, and keeps the committed result', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'research' })
@@ -553,5 +584,72 @@ describeDb('decision-records', () => {
       await db.select().from(decisions).where(eq(decisions.id, decision.id))
     )[0]
     expect(stillResolved?.answerMd).toBe('The whole repo.')
+  })
+
+  test('answer_decision on a non-blocking decision still applies after the task has advanced past it', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task, graph } = await seed({ at: 'research' })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'researcher',
+        status: 'ok',
+        decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
+      }),
+    )
+    await engine.tick()
+    await engine.idle()
+
+    // AC-1206: the task advances past research even though the non-blocking
+    // decision it raised is still open.
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+    const [decision] = await openDecisions(task.id)
+    assert(decision)
+
+    const [conversation] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(eq(conversations.subjectKind, 'decision'), eq(conversations.subjectId, decision.id)),
+      )
+    assert(conversation)
+    const [message] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'Worth filing separately.',
+        status: 'completed',
+        taskState: 'research',
+      })
+      .returning()
+    assert(message)
+    const [action] = await db
+      .insert(conversationActions)
+      .values({
+        taskId: task.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        kind: 'answer_decision',
+        target: { taskId: task.id, graphId: graph.id, decisionId: decision.id },
+        instruction: 'Yes, file it separately.',
+        // Snapshotted while the task was still at research — stale by the
+        // time this gets confirmed, since a non-blocking decision does not
+        // pin the task's status while it stays open.
+        expectedVersion: { taskStatus: 'research', graphId: graph.id, decisionStatus: 'open' },
+      })
+      .returning()
+    assert(action)
+
+    await engine.confirmAction({
+      taskId: task.id,
+      actionId: action.id,
+      actor: 'evgeny',
+      idempotencyKey: `confirm:${action.id}`,
+    })
+
+    const resolved = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+    expect(resolved).toMatchObject({ status: 'answered', answerMd: 'Yes, file it separately.' })
+    expect((await reload(db, task.id)).status).toBe('spec_review')
   })
 })

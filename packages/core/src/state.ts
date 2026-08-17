@@ -44,11 +44,6 @@ export function isHumanGate(state: TaskState): state is HumanGate {
   return (HUMAN_GATES as readonly TaskState[]).includes(state)
 }
 
-/** Gate nodes plus the parked interrupt state — everything "/attention" should read as waiting on a human. */
-export function isAwaitingHuman(state: TaskState): boolean {
-  return isHumanGate(state) || state === 'waiting_human'
-}
-
 /** Loop caps (§5). Defaults are per-task overridable config, not constants in code paths. */
 export const DEFAULT_CAPS = {
   max_spec_iterations: 3,
