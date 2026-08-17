@@ -39,10 +39,11 @@ SHALL distinguish an owner-interrupted attempt from a failed attempt.
 
 ### Requirement: REQ-303 — Task identity and lifecycle fields
 
-Each task SHALL carry a unique slug, a human title, a type of `feature` or `bugfix`, a target
-repository and base branch, its current status, the resolved caps and budgets it runs under,
-the identifiers of tasks blocking it, its harness classification, and — once its workspace has
-been provisioned — its pinned execution environment. Two tasks MUST NOT share a slug.
+Each task SHALL carry a unique slug, a human title, the request it was launched with in the
+owner's own words, a type of `feature` or `bugfix`, a target repository and base branch, its
+current status, the resolved caps and budgets it runs under, the identifiers of tasks blocking
+it, its harness classification, and — once its workspace has been provisioned — its pinned
+execution environment. Two tasks MUST NOT share a slug.
 
 #### Scenario: AC-304 — Duplicate slug
 
@@ -63,6 +64,11 @@ been provisioned — its pinned execution environment. Two tasks MUST NOT share 
 
 - **WHEN** the system's default runner image changes after a task's environment was pinned
 - **THEN** the existing task SHALL still report the environment it was pinned with
+
+#### Scenario: AC-326 — Task launched without a written request
+
+- **WHEN** a task is created with a title and no request text
+- **THEN** the stored task SHALL record the absence rather than an empty request, and the title SHALL serve as the ask
 
 ### Requirement: REQ-304 — Stage attempts are idempotent
 
