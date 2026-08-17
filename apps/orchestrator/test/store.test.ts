@@ -249,5 +249,92 @@ describeDb('task store', () => {
         .where(eq(conversations.taskId, task.id))
       expect(conversationRows).toHaveLength(0)
     })
+
+    test('a re-ask that changes the prompt in place still emits a decision.raised event', async () => {
+      const { task } = await make()
+
+      await raiseDecision(db, task.id, null, request)
+      await raiseDecision(db, task.id, null, { ...request, promptMd: 'A corrected question' })
+
+      const raisedEvents = await db
+        .select({ type: events.type })
+        .from(events)
+        .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.raised')))
+      expect(raisedEvents).toHaveLength(2)
+    })
+
+    test('a re-ask from a later attempt reattaches the decision to that attempt’s stage', async () => {
+      const { task, graph } = await make()
+      const [firstAttempt] = await db
+        .insert(stages)
+        .values({
+          taskId: task.id,
+          graphId: graph.id,
+          nodeKey: 'research',
+          role: 'researcher',
+          provider: 'claude-code',
+          attempt: 1,
+        })
+        .returning()
+      const [secondAttempt] = await db
+        .insert(stages)
+        .values({
+          taskId: task.id,
+          graphId: graph.id,
+          nodeKey: 'research',
+          role: 'researcher',
+          provider: 'claude-code',
+          attempt: 2,
+        })
+        .returning()
+      if (!firstAttempt || !secondAttempt) throw new Error('fixture stages not created')
+
+      const first = await raiseDecision(db, task.id, firstAttempt.id, request)
+      expect(first.decision.stageId).toBe(firstAttempt.id)
+
+      const second = await raiseDecision(db, task.id, secondAttempt.id, request)
+
+      expect(second.decision.id).toBe(first.decision.id)
+      expect(second.decision.stageId).toBe(secondAttempt.id)
+      const [stored] = await db.select().from(decisions).where(eq(decisions.id, first.decision.id))
+      expect(stored?.stageId).toBe(secondAttempt.id)
+    })
+
+    test('a re-ask with options in a different key order is treated as unchanged', async () => {
+      const { task } = await make()
+      const optioned = { ...request, options: [{ id: 'a', label: 'Option A' }] }
+
+      const first = await raiseDecision(db, task.id, null, optioned)
+      const reordered = {
+        ...optioned,
+        options: [{ label: 'Option A', id: 'a' } as { id: string; label: string }],
+      }
+      const second = await raiseDecision(db, task.id, null, reordered)
+
+      expect(second.created).toBe(false)
+      expect(second.decision).toEqual(first.decision)
+      const raisedEvents = await db
+        .select({ type: events.type })
+        .from(events)
+        .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.raised')))
+      expect(raisedEvents).toHaveLength(1)
+    })
+
+    test('two concurrent raisers for the same (node, key) attach to one winner instead of one throwing', async () => {
+      const { task } = await make()
+
+      // Neither call holds the task's advisory lock here — this is exactly
+      // the race the "attach, don't duplicate" contract must survive without
+      // a caller-enforced guarantee.
+      const [first, second] = await Promise.all([
+        raiseDecision(db, task.id, null, request),
+        raiseDecision(db, task.id, null, request),
+      ])
+
+      expect(first.decision.id).toBe(second.decision.id)
+      expect([first.created, second.created].filter(Boolean)).toHaveLength(1)
+      const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
+      expect(rows).toHaveLength(1)
+    })
   })
 })

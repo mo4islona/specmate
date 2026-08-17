@@ -285,57 +285,36 @@ export async function raiseDecision(
   stageId: string | null,
   input: DecisionInsert,
 ): Promise<{ decision: Decision; created: boolean }> {
-  const [open] = await db
-    .select()
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.taskId, taskId),
-        eq(decisions.nodeKey, input.nodeKey),
-        eq(decisions.key, input.key),
-        eq(decisions.status, 'open'),
-      ),
-    )
-    .limit(1)
-  if (open) {
-    // A re-ask at the same (node, key) attaches to the still-open decision
-    // rather than duplicating it — but a retried or corrected stage may have
-    // changed what it's asking, and that update must not be lost underneath
-    // an unchanged identity.
-    const unchanged =
-      open.kind === input.kind &&
-      open.promptMd === input.promptMd &&
-      open.blocking === input.blocking &&
-      JSON.stringify(open.options) === JSON.stringify(input.options)
-    if (unchanged) return { decision: open, created: false }
+  const [open] = await findOpenDecision(db, taskId, input)
+  if (open) return attachToOpenDecision(db, taskId, stageId, open, input)
 
-    const [updated] = await db
-      .update(decisions)
-      .set({
+  let created: Decision | undefined
+  try {
+    ;[created] = await db
+      .insert(decisions)
+      .values({
+        taskId,
+        stageId: stageId ?? undefined,
+        nodeKey: input.nodeKey,
+        key: input.key,
         kind: input.kind,
         promptMd: input.promptMd,
         options: [...input.options],
         blocking: input.blocking,
       })
-      .where(eq(decisions.id, open.id))
       .returning()
+  } catch (error) {
+    // The "attach, don't duplicate" contract above only holds under the
+    // task's advisory lock; a caller that races this insert without it hits
+    // the partial unique index instead — attach to the winner rather than
+    // surfacing a raw constraint violation.
+    if (isUniqueViolation(error)) {
+      const [existing] = await findOpenDecision(db, taskId, input)
+      if (existing) return attachToOpenDecision(db, taskId, stageId, existing, input)
+    }
 
-    return { decision: updated ?? open, created: false }
+    throw error
   }
-
-  const [created] = await db
-    .insert(decisions)
-    .values({
-      taskId,
-      stageId: stageId ?? undefined,
-      nodeKey: input.nodeKey,
-      key: input.key,
-      kind: input.kind,
-      promptMd: input.promptMd,
-      options: [...input.options],
-      blocking: input.blocking,
-    })
-    .returning()
   if (!created) throw new Error(`decision "${input.key}" at ${input.nodeKey} could not be created`)
 
   await emitEvent(db, {
@@ -376,6 +355,71 @@ export async function raiseDecision(
   })
 
   return { decision: created, created: true }
+}
+
+function findOpenDecision(db: DbClient, taskId: string, input: DecisionInsert) {
+  return db
+    .select()
+    .from(decisions)
+    .where(
+      and(
+        eq(decisions.taskId, taskId),
+        eq(decisions.nodeKey, input.nodeKey),
+        eq(decisions.key, input.key),
+        eq(decisions.status, 'open'),
+      ),
+    )
+    .limit(1)
+}
+
+/**
+ * A re-ask at the same (node, key) attaches to the still-open decision rather
+ * than duplicating it — but a retried or corrected stage may have changed
+ * what it's asking, or run as a later attempt, and neither must be lost
+ * underneath an unchanged identity.
+ */
+async function attachToOpenDecision(
+  db: DbClient,
+  taskId: string,
+  stageId: string | null,
+  open: Decision,
+  input: DecisionInsert,
+): Promise<{ decision: Decision; created: boolean }> {
+  const unchanged =
+    open.stageId === (stageId ?? null) &&
+    open.kind === input.kind &&
+    open.promptMd === input.promptMd &&
+    open.blocking === input.blocking &&
+    Bun.deepEquals(open.options, input.options)
+  if (unchanged) return { decision: open, created: false }
+
+  const [updated] = await db
+    .update(decisions)
+    .set({
+      stageId: stageId ?? undefined,
+      kind: input.kind,
+      promptMd: input.promptMd,
+      options: [...input.options],
+      blocking: input.blocking,
+    })
+    .where(eq(decisions.id, open.id))
+    .returning()
+  const decision = updated ?? open
+
+  await emitEvent(db, {
+    taskId,
+    stageId: stageId ?? undefined,
+    type: 'decision.raised',
+    payload: {
+      decisionId: decision.id,
+      nodeKey: input.nodeKey,
+      key: input.key,
+      kind: input.kind,
+      blocking: input.blocking,
+    },
+  })
+
+  return { decision, created: false }
 }
 
 export interface EngineEvent {

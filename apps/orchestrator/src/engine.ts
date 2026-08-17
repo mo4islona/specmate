@@ -2132,7 +2132,11 @@ export class Engine {
     action: ConversationAction,
   ): Promise<{ reason: string; outcome: Record<string, unknown> } | null> {
     const expected = action.expectedVersion
-    if (task.status !== expected.taskStatus) {
+    // A decision-targeted action (answer/dismiss) is scoped by the decision's
+    // own status below, not the task's — a non-blocking decision leaves the
+    // task free to keep advancing while it stays open, so pinning taskStatus
+    // here would conflict a still-valid answer out from under the owner.
+    if (!action.target.decisionId && task.status !== expected.taskStatus) {
       return {
         reason: `expected task ${expected.taskStatus}, got ${task.status}`,
         outcome: { field: 'taskStatus', expected: expected.taskStatus, actual: task.status },

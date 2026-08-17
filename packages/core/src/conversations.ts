@@ -282,13 +282,21 @@ async function insertConversationOrConflict(
   }
 }
 
+/**
+ * The driver's raw Postgres error usually arrives wrapped in a
+ * DrizzleQueryError, so the unique-violation SQLSTATE lives on `.cause`, not
+ * on the error itself — and Bun's SQL client carries it as `errno`, not
+ * `code` (`code` there is a generic `ERR_POSTGRES_SERVER_ERROR`).
+ */
 export function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
-  )
+  let current = error
+  while (typeof current === 'object' && current !== null) {
+    const withCodes = current as { code?: unknown; errno?: unknown }
+    if (withCodes.code === '23505' || withCodes.errno === '23505') return true
+    current = (current as { cause?: unknown }).cause
+  }
+
+  return false
 }
 
 export async function appendOwnerMessage(

@@ -65,3 +65,47 @@ describeDb('0004 decisions node_key migration', () => {
     ])
   })
 })
+
+describeDb('0004 decisions node_key migration — duplicate open decisions', () => {
+  const schema = `migration_test_${randomUUID().replaceAll('-', '')}`
+  let client: SQL
+
+  beforeAll(async () => {
+    client = new SQL({ url, max: 1 })
+    await client.unsafe(`CREATE SCHEMA "${schema}"`)
+    await client.unsafe(`SET search_path TO "${schema}"`)
+    for (const tag of PRE_0004_MIGRATIONS) {
+      await client.unsafe(readMigration(tag))
+    }
+  })
+
+  afterAll(async () => {
+    await client.unsafe(`DROP SCHEMA "${schema}" CASCADE`)
+    await client.close()
+  })
+
+  test('dedups pre-existing open decisions that collide on the new (task, node_key, key) identity instead of failing the unique index', async () => {
+    const [task] =
+      await client`INSERT INTO tasks (slug, title, type, repo_url) VALUES ('legacy-dup', 'Legacy dup', 'feature', 'https://example.com/repo') RETURNING id`
+
+    // Two legacy decisions with no stage_id both backfill to node_key = '' and
+    // share the same key — the exact collision the new unique index forbids.
+    const [older] =
+      await client`INSERT INTO decisions (task_id, key, kind, prompt_md, status, created_at) VALUES (${task.id}, 'dup-key', 'question', 'Older prompt', 'open', now() - interval '1 hour') RETURNING id`
+    const [newer] =
+      await client`INSERT INTO decisions (task_id, key, kind, prompt_md, status, created_at) VALUES (${task.id}, 'dup-key', 'question', 'Newer prompt', 'open', now()) RETURNING id`
+
+    await client.unsafe(readMigration('0004_flimsy_war_machine'))
+
+    const rows =
+      await client`SELECT id, status, node_key FROM decisions WHERE task_id = ${task.id} ORDER BY created_at`
+    expect(rows).toEqual([
+      { id: older.id, status: 'dismissed', node_key: '' },
+      { id: newer.id, status: 'open', node_key: '' },
+    ])
+
+    const [{ count }] =
+      await client`SELECT count(*)::int FROM decisions WHERE task_id = ${task.id} AND node_key = '' AND key = 'dup-key' AND status = 'open'`
+    expect(count).toBe(1)
+  })
+})

@@ -14,6 +14,7 @@ import {
   type ConversationResponse,
   confirmConversationAction,
   createConversation,
+  type DecisionItem,
   dismissDecision,
   getConversation,
   getTask,
@@ -40,7 +41,7 @@ interface TaskScreenProps {
 
 type InputMode = 'comment' | 'conversation'
 
-const EVENT_TITLES: Record<string, string> = {
+export const EVENT_TITLES: Record<string, string> = {
   'task.created': 'Task launched',
   'task.transitioned': 'Task moved',
   'task.parked': 'Task parked',
@@ -52,6 +53,9 @@ const EVENT_TITLES: Record<string, string> = {
   'gate.redirected': 'Task redirected',
   'gate.reworked': 'Rework requested',
   'feedback.comment': 'Owner comment',
+  'decision.raised': 'Decision raised',
+  'decision.answered': 'Decision answered',
+  'decision.dismissed': 'Decision dismissed',
 }
 
 function payloadValue(event: TimelineEvent, key: string): string | null {
@@ -60,7 +64,29 @@ function payloadValue(event: TimelineEvent, key: string): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function eventDetail(event: TimelineEvent): string {
+/**
+ * decision.* events carry only the decision's id and identity, not its
+ * question or answer text — that lives on the decision row itself, so the
+ * timeline looks it up from the task's already-loaded decisions.
+ */
+export function eventDetail(
+  event: TimelineEvent,
+  decisionsById: Map<string, DecisionItem>,
+): string {
+  const decisionId = payloadValue(event, 'decisionId')
+  const decision = decisionId ? decisionsById.get(decisionId) : undefined
+
+  if (event.type === 'decision.raised') {
+    return decision?.promptMd ?? payloadValue(event, 'key') ?? 'A decision was raised.'
+  }
+  if (event.type === 'decision.answered' || event.type === 'decision.dismissed') {
+    const verb = event.type === 'decision.answered' ? 'Answered' : 'Dismissed'
+    const actor = payloadValue(event, 'actor')
+    const by = actor ? ` by ${actor}` : ''
+
+    return decision?.answerMd ? `${verb}${by}: ${decision.answerMd}` : `${verb}${by}.`
+  }
+
   return (
     payloadValue(event, 'comment') ??
     payloadValue(event, 'reason') ??
@@ -171,6 +197,21 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const [gateComment, setGateComment] = useState('')
   const [reworkTarget, setReworkTarget] = useState<ReworkInput['target'] | ''>('')
   const [restartGuidance, setRestartGuidance] = useState('')
+  // answerOption, answerText, and dismiss are one mutation instance each,
+  // shared by every open decision on this task — react-query's own
+  // isPending/variables/error reflect only the most recently dispatched
+  // call, so per-decision busy/error state is tracked here instead, fed by
+  // each mutation's per-invocation onMutate/onSuccess/onError callbacks.
+  const [decisionActivity, setDecisionActivity] = useState<
+    Record<string, { pending: boolean; error?: string }>
+  >({})
+
+  function markDecisionPending(decisionId: string): void {
+    setDecisionActivity((prev) => ({ ...prev, [decisionId]: { pending: true } }))
+  }
+  function markDecisionSettled(decisionId: string, error?: string): void {
+    setDecisionActivity((prev) => ({ ...prev, [decisionId]: { pending: false, error } }))
+  }
 
   async function refreshTask(): Promise<void> {
     await Promise.all([
@@ -264,16 +305,31 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const answerOption = useMutation({
     mutationFn: ({ decisionId, optionId }: { decisionId: string; optionId: string }) =>
       answerDecision(decisionId, { optionId }),
-    onSuccess: refreshTask,
+    onMutate: ({ decisionId }) => markDecisionPending(decisionId),
+    onSuccess: async (_data, { decisionId }) => {
+      markDecisionSettled(decisionId)
+      await refreshTask()
+    },
+    onError: (error, { decisionId }) => markDecisionSettled(decisionId, error.message),
   })
   const answerText = useMutation({
     mutationFn: ({ decisionId, text }: { decisionId: string; text: string }) =>
       answerDecision(decisionId, { text }),
-    onSuccess: refreshTask,
+    onMutate: ({ decisionId }) => markDecisionPending(decisionId),
+    onSuccess: async (_data, { decisionId }) => {
+      markDecisionSettled(decisionId)
+      await refreshTask()
+    },
+    onError: (error, { decisionId }) => markDecisionSettled(decisionId, error.message),
   })
   const dismiss = useMutation({
     mutationFn: (decisionId: string) => dismissDecision(decisionId, {}),
-    onSuccess: refreshTask,
+    onMutate: (decisionId) => markDecisionPending(decisionId),
+    onSuccess: async (_data, decisionId) => {
+      markDecisionSettled(decisionId)
+      await refreshTask()
+    },
+    onError: (error, decisionId) => markDecisionSettled(decisionId, error.message),
   })
   const stageRows = detail.data?.stages ?? []
   // The API orders stages by (nodeKey, attempt), not chronologically, so a
@@ -350,26 +406,14 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const messages = conversation.data?.messages ?? []
   const actions = conversation.data?.actions ?? []
   const decisionRows = decisions.data.decisions
+  const decisionsById = new Map(decisionRows.map((decision) => [decision.id, decision]))
 
-  // answerOption, answerText, and dismiss are one mutation instance each,
-  // shared by every open decision on this task — busy/error state has to be
-  // scoped to the decision id each call actually targeted, or resolving one
-  // card would disable and misattribute errors to every other open card.
   function decisionBusy(decisionId: string): boolean {
-    return (
-      (answerOption.isPending && answerOption.variables?.decisionId === decisionId) ||
-      (answerText.isPending && answerText.variables?.decisionId === decisionId) ||
-      (dismiss.isPending && dismiss.variables === decisionId)
-    )
+    return decisionActivity[decisionId]?.pending ?? false
   }
 
   function decisionError(decisionId: string): string | undefined {
-    const fromOption =
-      answerOption.variables?.decisionId === decisionId ? answerOption.error : undefined
-    const fromText = answerText.variables?.decisionId === decisionId ? answerText.error : undefined
-    const fromDismiss = dismiss.variables === decisionId ? dismiss.error : undefined
-
-    return (fromOption ?? fromText ?? fromDismiss)?.message
+    return decisionActivity[decisionId]?.error
   }
 
   function discussDecision(decisionConversationId: string | null): void {
@@ -663,7 +707,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
                       )}
                     </div>
                     <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted">
-                      {eventDetail(event)}
+                      {eventDetail(event, decisionsById)}
                     </p>
                   </div>
                 </li>

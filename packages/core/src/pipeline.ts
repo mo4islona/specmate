@@ -498,27 +498,40 @@ export function advance(
     throw new Error(`cannot advance from ${nodeKey}: it is not a stage node of ${graph.pipeline}`)
   }
 
-  if (outcome.status === 'needs_decision' || outcome.hasBlockingDecision) {
-    return { kind: 'park', reason: 'needs_decision', resume: nodeKey }
-  }
-
   const edge = node.loopEdge
-  if (!edge) return { kind: 'advance', to: forwardTarget(graph, nodeKey) }
 
   // Silence is not approval: a loop-edged stage that returns no verdict is a
-  // defective outcome the caller must fail, never a pass.
-  if (!outcome.verdict) {
+  // defective outcome the caller must fail — unless a blocking decision
+  // already explains why the round stopped short of one.
+  if (edge && !outcome.verdict && !outcome.hasBlockingDecision) {
     throw new Error(
       `stage ${nodeKey} of ${graph.pipeline} has a loop edge but its outcome carries no verdict`,
     )
   }
 
-  const loopRounds = rounds.filter((round) => round.loop === edge.loop)
-  const record: RoundToRecord = {
-    loop: edge.loop,
-    round: Math.max(0, ...loopRounds.map((round) => round.round)) + 1,
-    verdict: outcome.verdict,
-    findings: outcome.findings ?? [],
+  const loopRounds = edge ? rounds.filter((round) => round.loop === edge.loop) : []
+  const record: RoundToRecord | undefined =
+    edge && outcome.verdict
+      ? {
+          loop: edge.loop,
+          round: Math.max(0, ...loopRounds.map((round) => round.round)) + 1,
+          verdict: outcome.verdict,
+          findings: outcome.findings ?? [],
+        }
+      : undefined
+
+  // Blocking means blocking regardless of what else the outcome carries — a
+  // question the owner must answer parks the task even mid-verdict, but the
+  // round it interrupted is still evidence and stays on the record.
+  if (outcome.hasBlockingDecision) {
+    return { kind: 'park', reason: 'needs_decision', resume: nodeKey, ...(record && { record }) }
+  }
+
+  if (!edge) return { kind: 'advance', to: forwardTarget(graph, nodeKey) }
+  if (!record) {
+    throw new Error(
+      `stage ${nodeKey} of ${graph.pipeline}: invariant violated, verdict guaranteed present past the earlier guard`,
+    )
   }
 
   if (outcome.verdict === 'approve') {

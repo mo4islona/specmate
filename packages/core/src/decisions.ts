@@ -1,5 +1,11 @@
 import type { LoopKind } from './pipeline.ts'
-import type { DecisionKind, DecisionRequest, ReviewFinding, ReviewVerdict } from './result.ts'
+import {
+  type DecisionKind,
+  type DecisionRequest,
+  type ReviewFinding,
+  type ReviewVerdict,
+  renderFindingBullets,
+} from './result.ts'
 import type { TaskState } from './state.ts'
 
 export const DECISION_STATUSES = ['open', 'answered', 'dismissed'] as const
@@ -103,7 +109,10 @@ function escalationPrompt(input: EscalationInput): string {
         '',
         `Verdict: ${input.verdict}`,
         '',
-        renderFindingList(input.findings),
+        ...renderFindingBullets(input.findings, {
+          header: 'Findings from that round:',
+          empty: 'The round carried no findings.',
+        }),
       ].join('\n')
     case 'cap_exhausted':
       return `The ${input.loop} loop at ${input.nodeKey} spent its cap of ${input.cap} round(s) without approval, through round ${input.round}.`
@@ -113,21 +122,6 @@ function escalationPrompt(input: EscalationInput): string {
       return `Finding \`${input.finding.id}\` at ${input.nodeKey} repeated across rounds ${rounds} of the ${input.loop} loop without resolving.`
     }
   }
-}
-
-function renderFindingList(findings: readonly ReviewFinding[]): string {
-  if (findings.length === 0) return 'The round carried no findings.'
-
-  return [
-    'Findings from that round:',
-    '',
-    ...findings.map(
-      (finding) =>
-        `- \`${finding.id}\` (${finding.severity}) ${finding.title}${
-          finding.detail_md ? ` — ${finding.detail_md}` : ''
-        }`,
-    ),
-  ].join('\n')
 }
 
 /** A stored decision, as read back from the database, in the shape the log and the resume path need. */

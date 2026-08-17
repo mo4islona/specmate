@@ -468,6 +468,7 @@ export function createApp({
         .innerJoin(tasks, eq(decisions.taskId, tasks.id))
         .where(eq(decisions.status, 'open'))
 
+      const tasksWithOpenDecision = new Set(openDecisionRows.map(({ task }) => task.id))
       const stallCutoff = new Date(now().getTime() - config.SPECMATE_STALL_HOURS * 60 * 60 * 1_000)
       const items: AttentionItem[] = []
 
@@ -499,7 +500,9 @@ export function createApp({
         }
 
         // waiting_human carries no gate item of its own: REQ-1201 guarantees
-        // it has at least one open decision, already covered above.
+        // it has at least one open decision, already covered above. If that
+        // invariant is ever violated, fail open here rather than let the
+        // task silently vanish from the list — see reportUnexplainedParks.
         if (isHumanGate(task.status)) {
           items.push({
             id: task.id,
@@ -509,7 +512,17 @@ export function createApp({
           })
           continue
         }
-        if (task.status === 'waiting_human') continue
+        if (task.status === 'waiting_human') {
+          if (!tasksWithOpenDecision.has(task.id)) {
+            items.push({
+              id: task.id,
+              task: taskSummary,
+              reason: { kind: 'gate', detail: 'waiting_human with no open decision on record' },
+              since: task.updatedAt,
+            })
+          }
+          continue
+        }
 
         if (task.status === 'failed') {
           const failure = failures.get(task.id)
@@ -844,7 +857,7 @@ export function createApp({
           .select()
           .from(decisions)
           .where(eq(decisions.taskId, task.id))
-          .orderBy(asc(decisions.createdAt)),
+          .orderBy(asc(decisions.createdAt), asc(decisions.id)),
         db
           .select({ id: conversations.id, subjectId: conversations.subjectId })
           .from(conversations)
