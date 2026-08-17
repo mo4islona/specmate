@@ -29,6 +29,13 @@
       "when": 1786911891400,
       "tag": "0003_stale_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786954721301,
+      "tag": "0004_flimsy_war_machine",
+      "breakpoints": true
     }
   ]
 }

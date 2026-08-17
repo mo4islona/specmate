@@ -21,6 +21,7 @@ import {
   Engine,
   type EngineSettings,
   NotAtGateError,
+  NotParkedError,
   NotRestartableError,
   RedirectCapExhaustedError,
   RestartTargetError,
@@ -123,6 +124,7 @@ describeDb('conversation scheduling and interruption', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
+        nodeKey: 'research',
         key: 'review-direction',
         kind: 'question',
         promptMd: 'Which direction should the review take?',
@@ -480,15 +482,23 @@ describeDb('conversation scheduling and interruption', () => {
     expect(rounds).toHaveLength(4)
   })
 
-  test('resume returns a parked task exactly where it stopped', async () => {
+  test('resume returns a paused task exactly where it stopped', async () => {
     const { engine } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'spec_review' })
+    const { task } = await seed({ at: 'research', status: 'paused', resume: 'spec_review' })
 
     await engine.resume(task.id, 'evgeny')
 
     const resumed = await reload(db, task.id)
     expect(resumed.status).toBe('spec_review')
     expect(resumed.resumeStatus).toBeNull()
+  })
+
+  test('resume refuses a waiting_human task; only answering or dismissing its decisions moves it', async () => {
+    const { engine } = makeEngine()
+    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'spec_review' })
+
+    await expect(engine.resume(task.id, 'evgeny')).rejects.toThrow(NotParkedError)
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
   })
 
   test('a task cancelled while its stage runs stays cancelled', async () => {

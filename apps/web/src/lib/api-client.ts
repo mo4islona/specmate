@@ -122,6 +122,16 @@ type StopStageRequest = InferRequestType<
 type RestartStageRequest = InferRequestType<
   (typeof apiClient.api.v1.tasks)[':id']['stages']['restart']['$post']
 >
+type DecisionsResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['decisions']['$get'],
+  200
+>
+type AnswerDecisionRequest = InferRequestType<
+  (typeof apiClient.api.v1.decisions)[':id']['answer']['$post']
+>
+type DismissDecisionRequest = InferRequestType<
+  (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
+>
 
 export type TaskSummary = TasksResponse['tasks'][number]
 export type AttentionItem = AttentionResponse['items'][number]
@@ -140,6 +150,9 @@ export type RedirectInput = RedirectRequest['json']
 export type ReworkInput = ReworkRequest['json']
 export type StopStageInput = StopStageRequest['json']
 export type RestartStageInput = RestartStageRequest['json']
+export type DecisionItem = DecisionsResponse['decisions'][number]
+export type AnswerDecisionInput = AnswerDecisionRequest['json']
+export type DismissDecisionInput = DismissDecisionRequest['json']
 
 export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   const response = await apiClient.api.v1.tasks.$get(undefined, { init: { signal } })
@@ -295,6 +308,42 @@ export async function reworkGate(
 ): Promise<{ task: TaskSummary }> {
   const response = await apiClient.api.v1.tasks[':id'].gates.rework.$post({
     param: { id: taskId },
+    json: input,
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
+}
+
+export async function listDecisions(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<DecisionsResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].decisions.$get(
+    { param: { id: taskId } },
+    { init: { signal } },
+  )
+
+  return readJson<DecisionsResponse>(response)
+}
+
+export async function answerDecision(
+  decisionId: string,
+  input: AnswerDecisionInput,
+): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.decisions[':id'].answer.$post({
+    param: { id: decisionId },
+    json: input,
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
+}
+
+export async function dismissDecision(
+  decisionId: string,
+  input: DismissDecisionInput,
+): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.decisions[':id'].dismiss.$post({
+    param: { id: decisionId },
     json: input,
   })
 

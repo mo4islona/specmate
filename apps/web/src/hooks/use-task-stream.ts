@@ -52,6 +52,9 @@ export function useTaskStream(taskId: string): StreamConnectionState {
         if (event.type.startsWith('conversation.')) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.conversations(taskId) })
         }
+        if (event.type.startsWith('decision.')) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.decisions(taskId) })
+        }
         if (event.type.includes('artifact') || event.type === 'stage.completed') {
           void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(taskId) })
         }

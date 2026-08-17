@@ -4,6 +4,8 @@ import type { WorkspaceConfig } from './config.ts'
 
 export const CHANGES_ROOT = 'openspec/changes'
 export const SCHEMA_MARKER = '.openspec.yaml'
+/** The decision log: the one artifact no role may author — see `writeDecisionLog`. */
+export const DECISION_LOG_FILE = 'decisions.md'
 /** Written by an agent run, read by the orchestrator, never committed. */
 export const RESULT_FILE = 'RESULT.json'
 /** Per-stage logs and other runner scratch. */

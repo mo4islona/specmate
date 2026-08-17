@@ -18,6 +18,7 @@ import {
   conversations,
   createConversationStore,
   type Database,
+  decisions,
   events,
   feedback,
   ping,
@@ -49,7 +50,14 @@ export interface AppDeps {
 
 export type GateOperations = Pick<
   Engine,
-  'approve' | 'redirect' | 'rework' | 'confirmAction' | 'stopStage' | 'restartInterruptedStage'
+  | 'approve'
+  | 'redirect'
+  | 'rework'
+  | 'confirmAction'
+  | 'stopStage'
+  | 'restartInterruptedStage'
+  | 'answer'
+  | 'dismiss'
 >
 
 interface StreamSettings {
@@ -65,7 +73,7 @@ interface EventQuery {
 interface AttentionItem {
   task: Pick<Task, 'id' | 'slug' | 'title' | 'type' | 'status'>
   reason: {
-    kind: 'gate' | 'failed' | 'stalled'
+    kind: 'gate' | 'decision' | 'failed' | 'stalled'
     detail: string
   }
   since: Date
@@ -102,6 +110,20 @@ const ReworkGate = GateComment.extend({
   target: TaskState,
 })
 
+const AnswerDecision = z
+  .object({
+    optionId: z.string().trim().min(1).max(200).optional(),
+    text: z.string().trim().min(1).max(20_000).optional(),
+  })
+  .refine((v) => v.optionId || v.text, {
+    message: 'optionId or text is required',
+    path: ['text'],
+  })
+
+const DismissDecision = z.object({
+  reason: z.string().trim().max(20_000).optional(),
+})
+
 const ConfirmConversationAction = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
 })
@@ -129,6 +151,7 @@ const GATE_CONFLICT_ERRORS = new Set([
   'ActionConflictError',
   'StageStopConflictError',
   'StageRestartConflictError',
+  'DecisionNotOpenError',
 ])
 
 const OWNER_ACTOR = 'owner'
@@ -272,10 +295,32 @@ export function createApp({
     return task
   }
 
+  async function requireDecisionTaskId(decisionId: string): Promise<string> {
+    const [row] = await db
+      .select({ taskId: decisions.taskId })
+      .from(decisions)
+      .where(eq(decisions.id, decisionId))
+      .limit(1)
+    if (!row) {
+      throw new ApiError('not_found', 'decision was not found', { status: 404 })
+    }
+
+    return row.taskId
+  }
+
   async function performGateAction<T>(action: () => Promise<T>): Promise<T> {
     try {
       return await action()
     } catch (error) {
+      if (error instanceof Error && error.name === 'DecisionNotFoundError') {
+        throw new ApiError('not_found', error.message, { status: 404 })
+      }
+      if (error instanceof Error && error.name === 'DecisionAnswerEmptyError') {
+        throw new ApiError('validation', error.message, {
+          status: 400,
+          fields: { text: [error.message] },
+        })
+      }
       if (error instanceof Error && GATE_CONFLICT_ERRORS.has(error.name)) {
         throw new ApiError('conflict', error.message, { status: 409 })
       }
@@ -412,8 +457,31 @@ export function createApp({
         failureRows.flatMap((event) => (event.taskId ? [[event.taskId, event] as const] : [])),
       )
 
+      const openDecisionRows = await db
+        .select({ decision: decisions, task: tasks })
+        .from(decisions)
+        .innerJoin(tasks, eq(decisions.taskId, tasks.id))
+        .where(eq(decisions.status, 'open'))
+
       const stallCutoff = new Date(now().getTime() - config.SPECMATE_STALL_HOURS * 60 * 60 * 1_000)
       const items: AttentionItem[] = []
+
+      // A decision is its own attention source: it names its own question and
+      // the moment it was raised, whether or not it also parked the task.
+      for (const { decision, task } of openDecisionRows) {
+        items.push({
+          task: {
+            id: task.id,
+            slug: task.slug,
+            title: task.title,
+            type: task.type,
+            status: task.status,
+          },
+          reason: { kind: 'decision', detail: decision.promptMd },
+          since: decision.createdAt,
+        })
+      }
+
       for (const task of taskRows) {
         const latest = latestEvents.get(task.id)
         const taskSummary = {
@@ -755,6 +823,57 @@ export function createApp({
       )
 
       return c.json({ task: await requireTask(task.id) })
+    })
+
+    .get('/tasks/:id/decisions', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const [decisionRows, conversationRows] = await Promise.all([
+        db
+          .select()
+          .from(decisions)
+          .where(eq(decisions.taskId, task.id))
+          .orderBy(asc(decisions.createdAt)),
+        db
+          .select({ id: conversations.id, subjectId: conversations.subjectId })
+          .from(conversations)
+          .where(and(eq(conversations.taskId, task.id), eq(conversations.subjectKind, 'decision'))),
+      ])
+      const conversationByDecision = new Map(conversationRows.map((row) => [row.subjectId, row.id]))
+
+      return c.json({
+        decisions: decisionRows.map((decision) => ({
+          ...decision,
+          conversationId: conversationByDecision.get(decision.id) ?? null,
+        })),
+      })
+    })
+
+    .post('/decisions/:id/answer', validator('json', validateJson(AnswerDecision)), async (c) => {
+      const decisionId = c.req.param('id')
+      const taskId = await requireDecisionTaskId(decisionId)
+      const input = c.req.valid('json')
+      const task = await performGateAction(() =>
+        gates.answer({
+          taskId,
+          decisionId,
+          actor: OWNER_ACTOR,
+          optionId: input.optionId,
+          text: input.text,
+        }),
+      )
+
+      return c.json({ task })
+    })
+
+    .post('/decisions/:id/dismiss', validator('json', validateJson(DismissDecision)), async (c) => {
+      const decisionId = c.req.param('id')
+      const taskId = await requireDecisionTaskId(decisionId)
+      const input = c.req.valid('json')
+      const task = await performGateAction(() =>
+        gates.dismiss({ taskId, decisionId, actor: OWNER_ACTOR, reason: input.reason }),
+      )
+
+      return c.json({ task })
     })
 
     .get('/tasks/:id/events/stream', (c) => eventStream(c, c.req.param('id')))

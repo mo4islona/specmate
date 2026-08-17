@@ -1,4 +1,5 @@
 import type { ArtifactKind } from '@specmate/core'
+import { DECISION_LOG_FILE } from './paths.ts'
 
 /**
  * Path → artifact kind, for paths relative to the change folder. The catalog is
@@ -22,7 +23,7 @@ export function artifactKindForPath(relativePath: string): ArtifactKind | null {
       return 'verification'
     case 'summary.md':
       return 'summary'
-    case 'decisions.md':
+    case DECISION_LOG_FILE:
       return 'decision_log'
     default:
       return path.startsWith('review/') ? 'review' : null

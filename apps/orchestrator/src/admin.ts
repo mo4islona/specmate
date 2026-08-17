@@ -4,14 +4,16 @@
  * entry point must not grow transitions of its own.
  *
  *   bun apps/orchestrator/src/admin.ts create --slug s --title t --type feature --repo <url> [--at research]
- *   bun apps/orchestrator/src/admin.ts approve|redirect|rework|resume|restart|cancel --task <uuid> [...]
+ *   bun apps/orchestrator/src/admin.ts approve|redirect|rework|restart|cancel --task <uuid> [...]
+ *   bun apps/orchestrator/src/admin.ts answer --task <uuid> --decision <uuid> [--option id | --text "..."]
+ *   bun apps/orchestrator/src/admin.ts dismiss --task <uuid> --decision <uuid> [--reason "..."]
  *   bun apps/orchestrator/src/admin.ts show --task <uuid>
  */
 
 import { TaskState } from '@specmate/core'
-import { createDb, databaseUrl, stages, tasks } from '@specmate/db'
+import { createDb, databaseUrl, decisions, stages, tasks } from '@specmate/db'
 import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { Engine } from './engine.ts'
 import { createTask, latestGraph } from './store.ts'
@@ -119,8 +121,23 @@ try {
       })
       break
     }
-    case 'resume': {
-      await engine.resume(required('task'), actor)
+    case 'answer': {
+      await engine.answer({
+        taskId: required('task'),
+        decisionId: required('decision'),
+        actor,
+        optionId: flag('option'),
+        text: flag('text'),
+      })
+      break
+    }
+    case 'dismiss': {
+      await engine.dismiss({
+        taskId: required('task'),
+        decisionId: required('decision'),
+        actor,
+        reason: flag('reason'),
+      })
       break
     }
     case 'restart': {
@@ -150,12 +167,19 @@ try {
         .from(stages)
         .where(eq(stages.taskId, taskId))
         .orderBy(asc(stages.createdAt))
-      console.info(JSON.stringify({ task, graphVersion: graph?.version, attempts }, null, 2))
+      const openDecisions = await db
+        .select()
+        .from(decisions)
+        .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+        .orderBy(asc(decisions.createdAt))
+      console.info(
+        JSON.stringify({ task, graphVersion: graph?.version, attempts, openDecisions }, null, 2),
+      )
       break
     }
     default: {
       console.error(
-        'usage: admin.ts <create|approve|redirect|rework|resume|restart|cancel|show> [--flags]',
+        'usage: admin.ts <create|approve|redirect|rework|answer|dismiss|restart|cancel|show> [--flags]',
       )
       process.exit(2)
     }

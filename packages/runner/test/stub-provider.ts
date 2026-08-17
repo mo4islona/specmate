@@ -116,6 +116,23 @@ function validResult(): string {
   })
 }
 
+/** A single fence: six backticks, matching `prompt.ts`'s `fence()` helper. */
+const FENCE = '`'.repeat(6)
+
+/** Copies the `answer_decision` skeleton the prompt offered, as a real assistant would. */
+function proposedAnswerDecisionAction(
+  prompt: string,
+  instruction: string,
+): Record<string, unknown> {
+  const pattern = new RegExp(
+    `## answer_decision\\n\\n[\\s\\S]*?${FENCE}json\\n([\\s\\S]*?)\\n${FENCE}`,
+  )
+  const match = prompt.match(pattern)
+  if (!match?.[1]) throw new Error('no answer_decision action skeleton found in the prompt')
+
+  return { ...JSON.parse(match[1]), instruction }
+}
+
 /** Review verdicts, so one queue file can drive a loop: revise, then approve. */
 async function writeVerdict(verdict: string): Promise<void> {
   const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
@@ -211,6 +228,14 @@ switch (mode) {
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }
+  case 'conversation-answer-decision': {
+    await writeConversation('I recommend "the whole repository".', undefined, [
+      proposedAnswerDecisionAction(prompt, 'The whole repository.'),
+    ])
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
   case 'empty-conversation': {
     await writeConversation('   \n')
     await writeResult(validResult())
@@ -261,6 +286,42 @@ switch (mode) {
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
     await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'scribble-decision-log': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
+    await writeFile(join(folder, 'decisions.md'), '# an agent scribbled here\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'needs-decision': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(
+      join(folder, 'proposal.md'),
+      '# a question came up before this could be drafted\n',
+    )
+    await writeResult(
+      JSON.stringify({
+        schema_version: 1,
+        role: role(),
+        status: 'needs_decision',
+        decisions_needed: [
+          {
+            key: 'scope',
+            kind: 'question',
+            prompt_md: 'What does this cover?',
+            options: [],
+            blocking: true,
+          },
+        ],
+        notes_md: 'a blocking question came up',
+      }),
+    )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }

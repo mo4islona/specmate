@@ -7,6 +7,7 @@ import {
   conversations,
   createDb,
   type Database,
+  decisions,
   events,
   feedback,
   runGraphs,
@@ -447,6 +448,14 @@ describeDb('api', () => {
               repoUrl: 'https://github.com/example/healthy-fixture',
               status: 'research',
             },
+            {
+              slug: 'attention-decision',
+              title: 'Decision fixture',
+              type: 'feature',
+              repoUrl: 'https://github.com/example/decision-fixture',
+              status: 'research',
+              updatedAt: new Date('2026-08-16T11:15:00.000Z'),
+            },
           ])
           .returning()
         const bySlug = new Map(seeded.map((task) => [task.slug, task]))
@@ -454,9 +463,19 @@ describeDb('api', () => {
         const failedTask = bySlug.get('attention-failed')
         const stalledTask = bySlug.get('attention-stalled')
         const healthyTask = bySlug.get('attention-healthy')
-        if (!gateTask || !failedTask || !stalledTask || !healthyTask) {
+        const decisionTask = bySlug.get('attention-decision')
+        if (!gateTask || !failedTask || !stalledTask || !healthyTask || !decisionTask) {
           throw new Error('attention fixtures were not inserted')
         }
+        await tx.insert(decisions).values({
+          taskId: decisionTask.id,
+          nodeKey: 'research',
+          key: 'style-nit',
+          kind: 'question',
+          promptMd: 'Worth a follow-up task?',
+          blocking: false,
+          createdAt: new Date('2026-08-16T11:20:00.000Z'),
+        })
 
         await tx.insert(events).values([
           {
@@ -504,8 +523,9 @@ describeDb('api', () => {
             since: string
           }[]
         }
-        expect(body.items).toHaveLength(3)
+        expect(body.items).toHaveLength(4)
         expect(body.items.map((item) => item.reason.kind).sort()).toEqual([
+          'decision',
           'failed',
           'gate',
           'stalled',
@@ -513,9 +533,12 @@ describeDb('api', () => {
         expect(body.items.map((item) => item.task.id)).not.toContain(healthyTask.id)
         const gateItem = body.items.find((item) => item.task.id === gateTask.id)
         const failedItem = body.items.find((item) => item.task.id === failedTask.id)
+        const decisionItem = body.items.find((item) => item.task.id === decisionTask.id)
         expect(gateItem?.since).toBe('2026-08-16T11:00:00.000Z')
         expect(failedItem?.since).toBe('2026-08-16T10:00:00.000Z')
         expect(failedItem?.reason.detail).toBe('attempt cap exhausted')
+        expect(decisionItem?.since).toBe('2026-08-16T11:20:00.000Z')
+        expect(decisionItem?.reason.detail).toBe('Worth a follow-up task?')
 
         throw rollback
       })
@@ -735,6 +758,184 @@ describeDb('api', () => {
       .from(tasks)
       .where(eq(tasks.id, runningTask.id))
     expect(unchanged?.status).toBe('research')
+  })
+
+  test('lists a task’s decisions and answers or dismisses them through their own endpoints', async () => {
+    const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `decision-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Decision fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/decision-fixture',
+        status: 'waiting_human',
+        resumeStatus: 'research',
+      })
+      .returning()
+    if (!task) throw new Error('decision task insert returned no row')
+    createdTaskIds.push(task.id)
+    await db.insert(runGraphs).values({ taskId: task.id, dag })
+
+    const [decision] = await db
+      .insert(decisions)
+      .values({
+        taskId: task.id,
+        nodeKey: 'research',
+        key: 'scope',
+        kind: 'question',
+        promptMd: 'What does this cover?',
+      })
+      .returning()
+    if (!decision) throw new Error('decision insert returned no row')
+
+    const listed = await app.request(`/api/v1/tasks/${task.id}/decisions`, { headers: auth })
+    expect(listed.status).toBe(200)
+    const { decisions: listedDecisions } = (await listed.json()) as {
+      decisions: { id: string; status: string; conversationId: string | null }[]
+    }
+    expect(listedDecisions).toHaveLength(1)
+    expect(listedDecisions[0]).toMatchObject({
+      id: decision.id,
+      status: 'open',
+      conversationId: null,
+    })
+
+    const emptyAnswer = await app.request(`/api/v1/decisions/${decision.id}/answer`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({}),
+    })
+    expect(emptyAnswer.status).toBe(400)
+    expect(await emptyAnswer.json()).toMatchObject({ code: 'validation' })
+
+    const answered = await app.request(`/api/v1/decisions/${decision.id}/answer`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ text: 'The whole repository.' }),
+    })
+    expect(answered.status).toBe(200)
+    expect(await answered.json()).toMatchObject({ task: { status: 'research' } })
+
+    const alreadyAnswered = await app.request(`/api/v1/decisions/${decision.id}/answer`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ text: 'Again?' }),
+    })
+    expect(alreadyAnswered.status).toBe(409)
+    expect(await alreadyAnswered.json()).toMatchObject({ code: 'conflict' })
+
+    const missing = await app.request(`/api/v1/decisions/${crypto.randomUUID()}/dismiss`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({}),
+    })
+    expect(missing.status).toBe(404)
+
+    const [second] = await db
+      .insert(decisions)
+      .values({
+        taskId: task.id,
+        nodeKey: 'research',
+        key: 'owner',
+        kind: 'question',
+        promptMd: 'Who owns this?',
+      })
+      .returning()
+    if (!second) throw new Error('second decision insert returned no row')
+    const [conversation] = await db
+      .insert(conversations)
+      .values({ taskId: task.id, subjectKind: 'decision', subjectId: second.id })
+      .returning()
+    if (!conversation) throw new Error('conversation insert returned no row')
+
+    const relisted = await app.request(`/api/v1/tasks/${task.id}/decisions`, { headers: auth })
+    const { decisions: relistedDecisions } = (await relisted.json()) as {
+      decisions: {
+        id: string
+        status: string
+        conversationId: string | null
+        answerMd: string | null
+      }[]
+    }
+    expect(relistedDecisions).toHaveLength(2)
+    const resolved = relistedDecisions.find((d) => d.id === decision.id)
+    const open = relistedDecisions.find((d) => d.id === second.id)
+    expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
+    expect(open).toMatchObject({ status: 'open', conversationId: conversation.id })
+  })
+
+  test('a confirmed answer_decision conversation action resumes the task exactly like the direct control', async () => {
+    const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `decision-action-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Decision action fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/decision-action-fixture',
+        status: 'waiting_human',
+        resumeStatus: 'research',
+      })
+      .returning()
+    if (!task) throw new Error('decision action task insert returned no row')
+    createdTaskIds.push(task.id)
+    await db.insert(runGraphs).values({ taskId: task.id, dag })
+
+    const [decision] = await db
+      .insert(decisions)
+      .values({
+        taskId: task.id,
+        nodeKey: 'research',
+        key: 'scope',
+        kind: 'question',
+        promptMd: 'What does this cover?',
+      })
+      .returning()
+    if (!decision) throw new Error('decision insert returned no row')
+    const [conversation] = await db
+      .insert(conversations)
+      .values({ taskId: task.id, subjectKind: 'decision', subjectId: decision.id })
+      .returning()
+    if (!conversation) throw new Error('conversation insert returned no row')
+    const [message] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'I recommend "the whole repository".',
+        status: 'completed',
+        taskState: 'waiting_human',
+      })
+      .returning()
+    if (!message) throw new Error('message insert returned no row')
+    const [action] = await db
+      .insert(conversationActions)
+      .values({
+        taskId: task.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        kind: 'answer_decision',
+        target: { taskId: task.id, decisionId: decision.id },
+        instruction: 'The whole repository.',
+        expectedVersion: { taskStatus: 'waiting_human', decisionStatus: 'open' },
+      })
+      .returning()
+    if (!action) throw new Error('action insert returned no row')
+
+    const confirmed = await app.request(
+      `/api/v1/tasks/${task.id}/conversations/${conversation.id}/actions/${action.id}/confirm`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ idempotencyKey: `action:${action.id}` }),
+      },
+    )
+    expect(confirmed.status).toBe(200)
+    expect(await confirmed.json()).toMatchObject({ task: { status: 'research' } })
+    const [resolved] = await db.select().from(decisions).where(eq(decisions.id, decision.id))
+    expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
   })
 
   test('replays and follows conversation events from the last delivered sequence', async () => {

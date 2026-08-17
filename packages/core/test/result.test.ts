@@ -126,6 +126,11 @@ describe('role contracts', () => {
     }
   })
 
+  test('no role declares decision_log among its writes — the log is generated, never authored', () => {
+    const writers = Object.values(ROLE_CONTRACTS).filter((c) => c.writes.includes('decision_log'))
+    expect(writers).toEqual([])
+  })
+
   test('review provider differs from the writer', () => {
     expect(pickReviewProvider('claude-code')).not.toBe('claude-code')
     expect(pickReviewProvider('codex')).not.toBe('codex')

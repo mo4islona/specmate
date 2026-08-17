@@ -549,3 +549,29 @@ function repeatedRoundStreak(id: string, trailingRounds: readonly RecordedRound[
 
   return streak
 }
+
+/**
+ * Evidence for `escalationForPark`'s `repeated_finding` cause: every finding id
+ * in the about-to-be-recorded round whose streak meets the threshold, with the
+ * round numbers it appeared in (most recent first). Mirrors `repeatedRoundStreak`'s
+ * walk exactly, so this never disagrees with `advance()`'s own stalled check.
+ */
+export function stalledFindings(
+  record: RoundToRecord,
+  countedRounds: readonly RecordedRound[],
+  threshold: number,
+): { readonly id: string; readonly rounds: readonly number[] }[] {
+  const stalled: { id: string; rounds: number[] }[] = []
+  for (const finding of record.findings) {
+    const rounds = [record.round]
+    for (let i = countedRounds.length - 1; i >= 0; i--) {
+      const round = countedRounds[i]
+      if (!round?.findings?.some((f) => f.id === finding.id)) break
+
+      rounds.push(round.round)
+    }
+    if (rounds.length >= threshold) stalled.push({ id: finding.id, rounds })
+  }
+
+  return stalled
+}

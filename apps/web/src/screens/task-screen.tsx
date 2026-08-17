@@ -2,19 +2,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
+import { DecisionCard } from '../components/decision-card.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
 import { TelemetryChart } from '../components/telemetry-chart.tsx'
 import { mergeTimelineEvents, useTaskStream } from '../hooks/use-task-stream.ts'
 import {
+  answerDecision,
   approveGate,
   type ConversationMessage,
   type ConversationResponse,
   confirmConversationAction,
   createConversation,
+  dismissDecision,
   getConversation,
   getTask,
   listConversations,
+  listDecisions,
   listEvents,
   postConversationMessage,
   postFeedback,
@@ -146,6 +150,10 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     queryKey: queryKeys.conversations(taskId),
     queryFn: () => listConversations(taskId),
   })
+  const decisions = useQuery({
+    queryKey: queryKeys.decisions(taskId),
+    queryFn: () => listDecisions(taskId),
+  })
   // Tracks a conversation created by this session the instant its id is
   // known, so the very first message doesn't wait on a list refetch to
   // remount the conversation query on the right key (see converse.onSuccess).
@@ -171,6 +179,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       queryClient.invalidateQueries({ queryKey: queryKeys.attention }),
       queryClient.invalidateQueries({ queryKey: queryKeys.events(taskId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations(taskId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.decisions(taskId) }),
     ])
   }
 
@@ -252,6 +261,20 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       confirmConversationAction(taskId, conversationId ?? '', actionId),
     onSuccess: refreshTask,
   })
+  const answerOption = useMutation({
+    mutationFn: ({ decisionId, optionId }: { decisionId: string; optionId: string }) =>
+      answerDecision(decisionId, { optionId }),
+    onSuccess: refreshTask,
+  })
+  const answerText = useMutation({
+    mutationFn: ({ decisionId, text }: { decisionId: string; text: string }) =>
+      answerDecision(decisionId, { text }),
+    onSuccess: refreshTask,
+  })
+  const dismiss = useMutation({
+    mutationFn: (decisionId: string) => dismissDecision(decisionId, {}),
+    onSuccess: refreshTask,
+  })
   const stageRows = detail.data?.stages ?? []
   // The API orders stages by (nodeKey, attempt), not chronologically, so a
   // task that was interrupted at more than one node over its lifetime needs
@@ -296,7 +319,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     },
   })
 
-  if (detail.isPending || timeline.isPending || conversations.isPending) {
+  if (detail.isPending || timeline.isPending || conversations.isPending || decisions.isPending) {
     return <LoadingState title="Loading task channel…" />
   }
   if (detail.isError) {
@@ -304,6 +327,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   }
   if (timeline.isError) {
     return <ErrorState title="Timeline unavailable" detail={timeline.error.message} />
+  }
+  if (decisions.isError) {
+    return <ErrorState title="Decisions unavailable" detail={decisions.error.message} />
   }
   if (conversations.isError || conversation.isError) {
     return (
@@ -323,6 +349,13 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const items = timeline.data.events
   const messages = conversation.data?.messages ?? []
   const actions = conversation.data?.actions ?? []
+  const decisionRows = decisions.data.decisions
+  const decisionBusy = answerOption.isPending || answerText.isPending || dismiss.isPending
+  const decisionError = (answerOption.error ?? answerText.error ?? dismiss.error)?.message
+
+  function discussDecision(decisionConversationId: string | null): void {
+    if (decisionConversationId) setActiveConversationId(decisionConversationId)
+  }
 
   function submitInput(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -431,6 +464,36 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             </div>
           </div>
           {gateError && <p className="field-error mt-3">{gateError.message}</p>}
+        </section>
+      )}
+
+      {decisionRows.length > 0 && (
+        <section aria-label="Decisions">
+          <ol className="grid gap-4">
+            {decisionRows.map((decision) => (
+              <DecisionCard
+                key={decision.id}
+                decision={decision}
+                parkedOnThis={
+                  decision.status === 'open' &&
+                  decision.blocking &&
+                  detail.data.task.status === 'waiting_human'
+                }
+                busy={decisionBusy}
+                error={decisionError}
+                onAnswerOption={(optionId) =>
+                  answerOption.mutate({ decisionId: decision.id, optionId })
+                }
+                onAnswerText={(text) => answerText.mutate({ decisionId: decision.id, text })}
+                onDismiss={() => dismiss.mutate(decision.id)}
+                onDiscuss={
+                  decision.conversationId
+                    ? () => discussDecision(decision.conversationId)
+                    : undefined
+                }
+              />
+            ))}
+          </ol>
         </section>
       )}
 

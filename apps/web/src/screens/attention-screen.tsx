@@ -8,6 +8,7 @@ import { queryKeys } from '../lib/query-keys.ts'
 
 function reasonLabel(kind: string): string {
   if (kind === 'gate') return 'Gate decision'
+  if (kind === 'decision') return 'Open decision'
   if (kind === 'failed') return 'Execution failed'
 
   return 'No recent signal'
