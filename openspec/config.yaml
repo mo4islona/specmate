@@ -24,7 +24,7 @@ context: |
   - SpecMate is built with OpenSpec from day 0 (dogfooding): every phase is one or
     more changes that get proposed, implemented, and archived.
 
-  The long-form plan lives in docs/plan.md; specs must not contradict it silently —
+  The project overview lives in README.md; specs must not contradict it silently —
   if a change diverges, say so in the proposal.
 
 rules:

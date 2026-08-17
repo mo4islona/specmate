@@ -70,8 +70,8 @@ the pipeline.
 
 ### The brief is `proposal.md`, and both planner nodes leave a complete one
 
-No new artifact kind: the plan says the brief is OpenSpec's `proposal.md` in its earliest draft
-form, and `artifactKindForPath` already maps it. Because both nodes write that one file, the
+No new artifact kind: the brief is OpenSpec's `proposal.md` in its earliest draft form, and
+`artifactKindForPath` already maps it. Because both nodes write that one file, the
 completeness check is stated over the artifact rather than over the node — *a planner run that
 wrote the proposal leaves a complete brief*. `planning`'s output is therefore complete but
 rough, and `kickoff_brief`'s is the page. That has a mechanical payoff below.
@@ -115,8 +115,8 @@ implementation: it speaks for the kickoff gate only, and the general rule gets l
 
 The regenerating planner has to know why the last brief was rejected. Two channels were
 available: mint a decision carrying the comment (a record with an answer and no question), or
-put the owner's words in the ledger, which §2 of the plan already describes as holding
-"decisions made, iterations count, open questions". The ledger wins — it is task state, not a
+put the owner's words in the ledger, which already exists to hold decisions made, iteration
+counts, and open questions. The ledger wins — it is task state, not a
 question, and the same rendering fixes the latent gap that a reworked implementer cannot see
 the rework comment either. REQ-202 is widened to say the owner's own words are ledger content
 and are not the agent transcript it still forbids.

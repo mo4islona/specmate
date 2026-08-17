@@ -9,13 +9,13 @@ kickoff-brief change writes the prompt, and until then tasks are started at rese
 
 Two more things are missing behind that prompt. The planner's role contract reads *nothing* —
 so the brief stage cannot see what planning wrote, and a regenerating planner cannot see why
-the owner rejected the last brief. And a task carries only a 200-character title: the plan's
-first goal is a task "described in natural language", but there is nowhere to put the
-description, so the planner would be briefing on a headline.
+the owner rejected the last brief. And a task carries only a 200-character title: a task is
+meant to be described in natural language, but there is nowhere to put the description, so the
+planner would be briefing on a headline.
 
-This is the phase's cheapest correction point (`docs/plan.md` §5): aligning on intent before
-research runs costs one page and one click, and every misunderstanding caught here is a
-research⇄review loop not spent. It is also the first stage where the owner's own words enter
+This is the phase's cheapest correction point: aligning on intent before research runs costs
+one page and one click, and every misunderstanding caught here is a research⇄review loop not
+spent. It is also the first stage where the owner's own words enter
 the system, which makes it the front door of the self-learning flywheel.
 
 ## What Changes
@@ -91,16 +91,16 @@ the system, which makes it the front door of the self-learning flywheel.
 - **No harness probe.** Classifying the repository's harness coverage during planning, the
   mandatory warning it forces into the key points, and the task split are the next Phase-2
   change. This one leaves `harness_status` as it finds it.
-- **No planner-set caps, budgets, or provider bindings.** The plan's role table has the planner
-  emitting a run graph; pipelines became data in the orchestrator-loop change and a task's graph
-  is pinned from the catalog, so the planner parameterizes nothing here — the result contract has
-  no channel for it. The brief states the expected iteration budget as prose the owner reads,
-  not as a value the engine consumes.
+- **No planner-set caps, budgets, or provider bindings.** Pipelines became data in the
+  orchestrator-loop change and a task's graph is pinned from the catalog, so the planner
+  parameterizes nothing here — the result contract has no channel for it. The brief states the
+  expected iteration budget as prose the owner reads, not as a value the engine consumes.
 - **No new pipeline nodes and no changes to the shipped definition.** The planning segment,
   the gate, and the redirect edge with its cap all exist; this change makes them runnable.
 - **No brief for other task types.** The incident pipeline arrives in Phase 4 with its own
   intake stage; nothing here is written to be reused by it beyond the role prompt.
 - **No editing of the brief by the owner.** Approve, redirect with a comment, or cancel — the
-  plan's three verdicts. Editing the proposal in the browser is Phase 3's rework flow.
+  three verdicts available at a gate. Editing the proposal in the browser is Phase 3's rework
+  flow.
 - **No quality bar on the brief.** The mechanical check counts parts, not merit; a shallow but
   complete brief reaches the gate and is the owner's to reject.
