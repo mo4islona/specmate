@@ -169,6 +169,7 @@ const GATE_CONFLICT_ERRORS = new Set([
   'StageRestartConflictError',
   'DecisionNotOpenError',
   'NoResumeStateError',
+  'CoverageDecisionRequiresOptionError',
 ])
 
 const OWNER_ACTOR = 'owner'

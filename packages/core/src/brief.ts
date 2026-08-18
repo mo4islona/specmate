@@ -1,3 +1,5 @@
+import { HARNESS_GAP_LABEL, type HarnessStatus, needsCoverageWarning } from './harness.ts'
+
 /**
  * The kickoff brief's required parts (REQ-1302), as the exact H2 headings the
  * check looks for. `roles/planner.md` names these same headings so a planner
@@ -22,16 +24,24 @@ export interface BriefCheckResult {
   readonly missing: readonly string[]
   readonly bytes: number
   readonly ceilingBytes: number
+  /** REQ-1402, AC-1406: coverage had not been classified when this brief was checked. */
+  readonly coverageUnknown: boolean
+  /** REQ-1402, AC-1404: coverage is short of adequate and Key Points carries no gap warning. */
+  readonly coverageWarningMissing: boolean
 }
 
 /**
  * Textual and dumb on purpose (REQ-1303): presence, non-empty content, and
  * length only, with no agent judgment involved. Whether the brief persuades
- * is the gate's call, never this check's.
+ * is the gate's call, never this check's. `coverage` extends that same
+ * posture (REQ-1402): a fixed Key Points label, checked the same textual way
+ * as the five required headings — never a judgment on whether the warning is
+ * any good.
  */
 export function checkBrief(
   markdown: string,
   ceilingBytes: number = DEFAULT_BRIEF_CEILING_BYTES,
+  coverage: HarnessStatus = 'adequate',
 ): BriefCheckResult {
   // A Map keyed by heading would let a repeated heading's last occurrence hide
   // an earlier one's real content, so bodies are collected per heading instead.
@@ -48,9 +58,24 @@ export function checkBrief(
     return !bodies.some((body) => body.trim())
   })
   const bytes = Buffer.byteLength(markdown, 'utf8')
-  const ok = missing.length === 0 && bytes <= ceilingBytes
 
-  return { ok, missing, bytes, ceilingBytes }
+  const coverageUnknown = coverage === 'unknown'
+  const coverageWarningMissing =
+    !coverageUnknown &&
+    needsCoverageWarning(coverage) &&
+    !hasHarnessGapWarning(bodiesByHeading.get(normalizeBriefHeading('Key Points')) ?? [])
+
+  const ok =
+    missing.length === 0 && bytes <= ceilingBytes && !coverageUnknown && !coverageWarningMissing
+
+  return { ok, missing, bytes, ceilingBytes, coverageUnknown, coverageWarningMissing }
+}
+
+/** A `- Harness gap: …` bullet anywhere in the Key Points section, case-insensitive and however indented. */
+function hasHarnessGapWarning(keyPointsBodies: readonly string[]): boolean {
+  const pattern = new RegExp(`^\\s*-\\s*${HARNESS_GAP_LABEL}\\s*:`, 'im')
+
+  return keyPointsBodies.some((body) => pattern.test(body))
 }
 
 export interface BriefSection {
@@ -93,5 +118,10 @@ export function splitBriefSections(markdown: string): readonly BriefSection[] {
 
 /** Exported so a renderer can match a heading the same way the check does. */
 export function normalizeBriefHeading(heading: string): string {
-  return heading.trim().toLowerCase().replace(/\s+/g, ' ')
+  return collapseWhitespace(heading.toLowerCase())
+}
+
+/** Runs of whitespace collapsed to one space, ends trimmed — shared by anything rendering free text into one line. */
+export function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
 }

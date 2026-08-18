@@ -45,6 +45,20 @@ describe('prompt assembly', () => {
     expect(prompt).not.toContain('# the review')
   })
 
+  test('carries a waived task’s ledger line and the summarizer’s instruction to state it', async () => {
+    const { harness, params } = await setup('summarizer-waived')
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'summarizer',
+      ledger:
+        '## Task\n\n- Title: a task\n- Harness coverage: waived — no e2e suite for this path.\n',
+    })
+
+    expect(prompt).toContain('Harness coverage: waived — no e2e suite for this path.')
+    expect(prompt).toContain('verified without a state-level harness')
+  })
+
   test('gives the planner the draft proposal it is refining and the decision log that rejected the last one', async () => {
     const { harness, params } = await setup('planner-reads')
     const rolesDir = await tempDir('roles')

@@ -37,6 +37,7 @@ import {
   conversations,
   type Database,
   type DbClient,
+  type Decision,
   decisions,
   feedback,
   type Stage,
@@ -49,14 +50,21 @@ import type { ConversationExecution, StageExecution } from '@specmate/runner'
 import type { ConversationWorkspace, StageCommit, StageRef, Workspace } from '@specmate/workspace'
 import { and, asc, count, desc, eq, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
 import {
+  assertNotSelfDependency,
+  COVERAGE_DECISION_KEY,
+  COVERAGE_DECISION_NODE_KEY,
+  type CreateTaskInput,
   countRedirects,
+  createTask,
   emitEvent,
   lastRestartAt,
   lastReworkAt,
   latestGraph,
   latestGraphsFor,
+  latestHarnessCoverage,
   type RunGraphRow,
   raiseDecision,
+  recordHarnessCoverage,
   recordRound,
   roundsFor,
   TaskNotFoundError,
@@ -187,6 +195,16 @@ export class DecisionAnswerEmptyError extends Error {
 
   constructor(decisionId: string) {
     super(`decision ${decisionId} was answered with neither an option nor text`)
+  }
+}
+
+export class CoverageDecisionRequiresOptionError extends Error {
+  override readonly name = 'CoverageDecisionRequiresOptionError'
+
+  constructor(decisionId: string) {
+    super(
+      `decision ${decisionId} is the coverage decision and requires choosing an option, not a dismissal`,
+    )
   }
 }
 
@@ -1315,6 +1333,18 @@ export class Engine {
         await raiseDecision(tx, task.id, row.id, decisionFromRequest(node.key, request))
       }
 
+      // REQ-1401: a probing role's classification lands on the task before it
+      // advances, whether that happens at `planning` or `kickoff_brief` —
+      // `stageDefect` already guarantees `harness_coverage` is present for any
+      // `ok` result reaching this point.
+      if (
+        ROLE_CONTRACTS[node.role].probesHarness &&
+        result.status === 'ok' &&
+        result.harness_coverage
+      ) {
+        await recordHarnessCoverage(tx, task.id, row.id, result.harness_coverage)
+      }
+
       if (decision.kind === 'park') {
         // A park no agent asked for gets the engine's own escalation, so the
         // invariant "parked implies an open decision" holds for every cause.
@@ -2209,6 +2239,15 @@ export class Engine {
         type: 'gate.approved',
         payload: { gate: gate.key, to: gate.approve, actor },
       })
+      // AC-1409: approving with the coverage decision unanswered means
+      // proceeding — resolved before the generic dismissal below, which
+      // would otherwise close it exactly like an ignored open question.
+      // Scoped to the gate that actually owns it (always raised at
+      // COVERAGE_DECISION_NODE_KEY) so approving some other gate can never
+      // answer it on the owner's behalf.
+      if (gate.key === COVERAGE_DECISION_NODE_KEY) {
+        await this.resolveCoverageDecisionAsProceed(tx, taskId, actor)
+      }
       // Dismissed before the transition: a gate whose target is itself a
       // terminal status would otherwise have applyTransition's own terminal
       // dismissal claim every open decision first, under cause 'terminal'
@@ -2219,6 +2258,37 @@ export class Engine {
       return { task, dag: graph.dag, to: gate.approve }
     })
     await this.releaseIfTerminal(done.task, done.dag, done.to)
+  }
+
+  /**
+   * REQ-1403, AC-1409: "the owner did nothing" is the one case this change
+   * gives a consequence rather than leaving as a dismissal — treated exactly
+   * as if 'proceed' had been clicked, so the record and the UI read the same
+   * either way. Shares `resolveDecisionInTx` and `waiveHarnessStatus` with
+   * the explicit-choice path so the two can never leave different audit
+   * trails for what is meant to be the same outcome.
+   */
+  private async resolveCoverageDecisionAsProceed(
+    tx: DbClient,
+    taskId: string,
+    actor: string,
+  ): Promise<void> {
+    const [open] = await tx
+      .select()
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.taskId, taskId),
+          eq(decisions.nodeKey, COVERAGE_DECISION_NODE_KEY),
+          eq(decisions.key, COVERAGE_DECISION_KEY),
+          eq(decisions.status, 'open'),
+        ),
+      )
+      .limit(1)
+    if (!open) return
+
+    await this.resolveDecisionInTx(tx, taskId, open.id, actor, 'answered', { optionId: 'proceed' })
+    await this.waiveHarnessStatus(tx, taskId)
   }
 
   async redirect(taskId: string, actor: string, comment?: string): Promise<void> {
@@ -2309,17 +2379,39 @@ export class Engine {
       throw new DecisionAnswerEmptyError(options.decisionId)
     }
 
-    return this.resolveDecision(options.taskId, options.decisionId, options.actor, 'answered', {
-      text: options.text,
-      optionId: options.optionId,
-    })
+    const resolved = await this.resolveDecision(
+      options.taskId,
+      options.decisionId,
+      options.actor,
+      'answered',
+      { text: options.text, optionId: options.optionId },
+    )
+
+    // Only the direct option-button path carries a structured optionId — a
+    // free-text chat answer (§4.5) records normally but triggers nothing here.
+    if (this.isCoverageDecision(resolved.decision) && options.optionId) {
+      return this.applyCoverageChoice(resolved.task, options.optionId, options.actor)
+    }
+
+    return resolved.task
   }
 
-  /** Dismissal resolves a decision for the purpose of resuming, recorded distinctly from an answer. */
+  /**
+   * Dismissal resolves a decision for the purpose of resuming, recorded
+   * distinctly from an answer. REQ-1403: not offered for the coverage
+   * decision — its three options each carry a real, divergent consequence,
+   * so `resolveDecisionInTx` refuses a plain dismissal of it.
+   */
   async dismiss(options: DismissDecisionOptions): Promise<Task> {
-    return this.resolveDecision(options.taskId, options.decisionId, options.actor, 'dismissed', {
-      text: options.reason,
-    })
+    const resolved = await this.resolveDecision(
+      options.taskId,
+      options.decisionId,
+      options.actor,
+      'dismissed',
+      { text: options.reason },
+    )
+
+    return resolved.task
   }
 
   private async resolveDecision(
@@ -2328,69 +2420,176 @@ export class Engine {
     actor: string,
     status: 'answered' | 'dismissed',
     input: { text?: string; optionId?: string },
-  ): Promise<Task> {
-    return this.withTaskLock(taskId, async (tx) => {
-      const [decision] = await tx
-        .select()
-        .from(decisions)
-        .where(and(eq(decisions.id, decisionId), eq(decisions.taskId, taskId)))
+  ): Promise<{ task: Task; decision: Decision }> {
+    return this.withTaskLock(taskId, (tx) =>
+      this.resolveDecisionInTx(tx, taskId, decisionId, actor, status, input),
+    )
+  }
+
+  /**
+   * The guts of `answer`/`dismiss`, factored out so `resolveCoverageDecisionAsProceed`
+   * can run the identical resolution (decision update, feedback row, event, and
+   * resume check) inside a lock its caller already holds, instead of duplicating it.
+   */
+  private async resolveDecisionInTx(
+    tx: DbClient,
+    taskId: string,
+    decisionId: string,
+    actor: string,
+    status: 'answered' | 'dismissed',
+    input: { text?: string; optionId?: string },
+  ): Promise<{ task: Task; decision: Decision }> {
+    const [decision] = await tx
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.id, decisionId), eq(decisions.taskId, taskId)))
+      .limit(1)
+    if (!decision) throw new DecisionNotFoundError(decisionId)
+    if (decision.status !== 'open') throw new DecisionNotOpenError(decisionId, decision.status)
+    // REQ-1403: the coverage decision's three options each carry a real,
+    // divergent consequence (waive, split, cancel) with nothing for a plain
+    // dismissal to fall back to — leaving it stuck at its gap classification
+    // forever instead. Only an explicit option resolves it.
+    if (status === 'dismissed' && this.isCoverageDecision(decision)) {
+      throw new CoverageDecisionRequiresOptionError(decisionId)
+    }
+
+    const answerMd = resolveAnswerMd(input, decision.options)
+    const now = new Date()
+    const [resolvedDecision] = await tx
+      .update(decisions)
+      .set({ status, answerMd, answeredBy: actor, answeredAt: now })
+      .where(and(eq(decisions.id, decisionId), eq(decisions.status, 'open')))
+      .returning()
+    if (!resolvedDecision) throw new DecisionNotOpenError(decisionId, decision.status)
+
+    if (status === 'answered' && decision.stageId) {
+      const [stage] = await tx
+        .select({ role: stages.role, provider: stages.provider })
+        .from(stages)
+        .where(eq(stages.id, decision.stageId))
         .limit(1)
-      if (!decision) throw new DecisionNotFoundError(decisionId)
-      if (decision.status !== 'open') throw new DecisionNotOpenError(decisionId, decision.status)
-
-      const answerMd = resolveAnswerMd(input, decision.options)
-      const now = new Date()
-      const resolved = await tx
-        .update(decisions)
-        .set({ status, answerMd, answeredBy: actor, answeredAt: now })
-        .where(and(eq(decisions.id, decisionId), eq(decisions.status, 'open')))
-        .returning({ id: decisions.id })
-      if (resolved.length === 0) throw new DecisionNotOpenError(decisionId, decision.status)
-
-      if (status === 'answered' && decision.stageId) {
-        const [stage] = await tx
-          .select({ role: stages.role, provider: stages.provider })
-          .from(stages)
-          .where(eq(stages.id, decision.stageId))
-          .limit(1)
-        await tx.insert(feedback).values({
-          taskId,
-          stageId: decision.stageId,
-          role: stage?.role,
-          provider: stage?.provider,
-          kind: 'decision_answer',
-          textMd: answerMd ?? '',
-          target: { decisionId },
-        })
-      }
-
-      await emitEvent(tx, {
+      await tx.insert(feedback).values({
         taskId,
-        stageId: decision.stageId ?? undefined,
-        type: status === 'answered' ? 'decision.answered' : 'decision.dismissed',
-        payload: { decisionId, nodeKey: decision.nodeKey, key: decision.key, actor },
+        stageId: decision.stageId,
+        role: stage?.role,
+        provider: stage?.provider,
+        kind: 'decision_answer',
+        textMd: answerMd ?? '',
+        target: { decisionId },
       })
+    }
 
-      const { task, graph } = await this.taskWithGraph(taskId, tx)
-      if (task.status !== 'waiting_human') return task
+    await emitEvent(tx, {
+      taskId,
+      stageId: decision.stageId ?? undefined,
+      type: status === 'answered' ? 'decision.answered' : 'decision.dismissed',
+      payload: { decisionId, nodeKey: decision.nodeKey, key: decision.key, actor },
+    })
 
-      const openDecisions = await tx
-        .select()
-        .from(decisions)
-        .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
-      if (blockingOpen(openDecisions)) return task
+    const { task, graph } = await this.taskWithGraph(taskId, tx)
+    if (task.status !== 'waiting_human') return { task, decision: resolvedDecision }
 
-      const to = task.resumeStatus
-      if (!to) throw new NoResumeStateError(taskId)
+    const openDecisions = await tx
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.taskId, taskId), eq(decisions.status, 'open')))
+    if (blockingOpen(openDecisions)) return { task, decision: resolvedDecision }
 
-      await emitEvent(tx, { taskId, type: 'task.resumed', payload: { to, actor } })
-      await this.applyTransition(tx, task, graph.dag, to, {
-        cause: status === 'answered' ? 'decision_answered' : 'decision_dismissed',
+    const to = task.resumeStatus
+    if (!to) throw new NoResumeStateError(taskId)
+
+    await emitEvent(tx, { taskId, type: 'task.resumed', payload: { to, actor } })
+    await this.applyTransition(tx, task, graph.dag, to, {
+      cause: status === 'answered' ? 'decision_answered' : 'decision_dismissed',
+      actor,
+    })
+    const [resumed] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+
+    return { task: resumed ?? { ...task, status: to }, decision: resolvedDecision }
+  }
+
+  /** REQ-1403: our engine-raised, fixed-identity coverage decision — not one an agent authored. */
+  private isCoverageDecision(decision: Decision): boolean {
+    return decision.nodeKey === COVERAGE_DECISION_NODE_KEY && decision.key === COVERAGE_DECISION_KEY
+  }
+
+  /** REQ-1403: what the owner's chosen option on the coverage decision actually does. */
+  private async applyCoverageChoice(task: Task, optionId: string, actor: string): Promise<Task> {
+    switch (optionId) {
+      case 'proceed':
+        await this.withTaskLock(task.id, (tx) => this.waiveHarnessStatus(tx, task.id))
+        break
+      case 'split':
+        await this.splitHarnessTask(task, actor)
+        break
+      case 'cancel':
+        await this.cancel(task.id, actor)
+        break
+      default:
+        // An id outside the three offered options: nothing to act on.
+        break
+    }
+
+    const [refreshed] = await this.deps.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, task.id))
+      .limit(1)
+
+    return refreshed ?? task
+  }
+
+  /** REQ-1403: the write shared by both ways the coverage decision resolves as "proceed". */
+  private async waiveHarnessStatus(tx: DbClient, taskId: string): Promise<void> {
+    await tx
+      .update(tasks)
+      .set({ harnessStatus: 'waived', updatedAt: new Date() })
+      .where(eq(tasks.id, taskId))
+  }
+
+  /**
+   * REQ-1404: a full task of its own — same repository and base branch, its
+   * own kickoff brief — rather than skipping straight to research; the owner
+   * reviews it like any other task. `releaseIfTerminal` is where the original
+   * resumes once this one lands.
+   */
+  private async splitHarnessTask(task: Task, actor: string): Promise<void> {
+    const coverage = await latestHarnessCoverage(this.deps.db, task.id)
+    const evidence = coverage?.evidence_md ?? 'No evidence was recorded.'
+
+    const input: CreateTaskInput = {
+      slug: `${task.slug}-harness-${crypto.randomUUID().slice(0, 8)}`,
+      title: `Harness: ${task.title}`,
+      description: [
+        `Build the test harness "${task.title}" needs before it can be properly validated.`,
+        '',
+        `Coverage gap found while planning that task: ${evidence}`,
+      ].join('\n'),
+      type: 'feature',
+      repoUrl: task.repoUrl,
+      baseBranch: task.baseBranch,
+    }
+    const { task: harnessTask } = await createTask(this.deps.db, input)
+
+    await this.withTaskLock(task.id, async (tx) => {
+      const { task: liveTask, graph } = await this.taskWithGraph(task.id, tx)
+      // AC-1413: harnessTask.id is always a fresh crypto.randomUUID() minted
+      // by createTask above, so this can never actually fire on this call
+      // path — kept as the AC's literal guard against the day a general
+      // "depend on an existing task" entry point reuses this plumbing with
+      // a caller-supplied blocker id instead of always minting a new one.
+      assertNotSelfDependency(liveTask.id, harnessTask.id)
+
+      await tx
+        .update(tasks)
+        .set({ blockedBy: [harnessTask.id], updatedAt: new Date() })
+        .where(eq(tasks.id, liveTask.id))
+      await this.applyTransition(tx, liveTask, graph.dag, 'blocked', {
+        cause: 'harness_split',
         actor,
+        payload: { blockedBy: harnessTask.id },
       })
-      const [resumed] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
-
-      return resumed ?? { ...task, status: to }
     })
   }
 
@@ -2562,15 +2761,113 @@ export class Engine {
    * Housekeeping belongs to the engine, not to any stage: archive and cancel
    * release the working tree while the mirror keeps the branch. Runs after the
    * transition commits — the release layer re-reads the task and must see the
-   * terminal status.
+   * terminal status. REQ-615's dependent handling rides the same "just went
+   * terminal" moment, `failed` included, since a dead blocker must raise its
+   * dependents even though a failed task keeps its workspace for restart.
    */
   private async releaseIfTerminal(task: Task, dag: PinnedGraph, to: TaskState): Promise<void> {
+    if (isTerminal(to)) await this.releaseDependents(task.id, to === dag.terminal)
+
     if (to !== dag.terminal && to !== 'cancelled') return
 
     await this.failTerminalQueuedResponses(task.id)
 
     await this.deps.workspaces.release(task.id).catch((e: Error) => {
       this.deps.log?.(`workspace release for ${task.id}: ${e.message}`)
+    })
+  }
+
+  /**
+   * REQ-615: every task still waiting on this one, released or raised
+   * depending on how it ended. No scheduler and no polling of blocked tasks —
+   * this is the only place a dependent's fate changes, driven entirely by its
+   * blocker's own terminal transition.
+   */
+  private async releaseDependents(blockerTaskId: string, succeeded: boolean): Promise<void> {
+    const dependents = await this.deps.db
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.status, 'blocked'),
+          sql`${tasks.blockedBy} @> ARRAY[${blockerTaskId}]::uuid[]`,
+        ),
+      )
+
+    for (const dependent of dependents) {
+      try {
+        if (succeeded) {
+          await this.releaseDependentTask(dependent, blockerTaskId)
+        } else {
+          await this.raiseDeadBlocker(dependent, blockerTaskId)
+        }
+      } catch (error) {
+        // One dependent's stale-transition race must not abort release of
+        // the rest, nor surface as a failed response on a gate approval that
+        // already committed — log it and keep going.
+        const message = error instanceof Error ? error.message : String(error)
+        this.deps.log?.(
+          `release of dependent ${dependent.id} on blocker ${blockerTaskId} failed: ${message}`,
+        )
+      }
+    }
+  }
+
+  /**
+   * AC-627, AC-628: the last blocker clearing releases the task into its
+   * pipeline's entry — it re-plans and re-probes rather than resuming a brief
+   * written against a repository that may no longer look like that. Other
+   * blockers still open just shrink the list.
+   */
+  private async releaseDependentTask(dependent: Task, clearedBlockerId: string): Promise<void> {
+    const remaining = dependent.blockedBy.filter((id) => id !== clearedBlockerId)
+
+    await this.withTaskLock(dependent.id, async (tx) => {
+      const { task: liveTask, graph } = await this.taskWithGraph(dependent.id, tx)
+      if (liveTask.status !== 'blocked') return
+
+      await tx
+        .update(tasks)
+        .set({ blockedBy: remaining, updatedAt: new Date() })
+        .where(eq(tasks.id, liveTask.id))
+      if (remaining.length > 0) return
+
+      await this.applyTransition(tx, liveTask, graph.dag, graph.dag.entry, {
+        cause: 'harness_released',
+        payload: { clearedBlocker: clearedBlockerId },
+      })
+    })
+  }
+
+  /**
+   * AC-629: a blocker that will never complete must not leave its dependent
+   * waiting forever. Raised to the human via the same generic park/resume
+   * mechanism a stage uses — `resumeStatus` set to the pipeline's entry, so
+   * resolving the decision re-plans exactly like a successful release would.
+   */
+  private async raiseDeadBlocker(dependent: Task, deadBlockerId: string): Promise<void> {
+    await this.withTaskLock(dependent.id, async (tx) => {
+      const { task: liveTask, graph } = await this.taskWithGraph(dependent.id, tx)
+      if (liveTask.status !== 'blocked') return
+
+      const remaining = liveTask.blockedBy.filter((id) => id !== deadBlockerId)
+      await tx
+        .update(tasks)
+        .set({ blockedBy: remaining, updatedAt: new Date() })
+        .where(eq(tasks.id, liveTask.id))
+      await raiseDecision(tx, liveTask.id, null, {
+        nodeKey: 'blocked',
+        key: `blocker-lost:${deadBlockerId}`,
+        kind: 'escalation',
+        promptMd: `The harness task this was waiting on (${deadBlockerId}) was cancelled or failed before it could complete. This task cannot be released automatically.`,
+        options: [],
+        blocking: true,
+      })
+      await this.applyTransition(tx, liveTask, graph.dag, 'waiting_human', {
+        cause: 'blocker_lost',
+        resume: graph.dag.entry,
+        payload: { deadBlocker: deadBlockerId },
+      })
     })
   }
 }
@@ -2648,6 +2945,21 @@ function stageDefect(node: StageNode, execution: StageExecution): StageDefectRec
     return {
       reason: 'missing_verdict',
       detail: `role ${node.role} returned no verdict for loop-edged stage ${node.key}`,
+    }
+  }
+
+  // Mirrors the loop-edge check above: `parseStageResult` already enforces
+  // this for a real agent run, but a dispatcher that builds its result
+  // directly (a stub, a test) bypasses that parse — this is the engine's own
+  // enforcement of the same contract.
+  if (
+    ROLE_CONTRACTS[node.role].probesHarness &&
+    execution.result?.status === 'ok' &&
+    !execution.result.harness_coverage
+  ) {
+    return {
+      reason: 'missing_harness_coverage',
+      detail: `role ${node.role} returned no harness coverage assessment for stage ${node.key}`,
     }
   }
 

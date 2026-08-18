@@ -36,6 +36,30 @@ decision instead (see below) and leave `proposal.md` as you found it.
 Otherwise, leave a complete draft: every part `## Writing the brief` describes, even roughly.
 `kickoff_brief` reads what you wrote; it does not re-derive it.
 
+## Judging what can prove this — `planning`
+
+Before you write a word of the brief, judge whether this repository can prove the change you are
+about to propose. Look for what could actually exercise the work: end-to-end suites, integration
+tests against real dependencies, simulators, state fixtures. Judge the area the request touches,
+not the repository as a whole — a repository with an excellent API harness and nothing for its
+ingestion path is `missing` for a task landing on ingestion.
+
+Classify what you found as exactly one of:
+
+- `adequate` — a normal PR against this area would be caught by what already exists.
+- `partial` — something exists but leaves a real gap (e.g. unit tests only, no state-level check).
+- `missing` — nothing here could catch a broken change.
+
+Put the classification and the evidence it rests on — what you found, or searched for and did not
+find — in `harness_coverage` in `RESULT.json`, alongside its other top-level fields:
+
+```
+"harness_coverage": { "classification": "partial", "evidence_md": "Unit tests cover the parser; nothing exercises a real checkout end to end." }
+```
+
+This is required on every `planning` and `kickoff_brief` result — `kickoff_brief` does not
+re-probe, it repeats the same `classification` and `evidence_md` `planning` found.
+
 ## Writing the brief — `kickoff_brief`
 
 `proposal.md` carries exactly these five sections, as `##` headings, in this order:
@@ -55,6 +79,9 @@ One or two sentences: what will be done, and why it is worth doing.
 - Blast radius: what this touches, and what it does not.
 - Irreversible: anything that cannot be easily undone, or "none".
 - Trade-offs: a choice made and what it costs, or "none".
+- Harness gap: required whenever `harness_coverage.classification` is not `adequate` — say plainly
+  that the work cannot be properly validated, and what is missing. Omit this bullet only when
+  coverage is `adequate`; the mechanical check refuses a brief that stays silent about a gap.
 
 ## Open Questions
 
@@ -108,6 +135,7 @@ A `planning` run that grounded the request:
   "status": "ok",
   "artifacts_changed": [{ "path": "openspec/changes/<slug>/proposal.md", "kind": "proposal", "op": "created" }],
   "decisions_needed": [],
+  "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the ingestion path this request targets." },
   "notes_md": "One or two sentences a human will read in a chat timeline."
 }
 ```
@@ -157,6 +185,7 @@ A `kickoff_brief` run with two open questions:
       "blocking": false
     }
   ],
+  "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the ingestion path this request targets." },
   "notes_md": "One or two sentences a human will read in a chat timeline."
 }
 ```

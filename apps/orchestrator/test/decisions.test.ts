@@ -33,11 +33,24 @@ import {
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
 
+/** Every fixture planner result needs one once it reaches `ok` — REQ-110 makes silence invalid. */
+const FIXTURE_HARNESS_COVERAGE = {
+  classification: 'adequate' as const,
+  evidence_md: 'Fixture: an existing e2e suite covers this path.',
+}
+
 function result(overrides: Partial<StageResult> & { role: StageResult['role'] }): StageExecution {
+  const needsCoverage = overrides.role === 'planner' && (overrides.status ?? 'ok') === 'ok'
+
   return {
     status: 'succeeded',
     attempts: [{ attempt: 0, ok: true, durationMs: 5 }],
-    result: StageResult.parse({ schema_version: 1, status: 'ok', ...overrides }),
+    result: StageResult.parse({
+      schema_version: 1,
+      status: 'ok',
+      ...(needsCoverage ? { harness_coverage: FIXTURE_HARNESS_COVERAGE } : {}),
+      ...overrides,
+    }),
     telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
   }
 }

@@ -327,6 +327,24 @@ describe('graph-derived legality', () => {
     expect(canTransition(graph, 'failed', 'paused')).toBe(false)
   })
 
+  test('blocked is enterable from a stage node and from a gate, like any other interrupt', () => {
+    expect(canTransition(graph, 'implement', 'blocked')).toBe(true)
+    expect(canTransition(graph, 'human_spec_gate', 'blocked')).toBe(true)
+    expect(canTransition(graph, 'planning', 'blocked')).toBe(true)
+  })
+
+  test('leaving blocked resolves only to the pipeline entry or cancellation', () => {
+    expect(canTransition(graph, 'blocked', 'planning')).toBe(true)
+    expect(canTransition(graph, 'blocked', 'cancelled')).toBe(true)
+    expect(canTransition(graph, 'blocked', 'implement')).toBe(false)
+    expect(canTransition(graph, 'blocked', 'research')).toBe(false)
+  })
+
+  test('a terminal task cannot be blocked', () => {
+    expect(canTransition(graph, 'archived', 'blocked')).toBe(false)
+    expect(canTransition(graph, 'cancelled', 'blocked')).toBe(false)
+  })
+
   test('two tasks with different pipelines each answer to their own graph', () => {
     const other: PinnedGraph = instantiateDefinition(
       def({

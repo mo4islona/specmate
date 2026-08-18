@@ -1,11 +1,12 @@
 import {
   type Caps,
+  collapseWhitespace,
   type ReviewFinding,
   type ReviewVerdict,
   renderFindingBullets,
 } from '@specmate/core'
 import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
 import { truncate } from './truncate.ts'
 
@@ -39,6 +40,8 @@ export interface LedgerSnapshot {
   readonly baseBranch: string
   readonly status: string
   readonly harnessStatus: string
+  /** The most recent probe's evidence, short form — null before any probe has run. */
+  readonly harnessEvidence: string | null
   readonly caps: Caps
   readonly rounds: readonly LedgerRound[]
   readonly interventions: readonly {
@@ -58,7 +61,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
   // the rows either can need, split client-side by kind below. The left join
   // to `stages` only matters to the intervention filter — a gate comment has
   // no consuming stage and passes through it untouched.
-  const [rounds, feedbackRows] = await Promise.all([
+  const [rounds, feedbackRows, probeRows] = await Promise.all([
     db
       .select()
       .from(iterations)
@@ -81,7 +84,19 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
         ),
       )
       .orderBy(asc(feedback.createdAt)),
+    // Evidence lives on the probing stage's own result, not a task column
+    // (REQ-1401: data, never re-derived) — the most recent one that carried
+    // an assessment is the classification `task.harnessStatus` reflects now.
+    db
+      .select({ result: stages.result })
+      .from(stages)
+      .where(
+        and(eq(stages.taskId, taskId), sql`${stages.result} ->> 'harness_coverage' is not null`),
+      )
+      .orderBy(desc(stages.finishedAt))
+      .limit(1),
   ])
+  const harnessEvidence = probeRows[0]?.result?.harness_coverage?.evidence_md ?? null
 
   const interventions = feedbackRows
     .filter((row) => row.kind === 'intervention' && row.stageStatus === 'running')
@@ -104,6 +119,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
     baseBranch: task.baseBranch,
     status: task.status,
     harnessStatus: task.harnessStatus,
+    harnessEvidence,
     caps: task.caps,
     rounds: rounds.map((round) => ({
       loop: round.loop,
@@ -124,6 +140,11 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
  * identical stage must assemble an identical prompt.
  */
 export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): string {
+  // Collapsed once and checked for its own truthiness — a whitespace-only
+  // evidence_md (valid under the assessment schema's z.string().min(1),
+  // which does not trim) must read as absent, not as a dangling "— ".
+  const harnessEvidence = snapshot.harnessEvidence ? collapseWhitespace(snapshot.harnessEvidence) : ''
+
   const lines = [
     '## Task',
     '',
@@ -134,7 +155,7 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     `- Repository: ${snapshot.repoUrl}`,
     `- Base branch: ${snapshot.baseBranch}`,
     `- Current state: ${snapshot.status}`,
-    `- Harness coverage: ${snapshot.harnessStatus}`,
+    `- Harness coverage: ${snapshot.harnessStatus}${harnessEvidence ? ` — ${harnessEvidence}` : ''}`,
     '',
     '## Loops',
     '',

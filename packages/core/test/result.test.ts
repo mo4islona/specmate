@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   ConversationResult,
   checkDecisionsPresent,
+  checkHarnessCoveragePresent,
   checkReviseHasFindings,
   parseStageResult,
 } from '../src/result.ts'
@@ -84,6 +85,83 @@ describe('RESULT.json contract', () => {
       }),
     )
     expect(parsed.ok).toBe(true)
+  })
+
+  test('rejects a coverage-less ok result from the planner, naming the role', () => {
+    const parsed = parseStageResult(JSON.stringify({ ...minimal, role: 'planner' }))
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('planner')
+    expect(parsed.error).toContain('harness coverage')
+  })
+
+  test('accepts a planner result carrying its coverage assessment', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'planner',
+        harness_coverage: { classification: 'missing', evidence_md: 'No tests touch this path.' },
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.harness_coverage?.classification).toBe('missing')
+  })
+
+  test('accepts a coverage-less planner result for the request-does-not-fit case', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'planner',
+        status: 'needs_decision',
+        decisions_needed: [
+          { key: 'unplaceable', prompt_md: 'Where does this belong?', blocking: true },
+        ],
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+  })
+
+  test('accepts a coverage-less result from a role that does not probe', () => {
+    const parsed = parseStageResult(JSON.stringify(minimal))
+    expect(parsed.ok).toBe(true)
+  })
+})
+
+describe('checkHarnessCoveragePresent', () => {
+  const plannerOk = {
+    schema_version: 1 as const,
+    role: 'planner' as const,
+    status: 'ok' as const,
+    artifacts_changed: [],
+    decisions_needed: [],
+    findings: [],
+    notes_md: '',
+    usage: {},
+  }
+
+  test('rejects a probing role missing its assessment', () => {
+    expect(checkHarnessCoveragePresent(plannerOk)).toContain('planner')
+  })
+
+  test('accepts a probing role carrying its assessment', () => {
+    const withCoverage = {
+      ...plannerOk,
+      harness_coverage: {
+        classification: 'adequate' as const,
+        evidence_md: 'e2e suite covers it.',
+      },
+    }
+    expect(checkHarnessCoveragePresent(withCoverage)).toBeNull()
+  })
+
+  test('ignores a non-probing role regardless of coverage', () => {
+    expect(checkHarnessCoveragePresent({ ...plannerOk, role: 'researcher' })).toBeNull()
+  })
+
+  test('ignores a probing role that has not reached ok status', () => {
+    expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'needs_decision' })).toBeNull()
+    expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'failed' })).toBeNull()
   })
 })
 
@@ -173,6 +251,13 @@ describe('role contracts', () => {
       .filter((c) => c.returnsVerdict)
       .map((c) => c.role)
     expect(verdictRoles.sort()).toEqual(['reviewer', 'verifier'])
+  })
+
+  test('only the planner probes harness coverage', () => {
+    const probingRoles = Object.values(ROLE_CONTRACTS)
+      .filter((c) => c.probesHarness)
+      .map((c) => c.role)
+    expect(probingRoles).toEqual(['planner'])
   })
 
   test('planner reads the proposal it is refining and the decisions that rejected the last one', () => {

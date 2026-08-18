@@ -3,6 +3,7 @@ import { type FormEvent, useState } from 'react'
 import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
 import { DecisionCard } from '../components/decision-card.tsx'
+import { HarnessBadge } from '../components/harness-badge.tsx'
 import { KickoffBrief } from '../components/kickoff-brief.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
@@ -470,6 +471,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <StatusChip status={detail.data.task.status} />
+              <HarnessBadge status={detail.data.task.harnessStatus} />
               <span className="font-mono text-xs text-muted">{detail.data.task.slug}</span>
             </div>
             <h1 className="mt-3 break-words text-3xl font-semibold tracking-tight sm:text-4xl">

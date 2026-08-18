@@ -12,6 +12,7 @@ const BASE: LedgerSnapshot = {
   baseBranch: 'main',
   status: 'research',
   harnessStatus: 'partial',
+  harnessEvidence: null,
   caps: { ...DEFAULT_CAPS },
   rounds: [],
   interventions: [],
@@ -166,5 +167,32 @@ describe('ledger', () => {
     })
 
     expect(ledger).toContain('[truncated: ledger exceeded 1024 bytes')
+  })
+
+  test('states a waived task’s coverage plainly, with its evidence in short form', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      harnessStatus: 'waived',
+      harnessEvidence: 'No\n  state-level suite   touches this path.',
+    })
+
+    expect(ledger).toContain('- Harness coverage: waived — No state-level suite touches this path.')
+  })
+
+  test('states coverage with no evidence suffix before any probe has run', () => {
+    const ledger = renderLedger(makeConfig(), { ...BASE, harnessStatus: 'unknown' })
+
+    expect(ledger).toContain('- Harness coverage: unknown')
+    expect(ledger).not.toContain('- Harness coverage: unknown —')
+  })
+
+  test('renders identically across two calls carrying the same evidence', () => {
+    const snapshot: LedgerSnapshot = {
+      ...BASE,
+      harnessStatus: 'missing',
+      harnessEvidence: 'Nothing exercises the reorg path end to end.',
+    }
+
+    expect(renderLedger(makeConfig(), snapshot)).toBe(renderLedger(makeConfig(), snapshot))
   })
 })

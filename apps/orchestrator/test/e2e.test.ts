@@ -632,4 +632,132 @@ describeDb('the loop against a real repository', () => {
       .where(and(eq(decisions.taskId, task.id), eq(decisions.status, 'open')))
     expect(stillOpen).toHaveLength(0)
   })
+
+  test('missing coverage: the brief carries the warning, discussing changes nothing, proceeding waives it and starts research with the waiver in its ledger — AC-1404, AC-1407, AC-1408, AC-1414, AC-1417', async () => {
+    const engine = makeEngine()
+    const task = await makeKickoffTask()
+    await queueModes(task, ['brief-complete-harness-gap', 'brief-complete-harness-gap'])
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+    expect((await reload(db, task.id)).harnessStatus).toBe('missing')
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const briefPath = join(
+      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
+      'openspec/changes',
+      task.slug,
+      'proposal.md',
+    )
+    const brief = await readFile(briefPath, 'utf8')
+    expect(brief).toContain('Harness gap:')
+
+    const [decision] = await db
+      .select()
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.taskId, task.id),
+          eq(decisions.nodeKey, 'human_kickoff_gate'),
+          eq(decisions.key, 'harness-coverage'),
+        ),
+      )
+    assert(decision)
+    expect(decision.status).toBe('open')
+    expect(decision.options.map((o) => o.id).sort()).toEqual(['cancel', 'proceed', 'split'])
+
+    // Discussing (or simply not yet answering) changes neither the decision nor the task.
+    expect((await reload(db, task.id)).harnessStatus).toBe('missing')
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      optionId: 'proceed',
+    })
+    expect((await reload(db, task.id)).harnessStatus).toBe('waived')
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const record = join(await tempDir('stub-record'), 'research-invocation.json')
+    await queueModes(task, ['ok'], { record })
+    await engine.approve(task.id, 'evgeny')
+    expect((await reload(db, task.id)).status).toBe('research')
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+    const invocation = JSON.parse(await readFile(record, 'utf8')) as { prompt: string }
+    expect(invocation.prompt).toContain('Harness coverage: waived')
+  })
+
+  test('split instead: a harness task is created, the original blocks, the harness task archives, the original re-enters planning and is classified again — AC-1411, AC-1412, AC-627', async () => {
+    const engine = makeEngine()
+    const task = await makeKickoffTask()
+    await queueModes(task, ['brief-complete-harness-gap', 'brief-complete-harness-gap'])
+
+    await walkOneStage(engine)
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const [decision] = await db
+      .select()
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.taskId, task.id),
+          eq(decisions.nodeKey, 'human_kickoff_gate'),
+          eq(decisions.key, 'harness-coverage'),
+          eq(decisions.status, 'open'),
+        ),
+      )
+    assert(decision)
+
+    await engine.answer({
+      taskId: task.id,
+      decisionId: decision.id,
+      actor: 'evgeny',
+      optionId: 'split',
+    })
+
+    const blocked = await reload(db, task.id)
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.blockedBy).toHaveLength(1)
+    const harnessTaskId = blocked.blockedBy[0]
+    assert(harnessTaskId)
+    created.push(harnessTaskId)
+    const [harnessTask] = await db.select().from(tasks).where(eq(tasks.id, harnessTaskId))
+    assert(harnessTask)
+    expect(harnessTask.description).toContain('No state-level suite exercises the redirect')
+
+    // The harness task's own walk through its pipeline is exercised by the
+    // other e2e cases in this file; here only its terminal transition
+    // matters, so it is placed at the final gate directly.
+    await db.update(tasks).set({ status: 'human_final_gate' }).where(eq(tasks.id, harnessTaskId))
+    await engine.approve(harnessTaskId, 'evgeny')
+    expect((await reload(db, harnessTaskId)).status).toBe('archived')
+
+    const released = await reload(db, task.id)
+    expect(released.status).toBe('planning')
+    expect(released.blockedBy).toEqual([])
+
+    await queueModes(task, ['brief-complete'])
+    await walkOneStage(engine)
+    const reclassified = await reload(db, task.id)
+    expect(reclassified.status).toBe('kickoff_brief')
+    expect(reclassified.harnessStatus).toBe('adequate')
+    const openAfterRelease = await db
+      .select()
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.taskId, task.id),
+          eq(decisions.nodeKey, 'human_kickoff_gate'),
+          eq(decisions.key, 'harness-coverage'),
+          eq(decisions.status, 'open'),
+        ),
+      )
+    expect(openAfterRelease).toEqual([])
+  })
 })

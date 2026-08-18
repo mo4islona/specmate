@@ -102,6 +102,65 @@ describe('checkBrief', () => {
   })
 })
 
+describe('checkBrief coverage rule', () => {
+  const WITH_GAP_WARNING = COMPLETE.replace(
+    '- Trade-offs: none',
+    '- Trade-offs: none\n- Harness gap: no state-level tests touch this path.',
+  )
+
+  test('adequate coverage never requires the warning, even silent', () => {
+    const result = checkBrief(COMPLETE, undefined, 'adequate')
+
+    expect(result.ok).toBe(true)
+    expect(result.coverageWarningMissing).toBe(false)
+  })
+
+  test('missing coverage and a silent brief fails, naming the gap', () => {
+    const result = checkBrief(COMPLETE, undefined, 'missing')
+
+    expect(result.ok).toBe(false)
+    expect(result.coverageWarningMissing).toBe(true)
+  })
+
+  test('missing coverage with the gap warning present passes', () => {
+    const result = checkBrief(WITH_GAP_WARNING, undefined, 'missing')
+
+    expect(result.ok).toBe(true)
+    expect(result.coverageWarningMissing).toBe(false)
+  })
+
+  test('partial coverage behaves the same as missing', () => {
+    expect(checkBrief(COMPLETE, undefined, 'partial').ok).toBe(false)
+    expect(checkBrief(WITH_GAP_WARNING, undefined, 'partial').ok).toBe(true)
+  })
+
+  test('unknown coverage always fails, warning or not', () => {
+    expect(checkBrief(COMPLETE, undefined, 'unknown').coverageUnknown).toBe(true)
+    expect(checkBrief(COMPLETE, undefined, 'unknown').ok).toBe(false)
+    expect(checkBrief(WITH_GAP_WARNING, undefined, 'unknown').ok).toBe(false)
+  })
+
+  test('the gap warning label is case-insensitive and needs no exact bullet placement', () => {
+    const reordered = COMPLETE.replace(
+      '- Risk: low, isolated to the redirect handler',
+      '- harness GAP: needs an integration test\n- Risk: low, isolated to the redirect handler',
+    )
+    expect(checkBrief(reordered, undefined, 'missing').ok).toBe(true)
+  })
+
+  test('the gap warning bullet is recognized even indented under a parent bullet', () => {
+    const indented = COMPLETE.replace(
+      '- Trade-offs: none',
+      '- Trade-offs: none\n  - Harness gap: needs an integration test',
+    )
+    expect(checkBrief(indented, undefined, 'missing').ok).toBe(true)
+  })
+
+  test('defaults to adequate when no coverage is supplied, unchanged from before this rule existed', () => {
+    expect(checkBrief(COMPLETE).ok).toBe(true)
+  })
+})
+
 describe('splitBriefSections', () => {
   test('keeps text before the first heading rather than dropping it', () => {
     const sections = splitBriefSections(`A stray title line.\n\n${COMPLETE}`)
