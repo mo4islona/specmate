@@ -604,6 +604,10 @@ export function createApp({
       const id = c.req.param('id')
       const task = await requireTask(id)
 
+      // Spend depends only on task.id, not on the graph/stages lookup below,
+      // so it runs alongside that sequential chain rather than after it.
+      const spendPromise = taskSpend(db, task.id)
+
       const [graph] = await db
         .select()
         .from(runGraphs)
@@ -617,7 +621,7 @@ export function createApp({
             .where(eq(stages.graphId, graph.id))
             .orderBy(asc(stages.nodeKey), asc(stages.attempt))
         : []
-      const spend = await taskSpend(db, task.id)
+      const spend = await spendPromise
 
       return c.json({
         task,
