@@ -3,6 +3,8 @@ import {
   Caps,
   ConversationSubjectConflictError,
   type DecisionInsert,
+  type DecisionOption,
+  type HarnessCoverageAssessment,
   instantiateDefinition,
   isUniqueViolation,
   nodeAt,
@@ -10,6 +12,7 @@ import {
   type PinnedGraph,
   type RecordedRound,
   type RoundToRecord,
+  renderHarnessGapPrompt,
   type TaskState,
   type TaskType,
 } from '@specmate/core'
@@ -23,6 +26,7 @@ import {
   events,
   iterations,
   runGraphs,
+  stages,
   type Task,
   tasks,
 } from '@specmate/db'
@@ -47,6 +51,18 @@ export class TaskNotFoundError extends Error {
     super(`task ${taskId} does not exist`)
     this.name = 'TaskNotFoundError'
   }
+}
+
+export class SelfDependencyError extends Error {
+  constructor(taskId: string) {
+    super(`task ${taskId} cannot be made to wait on itself`)
+    this.name = 'SelfDependencyError'
+  }
+}
+
+/** REQ-615: a task waiting on itself would never release. */
+export function assertNotSelfDependency(taskId: string, blockerTaskId: string): void {
+  if (taskId === blockerTaskId) throw new SelfDependencyError(taskId)
 }
 
 export interface CreateTaskInput {
@@ -423,6 +439,110 @@ async function attachToOpenDecision(
   })
 
   return { decision, created: false }
+}
+
+/**
+ * The coverage decision's fixed identity (REQ-1403): raised at `human_kickoff_gate` regardless
+ * of which probing node (`planning` or `kickoff_brief`) completed, so both attach to the same
+ * open record rather than raising two. `nodeKey` names where it belongs, not who raised it.
+ */
+export const COVERAGE_DECISION_NODE_KEY: TaskState = 'human_kickoff_gate'
+export const COVERAGE_DECISION_KEY = 'harness-coverage'
+
+export const COVERAGE_OPTIONS: readonly DecisionOption[] = [
+  { id: 'split', label: 'Build the harness first' },
+  { id: 'proceed', label: 'Proceed without it' },
+  { id: 'cancel', label: 'Cancel this task' },
+]
+
+/**
+ * REQ-1401, REQ-1403: the durable half of what a probing stage's result carries — the
+ * classification lands on the task, and a gap short of adequate gets (or keeps) an open
+ * decision offering the three-way choice. Idempotent across repeated probing completions
+ * (`planning` then `kickoff_brief`): `raiseDecision` attaches to the still-open record instead
+ * of duplicating it.
+ */
+export async function recordHarnessCoverage(
+  db: DbClient,
+  taskId: string,
+  stageId: string,
+  assessment: HarnessCoverageAssessment,
+): Promise<void> {
+  await db
+    .update(tasks)
+    .set({ harnessStatus: assessment.classification, updatedAt: new Date() })
+    .where(eq(tasks.id, taskId))
+
+  if (assessment.classification === 'adequate') {
+    await dismissCoverageDecision(db, taskId, 'system', 'reclassified')
+
+    return
+  }
+
+  await raiseDecision(db, taskId, stageId, {
+    nodeKey: COVERAGE_DECISION_NODE_KEY,
+    key: COVERAGE_DECISION_KEY,
+    kind: 'question',
+    promptMd: renderHarnessGapPrompt(assessment),
+    options: COVERAGE_OPTIONS,
+    blocking: false,
+  })
+}
+
+/** Resolves the open coverage decision, if any, without touching any other open decision. */
+export async function dismissCoverageDecision(
+  db: DbClient,
+  taskId: string,
+  actor: string,
+  cause: string,
+): Promise<void> {
+  const [dismissed] = await db
+    .update(decisions)
+    .set({ status: 'dismissed', answeredBy: actor, answeredAt: new Date() })
+    .where(
+      and(
+        eq(decisions.taskId, taskId),
+        eq(decisions.nodeKey, COVERAGE_DECISION_NODE_KEY),
+        eq(decisions.key, COVERAGE_DECISION_KEY),
+        eq(decisions.status, 'open'),
+      ),
+    )
+    .returning({ id: decisions.id, stageId: decisions.stageId })
+  if (!dismissed) return
+
+  await emitEvent(db, {
+    taskId,
+    stageId: dismissed.stageId ?? undefined,
+    type: 'decision.dismissed',
+    payload: {
+      decisionId: dismissed.id,
+      nodeKey: COVERAGE_DECISION_NODE_KEY,
+      key: COVERAGE_DECISION_KEY,
+      actor,
+      cause,
+    },
+  })
+}
+
+/**
+ * The evidence behind the task's current `harnessStatus` — read back from the
+ * most recent probing stage's own result (REQ-1401: data, never a task
+ * column re-deriving it) rather than parsed from any rendered prompt.
+ */
+export async function latestHarnessCoverage(
+  db: DbClient,
+  taskId: string,
+): Promise<HarnessCoverageAssessment | null> {
+  const [row] = await db
+    .select({ result: stages.result })
+    .from(stages)
+    .where(
+      and(eq(stages.taskId, taskId), sql`${stages.result} ->> 'harness_coverage' is not null`),
+    )
+    .orderBy(desc(stages.finishedAt))
+    .limit(1)
+
+  return row?.result?.harness_coverage ?? null
 }
 
 export interface EngineEvent {

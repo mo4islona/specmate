@@ -1,4 +1,4 @@
-import { type AgentRole, checkBrief, ROLE_CONTRACTS } from '@specmate/core'
+import { type AgentRole, checkBrief, type HarnessStatus, ROLE_CONTRACTS } from '@specmate/core'
 import type { Workspace } from '@specmate/workspace'
 import { readChangeFile } from './change-file.ts'
 import type { RunnerConfig } from './config.ts'
@@ -22,6 +22,8 @@ export async function checkBriefCompleteness(
   workspace: Workspace,
   role: AgentRole,
   getChangedPaths: () => Promise<readonly string[]>,
+  /** The task's recorded coverage at dispatch time; absent roles need not supply one. */
+  harnessStatus: HarnessStatus = 'adequate',
 ): Promise<BriefCompletenessOutcome> {
   if (!ROLE_CONTRACTS[role].checksProposalCompleteness) return { kind: 'not_applicable' }
 
@@ -35,13 +37,17 @@ export async function checkBriefCompleteness(
     return { kind: 'incomplete', detail: proposal.detail }
   }
 
-  const check = checkBrief(proposal.content, config.briefBytesLimit)
+  const check = checkBrief(proposal.content, config.briefBytesLimit, harnessStatus)
   if (check.ok) return { kind: 'ok' }
 
   const problems = [
     ...check.missing.map((heading) => `missing "${heading}"`),
     ...(check.bytes > check.ceilingBytes
       ? [`${check.bytes} bytes exceeds the ${check.ceilingBytes}-byte ceiling`]
+      : []),
+    ...(check.coverageUnknown ? ['harness coverage is not yet classified'] : []),
+    ...(check.coverageWarningMissing
+      ? [`coverage is ${harnessStatus} but Key Points carries no "Harness gap" warning`]
       : []),
   ]
 

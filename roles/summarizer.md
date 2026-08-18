@@ -24,7 +24,9 @@ actually showed, and what a reviewer should look at first. Name the decisions a 
 the way — they are the part nobody can reconstruct from the diff.
 
 Say what is not done. A summary that omits the deferred work, the waived harness, or the failing
-scenario is worse than no summary, because it is believed.
+scenario is worse than no summary, because it is believed. If the task ledger's harness coverage
+line reads `waived`, say plainly, in the outcome sentence or immediately after it, that the work
+was verified without a state-level harness — not buried as an aside.
 
 Where a diagram makes the change easier to grasp, include one — Mermaid, so it renders where
 this ends up.

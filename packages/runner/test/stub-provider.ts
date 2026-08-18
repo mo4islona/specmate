@@ -107,12 +107,28 @@ function role(): string {
   return process.env.SPECMATE_STUB_ROLE ?? 'researcher'
 }
 
+/**
+ * The stub's stand-in for a probe's assessment — every mode using `role()` as
+ * planner needs one to parse. `SPECMATE_STUB_HARNESS_CLASSIFICATION` lets a
+ * test drive the coverage rule without touching the brief content itself.
+ */
+const STUB_HARNESS_COVERAGE = {
+  classification: (process.env.SPECMATE_STUB_HARNESS_CLASSIFICATION ?? 'adequate') as
+    | 'adequate'
+    | 'partial'
+    | 'missing',
+  evidence_md: 'stub: an existing e2e suite covers this path.',
+}
+
 function validResult(): string {
+  const current = role()
+
   return JSON.stringify({
     schema_version: 1,
-    role: role(),
+    role: current,
     status: 'ok',
     notes_md: 'stub run',
+    ...(current === 'planner' ? { harness_coverage: STUB_HARNESS_COVERAGE } : {}),
   })
 }
 
@@ -206,6 +222,17 @@ const BRIEF_MD = [
   'Small; expected to take one iteration.',
   '',
 ].join('\n')
+
+/** Same as `BRIEF_MD`, but carrying the mandatory warning a short-of-adequate classification requires. */
+const BRIEF_MD_WITH_HARNESS_GAP = BRIEF_MD.replace(
+  '- Blast radius: login flow only',
+  '- Blast radius: login flow only\n- Harness gap: no state-level suite exercises the redirect end to end.',
+)
+
+const MISSING_HARNESS_COVERAGE = {
+  classification: 'missing' as const,
+  evidence_md: 'No state-level suite exercises the redirect end to end.',
+}
 
 switch (mode) {
   case 'conversation': {
@@ -320,7 +347,13 @@ switch (mode) {
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), BRIEF_MD)
     await writeResult(
-      JSON.stringify({ schema_version: 1, role: 'planner', status: 'ok', notes_md: 'stub run' }),
+      JSON.stringify({
+        schema_version: 1,
+        role: 'planner',
+        status: 'ok',
+        notes_md: 'stub run',
+        harness_coverage: STUB_HARNESS_COVERAGE,
+      }),
     )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
@@ -358,6 +391,30 @@ switch (mode) {
           },
         ],
         notes_md: 'stub brief with open questions',
+        harness_coverage: STUB_HARNESS_COVERAGE,
+      }),
+    )
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  case 'brief-complete-harness-gap': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), BRIEF_MD_WITH_HARNESS_GAP)
+    await writeResult(
+      JSON.stringify({
+        schema_version: 1,
+        role: 'planner',
+        status: 'ok',
+        artifacts_changed: [
+          {
+            path: `openspec/changes/${process.env.SPECMATE_STUB_SLUG}/proposal.md`,
+            kind: 'proposal',
+            op: 'modified',
+          },
+        ],
+        notes_md: 'stub brief carrying a harness gap warning',
+        harness_coverage: MISSING_HARNESS_COVERAGE,
       }),
     )
     await Bun.write(Bun.stdout, `${telemetry}\n`)

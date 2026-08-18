@@ -56,6 +56,8 @@ export interface RoleContract {
   readonly injectSpecSkill: boolean
   /** Result must carry a verdict — a review-shaped stage (reviewer, verifier). */
   readonly returnsVerdict: boolean
+  /** Result must carry a harness coverage assessment — the planner, which alone reads the repository. */
+  readonly probesHarness: boolean
   /** An approve verdict is cross-checked against committed evidence before it is accepted. */
   readonly corroborated: boolean
   /** A run that wrote the proposal has that proposal checked for the kickoff brief's required parts before it commits. */
@@ -72,6 +74,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: false,
     returnsVerdict: false,
+    probesHarness: true,
     corroborated: false,
     checksProposalCompleteness: true,
     defaultProvider: 'claude-code',
@@ -84,6 +87,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: true,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
@@ -96,6 +100,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: true,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
@@ -108,6 +113,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: true,
     injectSpecSkill: false,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'codex',
@@ -120,6 +126,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: true, // harness code ships in the same PR
     injectSpecSkill: false,
     returnsVerdict: true,
+    probesHarness: false,
     corroborated: true,
     checksProposalCompleteness: false,
     defaultProvider: 'codex',
@@ -132,6 +139,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: true,
     returnsVerdict: true,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'codex',
@@ -144,6 +152,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: true,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
@@ -156,6 +165,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: false,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'claude-code',
@@ -168,6 +178,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     writesCode: false,
     injectSpecSkill: false,
     returnsVerdict: false,
+    probesHarness: false,
     corroborated: false,
     checksProposalCompleteness: false,
     defaultProvider: 'claude-code',

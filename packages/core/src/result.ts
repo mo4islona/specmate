@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { CONVERSATION_ACTION_KINDS } from './conversations.ts'
+import { HarnessCoverageAssessment } from './harness.ts'
 import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
 import { TaskState } from './state.ts'
 
@@ -71,6 +72,8 @@ export const StageResult = z.object({
   /** Required from review-shaped stages (reviewer, verifier): it drives the loop edge. */
   verdict: ReviewVerdict.optional(),
   findings: z.array(ReviewFinding).default([]),
+  /** Required from a probing stage (planner): the classification `advance()` never derives from prose. */
+  harness_coverage: HarnessCoverageAssessment.optional(),
   /** Short human-facing note rendered in the chat timeline. */
   notes_md: z.string().default(''),
   usage: z
@@ -128,6 +131,9 @@ export function parseStageResult(raw: string): ParsedResult {
   const verdictError = checkVerdictPresent(parsed.data)
   if (verdictError) return { ok: false, error: verdictError, raw }
 
+  const harnessCoverageError = checkHarnessCoveragePresent(parsed.data)
+  if (harnessCoverageError) return { ok: false, error: harnessCoverageError, raw }
+
   const decisionsError = checkDecisionsPresent(parsed.data)
   if (decisionsError) return { ok: false, error: decisionsError, raw }
 
@@ -144,6 +150,21 @@ export function checkVerdictPresent(result: StageResult): string | null {
   if (result.verdict) return null
 
   return `${result.role} must return a verdict`
+}
+
+/**
+ * REQ-110: a probing role's coverage classification is the question this
+ * change makes load-bearing — silence must not read as "unknown" (already the
+ * task's own pre-planning default) or as "adequate". Gated on `status === 'ok'`
+ * because `planning`'s one blocking case — the request does not fit the
+ * repository — never classifies anything; it asks instead.
+ */
+export function checkHarnessCoveragePresent(result: StageResult): string | null {
+  if (!ROLE_CONTRACTS[result.role].probesHarness) return null
+  if (result.status !== 'ok') return null
+  if (result.harness_coverage) return null
+
+  return `${result.role} must return a harness coverage assessment`
 }
 
 /**

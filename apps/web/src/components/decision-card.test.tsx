@@ -71,6 +71,36 @@ describe('decision card', () => {
     expect(rendered).toContain('This repository')
   })
 
+  test('the coverage decision offers all three options and a discuss action — REQ-1403, AC-1407, AC-1417', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({
+          nodeKey: 'human_kickoff_gate',
+          key: 'harness-coverage',
+          blocking: false,
+          conversationId: 'conversation-1',
+          options: [
+            { id: 'split', label: 'Build the harness first' },
+            { id: 'proceed', label: 'Proceed without it' },
+            { id: 'cancel', label: 'Cancel this task' },
+          ],
+        })}
+        parkedOnThis={false}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+        onDiscuss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('Build the harness first')
+    expect(rendered).toContain('Proceed without it')
+    expect(rendered).toContain('Cancel this task')
+    expect(rendered).toContain('Discuss')
+    // Non-blocking: unlike a parked question, this never claims the task is stopped.
+    expect(rendered).not.toContain('stopped on this')
+  })
+
   test('a resolved decision shows its outcome and no answer controls', () => {
     const rendered = renderToStaticMarkup(
       <DecisionCard

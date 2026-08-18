@@ -408,8 +408,9 @@ export function canTransition(graph: PinnedGraph, from: TaskState, to: TaskState
   if (listed.includes(to)) return true
 
   // Entering an interrupt is a generic rule, not a graph edge: any non-terminal
-  // state can be parked, paused, or cancelled.
-  const entersInterrupt = to === 'waiting_human' || to === 'paused' || to === 'cancelled'
+  // state can be parked, paused, blocked on another task, or cancelled.
+  const entersInterrupt =
+    to === 'waiting_human' || to === 'paused' || to === 'blocked' || to === 'cancelled'
 
   return entersInterrupt && !isTerminal(from)
 }

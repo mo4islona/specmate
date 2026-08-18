@@ -217,11 +217,20 @@ export class StageExecutor {
     // Same posture as the write-scope check: after the run, before the outcome
     // is accepted and anything is committed. A no-op for a role the catalog
     // does not declare, and for a run that left the proposal untouched.
+    //
+    // The coverage comes from this attempt's own result, not the task's
+    // stored value: for `planning`, the stored value is still whatever an
+    // earlier attempt left (`unknown` on a fresh task) — this run is what
+    // determines it. `kickoff_brief` doesn't re-probe, so its own result
+    // carries the same classification the stored value already holds either
+    // way (§1401), and a role the catalog does not mark `probesHarness`
+    // carries none — `checkBrief` treats that as `adequate`, its default.
     const brief = await checkBriefCompleteness(
       config,
       request.workspace,
       request.role,
       getChangedPaths,
+      outcome.result.harness_coverage?.classification,
     )
     if (brief.kind === 'incomplete') {
       return {

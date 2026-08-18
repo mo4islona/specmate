@@ -481,6 +481,27 @@ describe('brief completeness', () => {
     expect(await commitCount(harness)).toBe(before + 1)
   })
 
+  test('fails a complete-otherwise brief that stays silent about missing coverage, and commits nothing', async () => {
+    const harness = await makeHarness('brief-coverage-silent')
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(
+      harness,
+      {
+        SPECMATE_STUB_MODE: 'brief-complete',
+        SPECMATE_STUB_ROLE: 'planner',
+        SPECMATE_STUB_HARNESS_CLASSIFICATION: 'missing',
+      },
+      { rolesDir: await plannerRolesDir() },
+    ).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('incomplete_brief')
+    expect(execution.detail).toContain('Harness gap')
+    expect(await commitCount(harness)).toBe(before)
+  })
+
   test('a researcher rewriting the proposal into a full proposal passes the executor unchanged', async () => {
     const harness = await makeHarness('researcher-proposal')
     await harness.commitAll('baseline')
