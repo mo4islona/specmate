@@ -1,0 +1,211 @@
+import type { WorkspaceConfig } from './config.ts'
+import type { Git } from './git.ts'
+import { withMirrorLock } from './lock.ts'
+import { ensureMirror, resolveBaseCommit } from './mirror.ts'
+import { mirrorPath, taskBranch } from './paths.ts'
+
+export class TaskBranchMissingError extends Error {
+  constructor(
+    readonly repoUrl: string,
+    readonly branch: string,
+  ) {
+    super(`branch "${branch}" does not exist on ${repoUrl}`)
+    this.name = 'TaskBranchMissingError'
+  }
+}
+
+export interface TaskDiffRange {
+  readonly mirror: string
+  /** Merge-base of the task branch and the base branch's current tip. */
+  readonly base: string
+  readonly tip: string
+}
+
+export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'type-changed'
+
+export interface DiffFile {
+  readonly path: string
+  readonly status: DiffFileStatus
+  /** `null` for a binary file, which `git diff --numstat` reports as `-`. */
+  readonly additions: number | null
+  readonly deletions: number | null
+}
+
+const STATUS_LETTERS: Record<string, DiffFileStatus> = {
+  A: 'added',
+  M: 'modified',
+  D: 'deleted',
+  T: 'type-changed',
+}
+
+/**
+ * Resolves the same merge-base + branch-tip pair `renderDiff`
+ * (`packages/runner/src/prompt.ts`) computes from a live worktree, but reads
+ * the mirror's refs directly — no checkout required, so this works whether or
+ * not the task's own worktree currently exists (REQ-1013/AC-1037).
+ */
+export async function resolveTaskDiffRange(
+  git: Git,
+  config: WorkspaceConfig,
+  task: { readonly repoUrl: string; readonly baseBranch: string; readonly slug: string },
+): Promise<TaskDiffRange> {
+  const mirror = mirrorPath(config, task.repoUrl)
+
+  return withMirrorLock(
+    mirror,
+    { heartbeatMs: config.lockHeartbeatMs, staleMs: config.lockStaleMs, waitMs: config.lockWaitMs },
+    async () => {
+      await ensureMirror(git, config, task.repoUrl)
+      const branch = taskBranch(task.slug)
+      const [tip, baseTip] = await Promise.all([
+        git.tryInMirror(mirror, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]),
+        resolveBaseCommit(git, mirror, task.repoUrl, task.baseBranch),
+      ])
+      if (tip.exitCode !== 0 || !tip.stdout.trim()) {
+        throw new TaskBranchMissingError(task.repoUrl, branch)
+      }
+
+      const mergeBase = await git.inMirror(mirror, ['merge-base', tip.stdout.trim(), baseTip])
+
+      return { mirror, base: mergeBase.stdout.trim(), tip: tip.stdout.trim() }
+    },
+  )
+}
+
+/**
+ * Files-changed list for a task, excluding its own OpenSpec change folder —
+ * the same split `renderDiff` draws, since change-folder diffing belongs to
+ * the separate `artifact-diff-view` change.
+ */
+export async function taskFilesChanged(
+  git: Git,
+  range: TaskDiffRange,
+  excludeChangeDir: string,
+): Promise<DiffFile[]> {
+  if (range.base === range.tip) return []
+
+  const pathspec = ['--', '.', `:(exclude)${excludeChangeDir}`]
+  const [numstat, nameStatus] = await Promise.all([
+    git.inMirror(range.mirror, [
+      'diff',
+      '--no-renames',
+      '--numstat',
+      '-z',
+      range.base,
+      range.tip,
+      ...pathspec,
+    ]),
+    git.inMirror(range.mirror, [
+      'diff',
+      '--no-renames',
+      '--name-status',
+      '-z',
+      range.base,
+      range.tip,
+      ...pathspec,
+    ]),
+  ])
+
+  const counts = parseNumstat(numstat.stdout)
+
+  return parseNameStatus(nameStatus.stdout).map((entry) => {
+    const count = counts.get(entry.path)
+
+    return {
+      path: entry.path,
+      status: STATUS_LETTERS[entry.status] ?? 'modified',
+      additions: count?.additions ?? null,
+      deletions: count?.deletions ?? null,
+    }
+  })
+}
+
+/**
+ * The unified diff for one file, as of the task branch's current tip.
+ *
+ * `:(literal)` stops git reading `path` as a glob, but a directory-shaped
+ * value (`.`, `src`, `src/`) still matches every file under it even in
+ * literal mode — that is prefix matching, a separate pathspec behaviour
+ * `:(literal)` does not turn off. So the pathspec is checked against
+ * `--numstat` first, and only a match of exactly `path` and nothing else is
+ * fetched as a patch; anything broader is treated as no match.
+ */
+export async function taskFileDiff(
+  git: Git,
+  range: TaskDiffRange,
+  path: string,
+  excludeChangeDir: string,
+): Promise<string> {
+  if (range.base === range.tip) return ''
+
+  const pathspec = ['--', `:(literal)${path}`, `:(exclude)${excludeChangeDir}`]
+  const numstat = await git.inMirror(range.mirror, [
+    'diff',
+    '--no-renames',
+    '--numstat',
+    '-z',
+    range.base,
+    range.tip,
+    ...pathspec,
+  ])
+  const matched = [...parseNumstat(numstat.stdout).keys()]
+  if (matched.length !== 1 || matched[0] !== path) return ''
+
+  const result = await git.inMirror(range.mirror, [
+    'diff',
+    '--no-renames',
+    range.base,
+    range.tip,
+    ...pathspec,
+  ])
+
+  return result.stdout
+}
+
+/**
+ * `--numstat -z`: `<added>\t<removed>\t<path>` per NUL-terminated record.
+ * Only the first two tabs are structural — a path itself may contain one —
+ * so counts and deletions are read up to them and everything after is path.
+ */
+function parseNumstat(
+  raw: string,
+): Map<string, { additions: number | null; deletions: number | null }> {
+  const counts = new Map<string, { additions: number | null; deletions: number | null }>()
+  for (const record of raw.split('\0').filter(Boolean)) {
+    const firstTab = record.indexOf('\t')
+    const secondTab = record.indexOf('\t', firstTab + 1)
+    if (firstTab === -1 || secondTab === -1) continue
+
+    const addedRaw = record.slice(0, firstTab)
+    const removedRaw = record.slice(firstTab + 1, secondTab)
+    const path = record.slice(secondTab + 1)
+    if (!path) continue
+
+    counts.set(path, {
+      additions: addedRaw === '-' ? null : Number(addedRaw),
+      deletions: removedRaw === '-' ? null : Number(removedRaw),
+    })
+  }
+
+  return counts
+}
+
+/**
+ * `--name-status -z`: unlike `--numstat -z`, this NUL-terminates every field,
+ * not just the record — so the stream is a flat `status, path, status, path,
+ * ...` sequence, read two tokens at a time (never three: `--no-renames`
+ * guarantees no rename/copy entry with an extra old-path token).
+ */
+function parseNameStatus(raw: string): { status: string; path: string }[] {
+  const tokens = raw.split('\0').filter((token) => token.length > 0)
+  const entries: { status: string; path: string }[] = []
+  for (let i = 0; i < tokens.length; i += 2) {
+    const status = tokens[i]
+    const path = tokens[i + 1]
+    if (!status || !path) continue
+
+    entries.push({ status: status[0] ?? 'M', path })
+  }
+
+  return entries
+}

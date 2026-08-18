@@ -3,6 +3,7 @@ import { AppShell } from './components/app-shell.tsx'
 import { SecretGate } from './components/secret-gate.tsx'
 import { ArtifactsScreen } from './screens/artifacts-screen.tsx'
 import { AttentionScreen } from './screens/attention-screen.tsx'
+import { FilesChangedScreen } from './screens/files-changed-screen.tsx'
 import { NewTaskScreen } from './screens/new-task-screen.tsx'
 import { TaskScreen } from './screens/task-screen.tsx'
 
@@ -18,6 +19,9 @@ export function App() {
           </Route>
           <Route path="/tasks/:taskId/artifacts">
             {(params) => <ArtifactsScreen taskId={params.taskId} />}
+          </Route>
+          <Route path="/tasks/:taskId/diff">
+            {(params) => <FilesChangedScreen taskId={params.taskId} />}
           </Route>
           <Route path="/tasks/:taskId">{(params) => <TaskScreen taskId={params.taskId} />}</Route>
           <Route>

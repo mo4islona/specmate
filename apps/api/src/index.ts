@@ -28,7 +28,7 @@ const gates = new Engine({
   },
   log: (message) => console.info(message),
 })
-const app = createApp({ db, config, gates })
+const app = createApp({ db, config, gates, workspace: workspaceService })
 
 const server = Bun.serve({
   port: config.API_PORT,

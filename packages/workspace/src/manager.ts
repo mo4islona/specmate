@@ -4,7 +4,7 @@ import type { AgentRole, ProviderId } from '@specmate/core'
 import { resolveWorkspaceConfig, type WorkspaceConfig, type WorkspaceOptions } from './config.ts'
 import { isDirectory, pathExists } from './fs.ts'
 import { Git } from './git.ts'
-import { withDiskLock, withKeyedMutex } from './lock.ts'
+import { withMirrorLock as lockMirror } from './lock.ts'
 import { ensureExcludes, ensureMirror, resolveBaseCommit } from './mirror.ts'
 import {
   changeDir,
@@ -241,16 +241,14 @@ export class WorkspaceManager {
   }
 
   private withMirrorLock<T>(mirror: string, fn: () => Promise<T>): Promise<T> {
-    return withKeyedMutex(mirror, () =>
-      withDiskLock(
-        `${mirror}.lock`,
-        {
-          heartbeatMs: this.config.lockHeartbeatMs,
-          staleMs: this.config.lockStaleMs,
-          waitMs: this.config.lockWaitMs,
-        },
-        fn,
-      ),
+    return lockMirror(
+      mirror,
+      {
+        heartbeatMs: this.config.lockHeartbeatMs,
+        staleMs: this.config.lockStaleMs,
+        waitMs: this.config.lockWaitMs,
+      },
+      fn,
     )
   }
 

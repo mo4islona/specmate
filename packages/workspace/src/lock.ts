@@ -96,6 +96,15 @@ export async function withDiskLock<T>(
   }
 }
 
+/** Composes the in-process and cross-process locks every mirror-touching operation shares. */
+export function withMirrorLock<T>(
+  mirror: string,
+  options: DiskLockOptions,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withKeyedMutex(mirror, () => withDiskLock(`${mirror}.lock`, options, fn))
+}
+
 async function readHolder(holderPath: string): Promise<Holder | null> {
   try {
     return JSON.parse(await readFile(holderPath, 'utf8')) as Holder
