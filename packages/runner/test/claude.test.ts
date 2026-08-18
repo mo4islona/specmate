@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { StageJob } from '@specmate/core'
+import type { StageActivity, StageJob } from '@specmate/core'
 import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
 import {
   ClaudeCodeProvider,
+  parseActivityLine,
   readStageTelemetry,
   readTelemetry,
   type StageRunError,
@@ -59,13 +60,20 @@ describe('provider invocation', () => {
     expect(claude.argv('implementer')).not.toContain('--disallowedTools')
   })
 
-  test('pins the model and runs headless', () => {
+  test('pins the model and runs headless with streaming output', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     const argv = provider('ok', harness).argv('researcher')
 
     expect(argv).toContain('-p')
     expect(argv[argv.indexOf('--model') + 1]).toBe('claude-opus-5')
-    expect(argv[argv.indexOf('--output-format') + 1]).toBe('json')
+    expect(argv[argv.indexOf('--output-format') + 1]).toBe('stream-json')
+  })
+
+  test('pairs --output-format stream-json with --verbose, which the CLI requires under -p', () => {
+    const harness = { workspace: { slug: 'x' } } as Harness
+    const argv = provider('ok', harness).argv('researcher')
+
+    expect(argv).toContain('--verbose')
   })
 
   test('delivers the prompt on stdin and keeps it in the scratch directory', async () => {
@@ -179,6 +187,25 @@ describe('telemetry parsing', () => {
     expect(readTelemetry('')).toEqual({})
   })
 
+  test('reads a stream-json transcript, taking the last result-shaped line and ignoring the rest', () => {
+    const stdout = [
+      JSON.stringify({ type: 'system', subtype: 'init' }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }),
+      JSON.stringify({
+        type: 'result',
+        total_cost_usd: 1.5,
+        usage: { input_tokens: 10, output_tokens: 20 },
+      }),
+      '',
+    ].join('\n')
+
+    expect(readTelemetry(stdout)).toEqual({
+      input_tokens: 10,
+      output_tokens: 20,
+      cost_usd: 1.5,
+    })
+  })
+
   test('the stage record carries the served model, token kinds, cost, and the raw envelope', () => {
     const envelope = {
       type: 'result',
@@ -236,5 +263,110 @@ describe('telemetry parsing', () => {
       'specmate.node': 'research',
       'specmate.attempt': '2',
     })
+  })
+})
+
+describe('activity line parsing', () => {
+  test('a file-editing tool use names the tool and the file (AC-226)', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'Edit', input: { file_path: 'a.ts' } }],
+      },
+    })
+
+    expect(parseActivityLine(line)).toEqual([{ tool: 'Edit', target: 'a.ts' }])
+  })
+
+  test('one assistant turn can report more than one tool use', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Two things.' },
+          { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+          { type: 'tool_use', name: 'Bash', input: { command: 'bun test' } },
+        ],
+      },
+    })
+
+    expect(parseActivityLine(line)).toEqual([
+      { tool: 'Read', target: 'a.ts' },
+      { tool: 'Bash', target: 'bun test' },
+    ])
+  })
+
+  test('a tool use with no known target field reads as the tool alone', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'tool_use', name: 'TodoWrite', input: {} }] },
+    })
+
+    expect(parseActivityLine(line)).toEqual([{ tool: 'TodoWrite', target: '' }])
+  })
+
+  test('unrecognized CLI output produces no activity (AC-227)', () => {
+    const shapes = [
+      JSON.stringify({ type: 'system', subtype: 'init' }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }),
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1' }] },
+      }),
+      JSON.stringify({ type: 'result', total_cost_usd: 1 }),
+      'not json at all',
+      '{ this is not valid json',
+      '',
+    ]
+
+    for (const shape of shapes) {
+      expect(parseActivityLine(shape)).toEqual([])
+    }
+  })
+})
+
+describe('live activity', () => {
+  test('collects each recognized tool use, attributed via the job callback, in order', async () => {
+    const harness = await makeHarness('activity')
+    const claude = provider('activity', harness)
+    const seen: StageActivity[] = []
+
+    const outcome = await claude.run(
+      job(harness, { onActivity: (activity) => seen.push(activity) }),
+    )
+
+    expect(outcome.result.status).toBe('ok')
+    expect(seen).toEqual([
+      { tool: 'Read', target: 'a.ts' },
+      { tool: 'Edit', target: 'a.ts' },
+    ])
+  })
+
+  test('a run with no onActivity callback runs exactly as before', async () => {
+    const harness = await makeHarness('activity-no-callback')
+    const claude = provider('activity', harness)
+
+    const outcome = await claude.run(job(harness))
+
+    expect(outcome.result.status).toBe('ok')
+  })
+
+  test('unparseable streaming output leaves the stage standing, without activity (AC-228)', async () => {
+    const harness = await makeHarness('activity-garbled')
+    const claude = provider('activity-garbled', harness)
+    const seen: StageActivity[] = []
+
+    const outcome = await claude.run(
+      job(harness, { onActivity: (activity) => seen.push(activity) }),
+    )
+
+    expect(outcome.result.status).toBe('ok')
+    // The stub's noise precedes a valid trailing transcript; only that part parses.
+    expect(seen).toEqual([
+      { tool: 'Read', target: 'a.ts' },
+      { tool: 'Edit', target: 'a.ts' },
+    ])
   })
 })

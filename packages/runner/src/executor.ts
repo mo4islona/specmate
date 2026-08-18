@@ -3,6 +3,7 @@ import {
   type AgentRole,
   type ProviderId,
   ROLE_CONTRACTS,
+  type StageActivity,
   type StageJob,
   type StageResult,
   type StageTelemetry,
@@ -65,6 +66,13 @@ export interface StageExecution {
   readonly telemetry?: StageTelemetry | null
 }
 
+/** A recognized tool use, attributed to the stage attempt it came from. */
+export interface StageActivityEvent extends StageActivity {
+  readonly taskId: string
+  readonly stageId: string
+  readonly attempt: number
+}
+
 export interface StageExecutorDeps {
   readonly config: RunnerConfig
   readonly provider: AgentProvider
@@ -73,6 +81,8 @@ export interface StageExecutorDeps {
   readonly ledger: LedgerSource
   /** Production orchestration owns the commit/stop race under its task lock. */
   readonly deferCommit?: boolean
+  /** Durably records a running attempt's activity — the orchestrator's own event log. */
+  readonly onActivity?: (event: StageActivityEvent) => void
 }
 
 /**
@@ -139,7 +149,7 @@ export class StageExecutor {
     commitDeferred?: boolean
     telemetry?: StageTelemetry | null
   }> {
-    const { config, provider, git, workspaces, ledger: loadLedger } = this.deps
+    const { config, provider, git, workspaces, ledger: loadLedger, onActivity } = this.deps
     const ledger = await loadLedger(request.taskId)
     const prompt = await assemblePrompt(git, config, {
       role: request.role,
@@ -161,6 +171,10 @@ export class StageExecutor {
       environment: request.environment,
       timeoutMs: config.stageTimeoutMs,
       attempt,
+      onActivity: onActivity
+        ? (activity) =>
+            onActivity({ ...activity, taskId: request.taskId, stageId: request.stageId, attempt })
+        : undefined,
     }
 
     let outcome: Awaited<ReturnType<AgentProvider['run']>>

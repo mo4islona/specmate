@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import type { ExecSpec } from '../src/backend.ts'
+import { type ExecSpec, LineBuffer } from '../src/backend.ts'
 import {
   DOCKER_SOCKET,
   DockerBackend,
@@ -226,6 +226,47 @@ describe('runner image pinning', () => {
         ]),
       ),
     ).toBe(`sha256:${digest}`)
+  })
+})
+
+describe('LineBuffer', () => {
+  test('emits one complete line at a time, in order', () => {
+    const lines: string[] = []
+    const buffer = new LineBuffer()
+
+    buffer.push('first\nsecond\nthird\n', (line) => lines.push(line))
+
+    expect(lines).toEqual(['first', 'second', 'third'])
+  })
+
+  test('holds a line split across two pushes until it completes, dropping nothing and doubling nothing', () => {
+    const lines: string[] = []
+    const buffer = new LineBuffer()
+
+    buffer.push('{"type":"assis', (line) => lines.push(line))
+    buffer.push('tant"}\n{"type":"result"}\n', (line) => lines.push(line))
+
+    expect(lines).toEqual(['{"type":"assistant"}', '{"type":"result"}'])
+  })
+
+  test('flush emits a trailing line that never got its newline', () => {
+    const lines: string[] = []
+    const buffer = new LineBuffer()
+
+    buffer.push('incomplete', (line) => lines.push(line))
+    buffer.flush((line) => lines.push(line))
+
+    expect(lines).toEqual(['incomplete'])
+  })
+
+  test('flush after a clean trailing newline emits nothing extra', () => {
+    const lines: string[] = []
+    const buffer = new LineBuffer()
+
+    buffer.push('one\n', (line) => lines.push(line))
+    buffer.flush((line) => lines.push(line))
+
+    expect(lines).toEqual(['one'])
   })
 })
 

@@ -46,9 +46,15 @@ export function useTaskStream(taskId: string): StreamConnectionState {
         queryClient.setQueryData<EventsCache>(queryKeys.events(taskId), (current) => ({
           events: mergeTimelineEvents(current?.events ?? [], event),
         }))
-        void queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) })
-        void queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
-        void queryClient.invalidateQueries({ queryKey: queryKeys.attention })
+        // stage.activity fires many times a second during a tool-heavy stage
+        // and changes nothing about the task's own state — the timeline cache
+        // above is all it needs. Invalidating task/tasks/attention on every
+        // one would refetch across unrelated screens for no reason.
+        if (event.type !== 'stage.activity') {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) })
+          void queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
+          void queryClient.invalidateQueries({ queryKey: queryKeys.attention })
+        }
         if (event.type.startsWith('conversation.')) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.conversations(taskId) })
         }
