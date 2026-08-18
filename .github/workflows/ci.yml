@@ -45,6 +45,13 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       DATABASE_URL: postgres://specmate:specmate@localhost:5432/specmate_test
+      # Each of the ~14 test files that touch the database opens its own
+      # pool; at the default max (10) that overruns this service container's
+      # default max_connections (100) once enough files' pools stay open at
+      # once. 3 leaves room for the tests that need genuine concurrency
+      # (e.g. store.test.ts's "two concurrent raisers") while staying well
+      # under the ceiling.
+      DATABASE_POOL_MAX: '3'
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
