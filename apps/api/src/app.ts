@@ -29,7 +29,7 @@ import {
   tasks,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
-import { createTask } from '@specmate/orchestrator/store'
+import { createTask, taskSpend } from '@specmate/orchestrator/store'
 import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
@@ -170,6 +170,9 @@ const GATE_CONFLICT_ERRORS = new Set([
   'DecisionNotOpenError',
   'NoResumeStateError',
   'CoverageDecisionRequiresOptionError',
+  'BudgetDecisionRequiresOptionError',
+  'BudgetRaiseTooLowError',
+  'NotParkedError',
 ])
 
 const OWNER_ACTOR = 'owner'
@@ -334,6 +337,12 @@ export function createApp({
         throw new ApiError('not_found', error.message, { status: 404 })
       }
       if (error instanceof Error && error.name === 'DecisionAnswerEmptyError') {
+        throw new ApiError('validation', error.message, {
+          status: 400,
+          fields: { text: [error.message] },
+        })
+      }
+      if (error instanceof Error && error.name === 'BudgetRaiseValueError') {
         throw new ApiError('validation', error.message, {
           status: 400,
           fields: { text: [error.message] },
@@ -608,8 +617,14 @@ export function createApp({
             .where(eq(stages.graphId, graph.id))
             .orderBy(asc(stages.nodeKey), asc(stages.attempt))
         : []
+      const spend = await taskSpend(db, task.id)
 
-      return c.json({ task, graph: graph ?? null, stages: taskStages.map(serializeStage) })
+      return c.json({
+        task,
+        graph: graph ?? null,
+        stages: taskStages.map(serializeStage),
+        spend,
+      })
     })
 
     .get('/tasks/:id/artifacts', async (c) => {

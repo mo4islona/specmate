@@ -121,6 +121,31 @@ describe('decision card', () => {
     expect(rendered).not.toContain('<textarea')
   })
 
+  test('the budget decision offers a value input per raise option and no free-text answer or dismiss — REQ-1503, REQ-1504', () => {
+    const rendered = renderToStaticMarkup(
+      <DecisionCard
+        decision={decision({
+          nodeKey: 'paused',
+          key: 'budget-exhausted',
+          options: [
+            { id: 'raise:max_cost_usd', label: 'Raise the cost budget' },
+            { id: 'cancel', label: 'Cancel this task' },
+          ],
+        })}
+        parkedOnThis={true}
+        onAnswerOption={noop}
+        onAnswerText={noop}
+        onDismiss={noop}
+      />,
+    )
+
+    expect(rendered).toContain('Raise the cost budget')
+    expect(rendered).toContain('Cancel this task')
+    expect(rendered).toContain('New value for Raise the cost budget')
+    expect(rendered).not.toContain('<textarea')
+    expect(rendered).not.toContain('Dismiss')
+  })
+
   test('a dismissed decision reads as dismissed, not answered', () => {
     const rendered = renderToStaticMarkup(
       <DecisionCard

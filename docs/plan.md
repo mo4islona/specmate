@@ -444,8 +444,28 @@ wiki (git repo; the Phase-6 MkDocs site renders this + every repo's archived spe
   ops map and the read tools; the spawned fix task passes the Phase-1 e2e.
 
 ### Phase 5 — Multi-provider (week 8)
-- Codex + Copilot runner images, `AgentProvider` adapters, cross-provider review policy, provider presets in the New-task form, per-provider cost accounting.
-- **Exit**: "Claude writes / Codex reviews" and the inverse both pass the Phase-1 e2e task.
+- Codex + Copilot runner images, `AgentProvider` adapters, cross-provider review policy.
+- **Provider/model/reasoning-effort binding, not just provider.** `ROLE_CONTRACTS.defaultProvider`
+  (currently the only knob, and dead in practice since `availableProviders` lists one entry) is
+  replaced by an explicit per-role default — `provider` + optional `model` + optional
+  `reasoningEffort` — that a task can override. Same shape and the same "resolved at creation,
+  not merged at read time" rule already used for `caps`/`budgets` (§7): a `providerBindings`
+  column on `tasks`, a zod schema with per-field defaults, `.parse(input.providerBindings ?? {})`
+  at creation. `model`/`reasoningEffort` move from `RunnerConfig` (one value per runner process)
+  to `StageJob` (one value per stage) so different roles on the same task can run different
+  models.
+- Per-provider cost accounting; provider/model defaults and per-task overrides exposed in the UI.
+- **Non-goals for this phase**: no planner-authored routing proposal at kickoff — that is a later
+  extension on top of `kickoff-brief`, once this exists to extend. No quota/weekly-limit-aware
+  automatic routing — there is no source of truth for remaining provider quota yet, so routing
+  stays a human-set default/override, not a computed one (Phase 7 revisits this once
+  subscription-pool accounting has a source, and can feed it into these same bindings).
+- Cross-provider review (REQ-106) stays a provider-level check in this phase — whether two
+  different models from the *same* provider count as independent review is an open question,
+  deliberately not decided here.
+- **Exit**: "Claude writes / Codex reviews" and the inverse both pass the Phase-1 e2e task; a task
+  created with an explicit provider/model override for one role runs that role under the
+  override while the rest of the task uses defaults.
 
 ### Phase 6 — Publishing & summary polish (week 9)
 - Summarizer role with D2 diagram generation (SVG pre-render in publish job; Mermaid variant for PR descriptions), PR description autogen.
@@ -455,7 +475,7 @@ wiki (git repo; the Phase-6 MkDocs site renders this + every repo's archived spe
 ### Phase 7 — Hardening & mobile notifications (week 10)
 - Auth watchdog, backups, egress allowlist, secret handling audit, load test with 5–10 concurrent tasks.
 - iPhone push: ntfy/Pushover sink (or PWA web push) wired to open Decisions and budget-exhaustion events.
-- Subscription-credit accounting in budget caps: pause tasks (with a push) when the monthly Agent SDK credit pool nears exhaustion, never fail silently.
+- Subscription-credit accounting in budget caps: pause tasks (with a push) when the monthly Agent SDK credit pool nears exhaustion, never fail silently. This is the source of truth Phase 5's provider/model bindings lacked — once it exists, routing can read remaining quota per provider instead of relying only on a human-set override.
 - **Exit**: kill -9 anything and the system recovers; an open Decision buzzes the phone within seconds.
 
 ### Phase 8+ — Later

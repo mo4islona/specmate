@@ -93,3 +93,8 @@ the boundary and therefore always available.
   on — which is exactly why the agent-minutes cap exists.
 - **No automatic budget raises.** Every raise is the owner's answer to a decision, with an
   explicit amount.
+- **No provider/model routing.** Which provider, model, or reasoning effort runs a role is a
+  separate, orthogonal concern (a future `providerBindings` per-task config, mirroring `budgets`
+  and `caps` — Phase 5 in the roadmap). Spend here is summed from `cost.costUsd` and duration on
+  the attempt rows regardless of what produced them, so this change assumes no single provider
+  and needs no change when routing becomes configurable.

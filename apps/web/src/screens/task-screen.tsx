@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
+import { BudgetPanel } from '../components/budget-panel.tsx'
 import { DecisionCard } from '../components/decision-card.tsx'
 import { HarnessBadge } from '../components/harness-badge.tsx'
 import { KickoffBrief } from '../components/kickoff-brief.tsx'
@@ -328,8 +329,15 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     onSuccess: refreshTask,
   })
   const answerOption = useMutation({
-    mutationFn: ({ decisionId, optionId }: { decisionId: string; optionId: string }) =>
-      answerDecision(decisionId, { optionId }),
+    mutationFn: ({
+      decisionId,
+      optionId,
+      value,
+    }: {
+      decisionId: string
+      optionId: string
+      value?: string
+    }) => answerDecision(decisionId, value ? { optionId, text: value } : { optionId }),
     onMutate: ({ decisionId }) => markDecisionPending(decisionId),
     onSuccess: async (_data, { decisionId }) => {
       markDecisionSettled(decisionId)
@@ -597,7 +605,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               const parkedOnThis =
                 decision.status === 'open' &&
                 decision.blocking &&
-                detail.data.task.status === 'waiting_human'
+                (detail.data.task.status === 'waiting_human' ||
+                  detail.data.task.status === 'paused')
 
               return (
                 <DecisionCard
@@ -606,8 +615,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
                   parkedOnThis={parkedOnThis}
                   busy={decisionBusy(decision.id)}
                   error={decisionError(decision.id)}
-                  onAnswerOption={(optionId) =>
-                    answerOption.mutate({ decisionId: decision.id, optionId })
+                  onAnswerOption={(optionId, value) =>
+                    answerOption.mutate({ decisionId: decision.id, optionId, value })
                   }
                   onAnswerText={(text) => answerText.mutate({ decisionId: decision.id, text })}
                   onDismiss={() => dismiss.mutate(decision.id)}
@@ -693,6 +702,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
           {restart.error && <p className="field-error mt-3">{restart.error.message}</p>}
         </section>
       )}
+
+      <BudgetPanel budgets={detail.data.task.budgets} spend={detail.data.spend} />
 
       {detail.data.graph && (
         <section className="panel p-4 sm:p-5">

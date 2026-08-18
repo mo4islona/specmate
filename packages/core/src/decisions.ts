@@ -1,3 +1,4 @@
+import type { BudgetKey, Spend } from './budgets.ts'
 import type { LoopKind } from './pipeline.ts'
 import {
   type DecisionKind,
@@ -6,7 +7,7 @@ import {
   type ReviewVerdict,
   renderFindingBullets,
 } from './result.ts'
-import type { TaskState } from './state.ts'
+import type { Budgets, TaskState } from './state.ts'
 
 export const DECISION_STATUSES = ['open', 'answered', 'dismissed'] as const
 export type DecisionStatus = (typeof DECISION_STATUSES)[number]
@@ -122,6 +123,75 @@ function escalationPrompt(input: EscalationInput): string {
       return `Finding \`${input.finding.id}\` at ${input.nodeKey} repeated across rounds ${rounds} of the ${input.loop} loop without resolving.`
     }
   }
+}
+
+/**
+ * REQ-1503: the engine-raised decision offering to raise an exhausted budget or
+ * cancel — a `human_kickoff_gate`-style pipeline node never applies here, since
+ * exhaustion pauses a task wherever it was, so the identity lives at `paused`.
+ */
+export const BUDGET_DECISION_NODE_KEY: TaskState = 'paused'
+export const BUDGET_DECISION_KEY = 'budget-exhausted'
+export const BUDGET_DECISION_CANCEL_OPTION = 'cancel'
+
+export function budgetRaiseOptionId(budget: BudgetKey): string {
+  return `raise:${budget}`
+}
+
+/** The budget a raise option targets, or null for any other option id (including `cancel`). */
+export function budgetFromRaiseOption(optionId: string): BudgetKey | null {
+  if (optionId === budgetRaiseOptionId('max_cost_usd')) return 'max_cost_usd'
+  if (optionId === budgetRaiseOptionId('max_wall_clock_minutes')) return 'max_wall_clock_minutes'
+
+  return null
+}
+
+const BUDGET_LABELS: Record<BudgetKey, string> = {
+  max_cost_usd: 'cost',
+  max_wall_clock_minutes: 'agent-minutes',
+}
+
+/**
+ * What the engine has at the point a dispatch check finds a task exhausted:
+ * what it was about to run, its spend, its budgets, and which of the two the
+ * spend reached. AC-1508: no bare "continue" — one raise option per reached
+ * budget, plus cancel.
+ */
+export interface BudgetExhaustionInput {
+  /** What the task was about to do — a stage's node key, or a description of a conversation dispatch. */
+  readonly about: string
+  readonly spend: Spend
+  readonly budgets: Budgets
+  readonly reached: readonly BudgetKey[]
+}
+
+export function budgetExhaustionDecision(input: BudgetExhaustionInput): DecisionInsert {
+  return {
+    nodeKey: BUDGET_DECISION_NODE_KEY,
+    key: BUDGET_DECISION_KEY,
+    kind: 'escalation',
+    promptMd: budgetExhaustionPrompt(input),
+    options: [
+      ...input.reached.map((budget) => ({
+        id: budgetRaiseOptionId(budget),
+        label: `Raise the ${BUDGET_LABELS[budget]} budget`,
+      })),
+      { id: BUDGET_DECISION_CANCEL_OPTION, label: 'Cancel this task' },
+    ],
+    blocking: true,
+  }
+}
+
+function budgetExhaustionPrompt(input: BudgetExhaustionInput): string {
+  const reachedNames = input.reached.map((budget) => BUDGET_LABELS[budget]).join(' and ')
+  const costNote = input.spend.costComplete ? '' : ' (incomplete — some runs reported no cost)'
+
+  return [
+    `Spend reached its ${reachedNames} budget before ${input.about} could run.`,
+    '',
+    `- Cost: $${input.spend.costUsd.toFixed(2)} of $${input.budgets.max_cost_usd.toFixed(2)}${costNote}`,
+    `- Agent-minutes: ${input.spend.agentMinutes.toFixed(1)} of ${input.budgets.max_wall_clock_minutes}`,
+  ].join('\n')
 }
 
 /** A stored decision, as read back from the database, in the shape the log and the resume path need. */

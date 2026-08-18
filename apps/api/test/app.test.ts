@@ -457,6 +457,53 @@ describeDb('api', () => {
     expect(await response.json()).toMatchObject({ code: 'validation' })
   })
 
+  test('task detail reports spend against budget, with cost marked incomplete rather than zero when telemetry is missing — REQ-1505, AC-1512, AC-1513', async () => {
+    const { task, graph } = await createOrchestratedTask(db, {
+      slug: `spend-${crypto.randomUUID().slice(0, 8)}`,
+      title: 'Spend fixture',
+      type: 'feature',
+      repoUrl: 'https://github.com/example/spend-fixture',
+      budgets: { max_cost_usd: 20 },
+      at: 'research',
+    })
+    createdTaskIds.push(task.id)
+    const startedAt = new Date('2026-01-01T00:00:00Z')
+    await db.insert(stages).values([
+      {
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'planning',
+        role: 'planner',
+        provider: 'claude-code',
+        status: 'succeeded',
+        attempt: 1,
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + 60_000),
+        cost: { costUsd: 2 },
+      },
+      {
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'kickoff_brief',
+        role: 'planner',
+        provider: 'claude-code',
+        status: 'succeeded',
+        attempt: 1,
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + 120_000),
+        cost: {},
+      },
+    ])
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      spend: { costUsd: number; costComplete: boolean; agentMinutes: number }
+    }
+    expect(body.spend).toEqual({ costUsd: 2, costComplete: false, agentMinutes: 3 })
+  })
+
   test('aggregates gate, failure, and stall attention without healthy tasks', async () => {
     const rollback = new Error('rollback attention fixture')
 

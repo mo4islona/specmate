@@ -1,7 +1,15 @@
 import {
   advance,
+  BUDGET_DECISION_CANCEL_OPTION,
+  BUDGET_DECISION_KEY,
+  BUDGET_DECISION_NODE_KEY,
+  type BudgetKey,
+  Budgets,
   bindStageProvider,
   blockingOpen,
+  budgetExhaustion,
+  budgetExhaustionDecision,
+  budgetFromRaiseOption,
   type Caps,
   type ConversationActionOption,
   type ConversationActionProposal,
@@ -25,6 +33,7 @@ import {
   renderDecisionLog,
   type StageNode,
   type StageTelemetry,
+  spendAgainstBudget,
   stalledFindings,
   type TaskState,
   TERMINAL_STATES,
@@ -68,6 +77,7 @@ import {
   recordRound,
   roundsFor,
   TaskNotFoundError,
+  taskSpend,
 } from './store.ts'
 
 export class NotAtGateError extends Error {
@@ -123,6 +133,22 @@ export class NoResumeStateError extends Error {
   constructor(taskId: string) {
     super(`task ${taskId} has no recorded resume state`)
     this.name = 'NoResumeStateError'
+  }
+}
+
+export class BudgetRaiseValueError extends Error {
+  override readonly name = 'BudgetRaiseValueError'
+
+  constructor(taskId: string, text: string | undefined) {
+    super(`task ${taskId}'s budget raise needs a positive numeric value, got ${text ?? '(none)'}`)
+  }
+}
+
+export class BudgetRaiseTooLowError extends Error {
+  override readonly name = 'BudgetRaiseTooLowError'
+
+  constructor(taskId: string, budget: BudgetKey, spend: number) {
+    super(`task ${taskId}'s ${budget} spend is already ${spend}; the raise must exceed it`)
   }
 }
 
@@ -204,6 +230,16 @@ export class CoverageDecisionRequiresOptionError extends Error {
   constructor(decisionId: string) {
     super(
       `decision ${decisionId} is the coverage decision and requires choosing an option, not a dismissal`,
+    )
+  }
+}
+
+export class BudgetDecisionRequiresOptionError extends Error {
+  override readonly name = 'BudgetDecisionRequiresOptionError'
+
+  constructor(decisionId: string) {
+    super(
+      `decision ${decisionId} is the budget-exhaustion decision and requires choosing an option`,
     )
   }
 }
@@ -471,6 +507,11 @@ export class Engine {
       consideredConversations.add(candidate.conversation.id)
       if (isTerminal(candidate.task.status)) continue
 
+      // REQ-1502, AC-1503: a conversation response is an agent run like any
+      // other and joins the same budget check stage dispatch does, before
+      // this or any later candidate on the paused task can claim a slot.
+      if (await this.pauseIfBudgetExhausted(candidate.task, 'a conversation response')) continue
+
       const provider = this.resolveAnswerProvider()
       const claimed = await this.claimResponse(candidate.response, provider)
       if (!claimed || !conversationDispatcher) continue
@@ -601,11 +642,7 @@ export class Engine {
       // The candidate list is a snapshot; between it and this lock the task
       // may have been cancelled, parked, or advanced. Only the live status
       // may dispatch.
-      const [current] = await tx
-        .select({ status: tasks.status })
-        .from(tasks)
-        .where(eq(tasks.id, task.id))
-        .limit(1)
+      const [current] = await tx.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
       if (current?.status !== node.key) return null
 
       const inFlight = await tx
@@ -614,6 +651,8 @@ export class Engine {
         .where(and(eq(stages.taskId, task.id), eq(stages.status, 'running')))
         .limit(1)
       if (inFlight.length > 0) return null
+
+      if (await this.pauseForExhaustedBudget(tx, current, graph, node.key)) return null
 
       const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
       if (history.streak >= this.deps.settings.stageAttemptCap) return null
@@ -728,6 +767,79 @@ export class Engine {
         .returning()
 
       return claimed ?? null
+    })
+  }
+
+  /**
+   * REQ-1502, REQ-1503: the budget check every dispatch path shares, run
+   * inside the caller's task-locked transaction. `task` must be the row read
+   * live under that lock — spend and budgets are read fresh here, never
+   * carried in from a tick()-level snapshot that may already be stale.
+   */
+  private async pauseForExhaustedBudget(
+    tx: DbClient,
+    task: Task,
+    graph: RunGraphRow,
+    about: string,
+  ): Promise<boolean> {
+    const spend = await taskSpend(tx, task.id)
+    const exhaustion = budgetExhaustion(spend, task.budgets)
+    if (!exhaustion.exhausted) return false
+
+    await raiseDecision(
+      tx,
+      task.id,
+      null,
+      budgetExhaustionDecision({
+        about,
+        spend,
+        budgets: task.budgets,
+        reached: exhaustion.reached,
+      }),
+    )
+    await this.applyTransition(tx, task, graph.dag, 'paused', {
+      cause: 'budget_exhausted',
+      resume: task.status,
+      payload: { reached: exhaustion.reached },
+    })
+
+    return true
+  }
+
+  /**
+   * `claimResponse` locks the conversation, not the task — mutating task
+   * status needs the task's own lock, so a conversation dispatch takes it
+   * separately before claiming, rather than inside `claimResponse` itself.
+   * Returning `true` means "do not dispatch this candidate": either it was
+   * just paused here, or it was already `paused`. A `waiting_human` task is
+   * parked on an unrelated decision rather than budget — `pauseForExhaustedBudget`
+   * assumes a genuine dispatchable node so it can record where to resume, and
+   * nesting it on top of an existing park would overwrite the `resumeStatus`
+   * that park depends on to ever resume — so an exhausted `waiting_human`
+   * task blocks this dispatch without mutating task state at all; the real
+   * pause, with correct resume semantics, happens the moment this task's own
+   * stage next tries to claim a slot.
+   */
+  private async pauseIfBudgetExhausted(task: Task, about: string): Promise<boolean> {
+    // A cheap check against the tick()-level snapshot skips taking the
+    // task's advisory lock — and blocking a concurrent stage-claim
+    // transaction that holds it — for the common case of a task that is
+    // plainly already paused. A stale snapshot only ever under-skips here;
+    // the fresh, lock-guarded read below is still the authority.
+    if (task.status === 'paused') return true
+    if (isTerminal(task.status)) return false
+
+    return this.withTaskLock(task.id, async (tx) => {
+      const { task: liveTask, graph } = await this.taskWithGraph(task.id, tx)
+      if (isTerminal(liveTask.status)) return false
+      if (liveTask.status === 'paused') return true
+      if (liveTask.status === 'waiting_human') {
+        const spend = await taskSpend(tx, liveTask.id)
+
+        return budgetExhaustion(spend, liveTask.budgets).exhausted
+      }
+
+      return this.pauseForExhaustedBudget(tx, liveTask, graph, about)
     })
   }
 
@@ -2368,6 +2480,72 @@ export class Engine {
   }
 
   /**
+   * REQ-1504: a budget is raised to a stated value, never nudged by a
+   * default. The new value must clear the task's current spend against that
+   * budget — otherwise the resumed task would hit the same wall on its very
+   * next dispatch, which is the "no bare continue" AC-1508 already refuses at
+   * the decision itself, restated here as the operation's own guarantee for
+   * any caller.
+   */
+  async raiseBudget(
+    taskId: string,
+    actor: string,
+    budget: BudgetKey,
+    value: number,
+  ): Promise<Task> {
+    const { task } = await this.withTaskLock(taskId, (tx) =>
+      this.raiseBudgetInTx(tx, taskId, actor, budget, value),
+    )
+
+    return task
+  }
+
+  /**
+   * The guts of `raiseBudget`, factored out so `answer` can run it and the
+   * decision's resolution inside one transaction instead of two — a
+   * mid-flight failure between them must not leave the budget raised with
+   * the decision still open, or vice versa.
+   */
+  private async raiseBudgetInTx(
+    tx: DbClient,
+    taskId: string,
+    actor: string,
+    budget: BudgetKey,
+    value: number,
+  ): Promise<{ task: Task; resumed: boolean }> {
+    const { task, graph } = await this.taskWithGraph(taskId, tx)
+    if (task.status !== 'paused') throw new NotParkedError(taskId, task.status)
+
+    const to = task.resumeStatus
+    if (!to) throw new NoResumeStateError(taskId)
+
+    const spend = await taskSpend(tx, taskId)
+    const current = spendAgainstBudget(spend, budget)
+    if (value <= current) throw new BudgetRaiseTooLowError(taskId, budget, current)
+
+    const budgets = { ...task.budgets, [budget]: value }
+    await tx.update(tasks).set({ budgets, updatedAt: new Date() }).where(eq(tasks.id, taskId))
+    await emitEvent(tx, { taskId, type: 'task.budget_raised', payload: { budget, value, actor } })
+
+    // Both budgets can be exhausted at once. Resuming while the other is
+    // still over its cap would just walk straight into a re-pause on the
+    // very next dispatch — stay paused and leave the exhaustion decision
+    // open instead.
+    if (budgetExhaustion(spend, budgets).exhausted) {
+      return { task: { ...task, budgets }, resumed: false }
+    }
+
+    await this.applyTransition(tx, { ...task, budgets }, graph.dag, to, {
+      cause: 'budget_raised',
+      actor,
+    })
+
+    const [resumed] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+
+    return { task: resumed ?? { ...task, budgets, status: to, resumeStatus: null }, resumed: true }
+  }
+
+  /**
    * Answering is one atomic step: the answer, the answering identity and
    * time, a `decision_answer` feedback record against the asking stage's role
    * and provider, an event, and — when this was the last open blocking
@@ -2377,6 +2555,58 @@ export class Engine {
   async answer(options: AnswerDecisionOptions): Promise<Task> {
     if (!options.text?.trim() && !options.optionId) {
       throw new DecisionAnswerEmptyError(options.decisionId)
+    }
+
+    const [decision] = await this.deps.db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.id, options.decisionId), eq(decisions.taskId, options.taskId)))
+      .limit(1)
+    if (!decision) throw new DecisionNotFoundError(options.decisionId)
+
+    // REQ-1504, AC-1510: a raise must be validated and applied *before* the
+    // decision is marked answered — unlike the coverage decision's options,
+    // which are all valid once chosen, a too-small raise is refused with the
+    // decision left open, so validation cannot happen after resolution.
+    // `isBudgetDecision` is checked first so an option id that merely looks
+    // like a raise cannot hijack an unrelated decision.
+    const budgetToRaise =
+      this.isBudgetDecision(decision) && options.optionId
+        ? budgetFromRaiseOption(options.optionId)
+        : null
+    if (budgetToRaise) {
+      const value = Number(options.text)
+      const valid = options.text && Budgets.shape[budgetToRaise].safeParse(value).success
+      if (!valid) throw new BudgetRaiseValueError(options.taskId, options.text)
+
+      return this.withTaskLock(options.taskId, async (tx) => {
+        const raised = await this.raiseBudgetInTx(
+          tx,
+          options.taskId,
+          options.actor,
+          budgetToRaise,
+          value,
+        )
+        if (!raised.resumed) return raised.task
+
+        const resolved = await this.resolveDecisionInTx(
+          tx,
+          options.taskId,
+          options.decisionId,
+          options.actor,
+          'answered',
+          { text: options.text, optionId: options.optionId },
+        )
+
+        return resolved.task
+      })
+    }
+
+    // The budget decision's only other legal resolution is `cancel` — a bare
+    // free-text answer would mark it answered without raising anything or
+    // resuming the task, stranding it paused with nothing left open.
+    if (this.isBudgetDecision(decision) && !options.optionId) {
+      throw new BudgetDecisionRequiresOptionError(options.decisionId)
     }
 
     const resolved = await this.resolveDecision(
@@ -2391,6 +2621,18 @@ export class Engine {
     // free-text chat answer (§4.5) records normally but triggers nothing here.
     if (this.isCoverageDecision(resolved.decision) && options.optionId) {
       return this.applyCoverageChoice(resolved.task, options.optionId, options.actor)
+    }
+    const isBudgetCancel =
+      this.isBudgetDecision(resolved.decision) && options.optionId === BUDGET_DECISION_CANCEL_OPTION
+    if (isBudgetCancel) {
+      await this.cancel(resolved.task.id, options.actor)
+      const [cancelled] = await this.deps.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, resolved.task.id))
+        .limit(1)
+
+      return cancelled ?? { ...resolved.task, status: 'cancelled', resumeStatus: null }
     }
 
     return resolved.task
@@ -2453,6 +2695,12 @@ export class Engine {
     if (status === 'dismissed' && this.isCoverageDecision(decision)) {
       throw new CoverageDecisionRequiresOptionError(decisionId)
     }
+    // REQ-1503: dismissing the budget-exhaustion decision would leave the
+    // task paused with nothing open to resume it — raise or cancel are its
+    // only two legal exits.
+    if (status === 'dismissed' && this.isBudgetDecision(decision)) {
+      throw new BudgetDecisionRequiresOptionError(decisionId)
+    }
 
     const answerMd = resolveAnswerMd(input, decision.options)
     const now = new Date()
@@ -2512,6 +2760,11 @@ export class Engine {
   /** REQ-1403: our engine-raised, fixed-identity coverage decision — not one an agent authored. */
   private isCoverageDecision(decision: Decision): boolean {
     return decision.nodeKey === COVERAGE_DECISION_NODE_KEY && decision.key === COVERAGE_DECISION_KEY
+  }
+
+  /** REQ-1503: our engine-raised, fixed-identity budget-exhaustion decision. */
+  private isBudgetDecision(decision: Decision): boolean {
+    return decision.nodeKey === BUDGET_DECISION_NODE_KEY && decision.key === BUDGET_DECISION_KEY
   }
 
   /** REQ-1403: what the owner's chosen option on the coverage decision actually does. */
