@@ -1,3 +1,4 @@
+import { budgetFromRaiseOption } from '@specmate/core'
 import { useEffect, useState } from 'react'
 import type { DecisionItem } from '../lib/api-client.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
@@ -6,7 +7,8 @@ export interface DecisionCardProps {
   readonly decision: DecisionItem
   /** True when this open, blocking decision is the reason the task is parked. */
   readonly parkedOnThis: boolean
-  readonly onAnswerOption: (optionId: string) => void
+  /** `value` is only set for a budget-raise option, which needs one alongside it to mean anything. */
+  readonly onAnswerOption: (optionId: string, value?: string) => void
   readonly onAnswerText: (text: string) => void
   readonly onDismiss: () => void
   readonly onDiscuss?: () => void
@@ -32,13 +34,21 @@ export function DecisionCard({
   error,
 }: DecisionCardProps) {
   const [text, setText] = useState('')
+  const [raiseValues, setRaiseValues] = useState<Record<string, string>>({})
   const isOpen = decision.status === 'open'
+  // A raise option only ever appears on the engine-raised budget-exhaustion
+  // decision — its only other legal resolution is the `cancel` option, never
+  // a plain dismissal or free-text answer (the engine refuses both).
+  const isBudgetDecision = decision.options.some((option) => budgetFromRaiseOption(option.id))
 
   // Cleared only once the decision actually resolves — answerText is
   // fire-and-forget, so clearing on click would drop the owner's draft the
   // moment a submit fails (e.g. a 409 from a stale decision).
   useEffect(() => {
-    if (!isOpen) setText('')
+    if (!isOpen) {
+      setText('')
+      setRaiseValues({})
+    }
   }, [isOpen])
 
   return (
@@ -67,21 +77,53 @@ export function DecisionCard({
 
       {isOpen && decision.options.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">
-          {decision.options.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className="button-secondary"
-              disabled={busy}
-              onClick={() => onAnswerOption(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
+          {decision.options.map((option) => {
+            const raiseBudget = budgetFromRaiseOption(option.id)
+            if (!raiseBudget) {
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy}
+                  onClick={() => onAnswerOption(option.id)}
+                >
+                  {option.label}
+                </button>
+              )
+            }
+
+            const value = raiseValues[option.id] ?? ''
+
+            return (
+              <div key={option.id} className="flex shrink-0 items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  className="control w-28"
+                  value={value}
+                  onChange={(event) =>
+                    setRaiseValues((prev) => ({ ...prev, [option.id]: event.currentTarget.value }))
+                  }
+                  placeholder="New value"
+                  aria-label={`New value for ${option.label}`}
+                />
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy || !value.trim()}
+                  onClick={() => onAnswerOption(option.id, value.trim())}
+                >
+                  {option.label}
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {isOpen && (
+      {isOpen && !isBudgetDecision && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <textarea
             className="control min-h-16 w-full min-w-0 resize-y"
@@ -113,6 +155,14 @@ export function DecisionCard({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {isOpen && isBudgetDecision && onDiscuss && (
+        <div className="mt-4">
+          <button type="button" className="button-secondary" disabled={busy} onClick={onDiscuss}>
+            Discuss
+          </button>
         </div>
       )}
 

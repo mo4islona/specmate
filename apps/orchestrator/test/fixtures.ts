@@ -1,4 +1,4 @@
-import { type Caps, StageResult, type TaskState } from '@specmate/core'
+import { type Budgets, type Caps, StageResult, type TaskState } from '@specmate/core'
 import type { Database, Task } from '@specmate/db'
 import { tasks } from '@specmate/db'
 import type { ConversationExecution, StageExecution } from '@specmate/runner'
@@ -208,7 +208,13 @@ export interface SeededTask {
 
 export async function seedTask(
   db: Database,
-  options: { at?: TaskState; status?: TaskState; resume?: TaskState; caps?: Partial<Caps> } = {},
+  options: {
+    at?: TaskState
+    status?: TaskState
+    resume?: TaskState
+    caps?: Partial<Caps>
+    budgets?: Partial<Budgets>
+  } = {},
 ): Promise<SeededTask> {
   const slug = `loop-${crypto.randomUUID().slice(0, 8)}`
   const seeded = await createTask(db, {
@@ -217,6 +223,7 @@ export async function seedTask(
     type: 'feature',
     repoUrl: 'file:///dev/null',
     caps: options.caps,
+    budgets: options.budgets,
     at: options.at,
   })
   if (options.status) {

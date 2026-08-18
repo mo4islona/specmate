@@ -2,6 +2,7 @@ import {
   Budgets,
   Caps,
   ConversationSubjectConflictError,
+  computeSpend,
   type DecisionInsert,
   type DecisionOption,
   type HarnessCoverageAssessment,
@@ -13,11 +14,14 @@ import {
   type RecordedRound,
   type RoundToRecord,
   renderHarnessGapPrompt,
+  type Spend,
+  type SpendAttempt,
   type TaskState,
   type TaskType,
 } from '@specmate/core'
 import {
   type Conversation,
+  conversationMessages,
   conversations,
   type Database,
   type DbClient,
@@ -26,11 +30,12 @@ import {
   events,
   iterations,
   runGraphs,
+  type StageUsage,
   stages,
   type Task,
   tasks,
 } from '@specmate/db'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
   constructor(type: string) {
@@ -289,6 +294,50 @@ export async function countRedirects(db: DbClient, taskId: string, gate: string)
     )
 
   return row?.n ?? 0
+}
+
+/**
+ * REQ-1501: sums every attempt charged to the task — finished stage runs and
+ * every settled conversation-response attempt — computed fresh from the rows
+ * each time, never from a running total (design.md: a derived sum cannot
+ * drift from the records it derives from). A stage still `running` has no
+ * `finishedAt` yet and is excluded outright, not counted with an unreported
+ * cost: it has not run out, it just has not finished.
+ */
+export async function taskSpend(db: DbClient, taskId: string): Promise<Spend> {
+  const [stageRows, messageRows] = await Promise.all([
+    db
+      .select({ cost: stages.cost, startedAt: stages.startedAt, finishedAt: stages.finishedAt })
+      .from(stages)
+      .where(and(eq(stages.taskId, taskId), isNotNull(stages.finishedAt))),
+    db
+      .select({ telemetry: conversationMessages.telemetry })
+      .from(conversationMessages)
+      .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+      .where(eq(conversations.taskId, taskId)),
+  ])
+
+  const attempts: SpendAttempt[] = [
+    ...stageRows.map(
+      (row): SpendAttempt => ({
+        costUsd: (row.cost as StageUsage).costUsd ?? null,
+        durationMs:
+          row.startedAt && row.finishedAt
+            ? row.finishedAt.getTime() - row.startedAt.getTime()
+            : null,
+      }),
+    ),
+    ...messageRows.flatMap((row) =>
+      row.telemetry.map(
+        (entry): SpendAttempt => ({
+          costUsd: entry.costUsd ?? null,
+          durationMs: entry.durationMs ?? null,
+        }),
+      ),
+    ),
+  ]
+
+  return computeSpend(attempts)
 }
 
 /**

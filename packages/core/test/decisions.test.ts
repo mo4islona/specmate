@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import type { Spend } from '../src/budgets.ts'
 import {
+  type BudgetExhaustionInput,
   blockingOpen,
+  budgetExhaustionDecision,
+  budgetFromRaiseOption,
+  budgetRaiseOptionId,
   decisionFromRequest,
   type EscalationInput,
   escalationForPark,
@@ -8,6 +13,7 @@ import {
   type StoredDecision,
 } from '../src/decisions.ts'
 import type { DecisionRequest } from '../src/result.ts'
+import { DEFAULT_BUDGETS } from '../src/state.ts'
 
 function stored(overrides: Partial<StoredDecision> = {}): StoredDecision {
   return {
@@ -163,6 +169,75 @@ describe('escalationForPark', () => {
     })
     expect(decision.promptMd).toContain('stubborn-finding')
     expect(decision.promptMd).toContain('3, 2')
+  })
+})
+
+describe('budgetExhaustionDecision', () => {
+  const spend: Spend = { costUsd: 20, costComplete: true, agentMinutes: 90 }
+
+  function input(overrides: Partial<BudgetExhaustionInput> = {}): BudgetExhaustionInput {
+    return {
+      about: 'implement',
+      spend,
+      budgets: DEFAULT_BUDGETS,
+      reached: ['max_cost_usd'],
+      ...overrides,
+    }
+  }
+
+  test('offers one raise option per reached budget, plus cancel — no bare continue', () => {
+    const decision = budgetExhaustionDecision(input({ reached: ['max_cost_usd'] }))
+    expect(decision.options.map((option) => option.id)).toEqual([
+      budgetRaiseOptionId('max_cost_usd'),
+      'cancel',
+    ])
+  })
+
+  test('both budgets reached offers both raise options', () => {
+    const decision = budgetExhaustionDecision(
+      input({ reached: ['max_cost_usd', 'max_wall_clock_minutes'] }),
+    )
+    expect(decision.options.map((option) => option.id)).toEqual([
+      budgetRaiseOptionId('max_cost_usd'),
+      budgetRaiseOptionId('max_wall_clock_minutes'),
+      'cancel',
+    ])
+  })
+
+  test('names the spend against each budget and what was about to run', () => {
+    const decision = budgetExhaustionDecision(input({ about: 'code_review' }))
+    expect(decision.promptMd).toContain('code_review')
+    expect(decision.promptMd).toContain('$20.00')
+    expect(decision.promptMd).toContain('90.0')
+  })
+
+  test('marks incomplete cost as incomplete, not as a bare number', () => {
+    const decision = budgetExhaustionDecision(
+      input({ spend: { costUsd: 0, costComplete: false, agentMinutes: 180 } }),
+    )
+    expect(decision.promptMd).toMatch(/incomplete/i)
+  })
+
+  test('is a blocking escalation, engine-raised at the paused state', () => {
+    const decision = budgetExhaustionDecision(input())
+    expect(decision.kind).toBe('escalation')
+    expect(decision.blocking).toBe(true)
+    expect(decision.nodeKey).toBe('paused')
+    expect(decision.key).toBe('budget-exhausted')
+  })
+})
+
+describe('budgetFromRaiseOption', () => {
+  test('recognizes both raise option ids', () => {
+    expect(budgetFromRaiseOption(budgetRaiseOptionId('max_cost_usd'))).toBe('max_cost_usd')
+    expect(budgetFromRaiseOption(budgetRaiseOptionId('max_wall_clock_minutes'))).toBe(
+      'max_wall_clock_minutes',
+    )
+  })
+
+  test('any other option id, including cancel, is not a raise', () => {
+    expect(budgetFromRaiseOption('cancel')).toBeNull()
+    expect(budgetFromRaiseOption('proceed')).toBeNull()
   })
 })
 
