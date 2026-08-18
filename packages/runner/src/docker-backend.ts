@@ -176,6 +176,7 @@ export class DockerBackend implements ExecBackend {
       // Killing the client would leave the container running: the deadline has
       // to reach the container itself.
       onTimeout: () => this.kill(name),
+      onActivityLine: spec.onActivityLine,
     })
 
     return {

@@ -30,7 +30,7 @@ import {
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
 import { createTask, taskSpend } from '@specmate/orchestrator/store'
-import { and, asc, desc, eq, gt, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { streamSSE } from 'hono/streaming'
@@ -467,10 +467,14 @@ export function createApp({
       }
 
       const taskIds = taskRows.map((task) => task.id)
+      // `stage.activity` fires on every recognized tool use — many times a
+      // minute during a busy stage — so it must not count as the "latest
+      // event" the stall check resets on, or a stage stuck in a loop keeps
+      // itself looking alive forever.
       const latestEventRows = await db
         .selectDistinctOn([events.taskId])
         .from(events)
-        .where(inArray(events.taskId, taskIds))
+        .where(and(inArray(events.taskId, taskIds), ne(events.type, 'stage.activity')))
         .orderBy(events.taskId, desc(events.seq))
       const failureRows = await db
         .selectDistinctOn([events.taskId])

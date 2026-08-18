@@ -26,6 +26,17 @@ export interface StageJob {
   readonly environment: ExecutionEnvironment
   readonly timeoutMs: number
   readonly attempt: number
+  /**
+   * Fired for each recognized tool use while the run is still in progress.
+   * Absent for callers (e.g. conversation turns) that don't surface activity.
+   */
+  readonly onActivity?: (activity: StageActivity) => void
+}
+
+/** One recognized tool use, parsed from a provider's own structured streaming output. */
+export interface StageActivity {
+  readonly tool: string
+  readonly target: string
 }
 
 /**

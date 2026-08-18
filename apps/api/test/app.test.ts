@@ -721,6 +721,75 @@ describeDb('api', () => {
     }
   })
 
+  test('stage.activity does not reset the stall clock', async () => {
+    const rollback = new Error('rollback activity-stall fixture')
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx.delete(tasks)
+
+        const fixedNow = new Date('2026-08-16T12:00:00.000Z')
+        const isolatedApp = createApp({
+          db: tx as unknown as Database,
+          gates: createGateEngine(tx as unknown as Database),
+          config: loadConfig({
+            DATABASE_URL: url,
+            NODE_ENV: 'test',
+            SPECMATE_PASSWORD: 'test-password',
+            SPECMATE_STALL_HOURS: '4',
+            WORKSPACE_ROOT: 'workspaces',
+          }),
+          now: () => fixedNow,
+        })
+        const attentionAuth = { authorization: 'Bearer test-password' }
+
+        const [loopingTask] = await tx
+          .insert(tasks)
+          .values({
+            slug: 'attention-activity-loop',
+            title: 'Looping stage fixture',
+            type: 'feature',
+            repoUrl: 'https://github.com/example/activity-loop-fixture',
+            status: 'implement',
+          })
+          .returning()
+        if (!loopingTask) throw new Error('activity-stall fixture was not inserted')
+
+        await tx.insert(events).values([
+          {
+            taskId: loopingTask.id,
+            type: 'stage.started',
+            createdAt: new Date('2026-08-16T06:00:00.000Z'),
+          },
+          // A stage stuck re-reading the same file every few seconds keeps
+          // producing activity well past the stall cutoff — it must not
+          // read as "recent activity" for stall purposes.
+          {
+            taskId: loopingTask.id,
+            type: 'stage.activity',
+            payload: { attempt: 0, tool: 'Read', target: 'a.ts' },
+            createdAt: new Date('2026-08-16T11:59:00.000Z'),
+          },
+        ])
+
+        const response = await isolatedApp.request('/api/v1/attention', { headers: attentionAuth })
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as {
+          items: { task: { id: string }; reason: { kind: string }; since: string }[]
+        }
+        const item = body.items.find((entry) => entry.task.id === loopingTask.id)
+        expect(item?.reason.kind).toBe('stalled')
+        expect(item?.since).toBe('2026-08-16T06:00:00.000Z')
+
+        throw rollback
+      })
+    } catch (error) {
+      if (error !== rollback) {
+        throw error
+      }
+    }
+  })
+
   test('requires bearer auth for streams and ignores query-string credentials', async () => {
     const missing = await app.request('/api/v1/events/stream')
     expect(missing.status).toBe(401)

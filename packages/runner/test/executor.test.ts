@@ -10,7 +10,13 @@ import {
 } from '@specmate/core'
 import type { WorkspaceService } from '@specmate/workspace'
 import { ClaudeCodeProvider } from '../src/claude.ts'
-import { roleNeedsContainerRuntime, StageExecutor, type StageRequest } from '../src/executor.ts'
+import {
+  roleNeedsContainerRuntime,
+  type StageActivityEvent,
+  StageExecutor,
+  type StageExecutorDeps,
+  type StageRequest,
+} from '../src/executor.ts'
 import { LocalBackend } from '../src/local-backend.ts'
 import {
   cleanupTempDirs,
@@ -35,6 +41,7 @@ function makeExecutor(
   harness: Harness,
   env: Record<string, string>,
   configOverrides: Parameters<typeof makeConfig>[0] = {},
+  depsOverrides: Partial<StageExecutorDeps> = {},
 ) {
   const config = makeConfig({ forwardEnv: STUB_ENV, ...configOverrides })
   setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, ...env })
@@ -48,6 +55,7 @@ function makeExecutor(
     git: harness.git,
     workspaces: workspaceAdapter(harness),
     ledger: async () => '## Task\n\n- Title: a task\n',
+    ...depsOverrides,
   })
 }
 
@@ -315,6 +323,31 @@ describe('stage execution', () => {
     expect(seen.prompt).not.toContain('HALF-WRITTEN-GARBAGE')
     expect(execution.status).toBe('succeeded')
     expect(await readFile(proposal, 'utf8')).toBe('# written by the stub\n')
+  })
+
+  test('attributes activity to the running stage and current attempt, distinct from a discarded attempt (AC-229)', async () => {
+    const harness = await makeHarness('activity-attribution')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['no-result', 'activity']))
+    const seen: StageActivityEvent[] = []
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE_FILE: queue },
+      {},
+      { onActivity: (event) => seen.push(event) },
+    ).execute(request(harness))
+
+    expect(execution.status).toBe('succeeded')
+    expect(seen.length).toBeGreaterThan(0)
+    for (const event of seen) {
+      expect(event.taskId).toBe(TASK_ID)
+      expect(event.stageId).toBe(request(harness).stageId)
+      // The discarded attempt (0, 'no-result') produced no activity to begin
+      // with — every event traces to the attempt that actually succeeded.
+      expect(event.attempt).toBe(1)
+    }
   })
 })
 

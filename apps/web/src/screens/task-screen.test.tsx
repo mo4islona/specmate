@@ -6,6 +6,8 @@ import {
   countGateRedirects,
   EVENT_TITLES,
   eventDetail,
+  stageActivityLabel,
+  visibleTimelineEvents,
 } from './task-screen.tsx'
 
 function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
@@ -145,6 +147,65 @@ describe('decision timeline events', () => {
     })
 
     expect(eventDetail(event, new Map())).toBe('Needs another pass')
+  })
+})
+
+describe('stage activity rendering (REQ-915)', () => {
+  test('a recognized tool use reads as a verb and its target (AC-940)', () => {
+    const event = timelineEvent({
+      type: 'stage.activity',
+      payload: { tool: 'Edit', target: 'src/foo.ts', attempt: 0 },
+    })
+
+    expect(stageActivityLabel(event)).toBe('Editing src/foo.ts')
+  })
+
+  test('an unrecognized tool falls back to its own name', () => {
+    const event = timelineEvent({
+      type: 'stage.activity',
+      payload: { tool: 'CustomTool', target: 'thing', attempt: 0 },
+    })
+
+    expect(stageActivityLabel(event)).toBe('CustomTool thing')
+  })
+
+  test('no target reads as the verb alone', () => {
+    const event = timelineEvent({
+      type: 'stage.activity',
+      payload: { tool: 'TodoWrite', target: '', attempt: 0 },
+    })
+
+    expect(stageActivityLabel(event)).toBe('Updating plan')
+  })
+
+  test('activity for a still-running stage stays visible (AC-940)', () => {
+    const event = timelineEvent({ type: 'stage.activity', stageId: 'stage-1' })
+
+    expect(visibleTimelineEvents([event], [{ id: 'stage-1', status: 'running' }])).toEqual([event])
+  })
+
+  test('activity is demoted once its stage is no longer running (AC-941)', () => {
+    const event = timelineEvent({ type: 'stage.activity', stageId: 'stage-1' })
+
+    for (const status of ['succeeded', 'failed', 'interrupted', 'waiting_human']) {
+      expect(visibleTimelineEvents([event], [{ id: 'stage-1', status }])).toEqual([])
+    }
+  })
+
+  test('every other event type is unaffected by stage status', () => {
+    const event = timelineEvent({ type: 'stage.completed', stageId: 'stage-1' })
+
+    expect(visibleTimelineEvents([event], [{ id: 'stage-1', status: 'succeeded' }])).toEqual([
+      event,
+    ])
+  })
+
+  test('a running stage with no activity events yet is not treated as stalled (AC-942)', () => {
+    // No `stage.activity` events at all — the demotion filter has nothing to
+    // drop, and nothing here marks the absence as an error or a stall.
+    const events = [timelineEvent({ type: 'stage.dispatched', stageId: 'stage-1' })]
+
+    expect(visibleTimelineEvents(events, [{ id: 'stage-1', status: 'running' }])).toEqual(events)
   })
 })
 

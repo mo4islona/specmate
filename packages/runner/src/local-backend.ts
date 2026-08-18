@@ -47,6 +47,7 @@ export class LocalBackend implements ExecBackend {
       timeoutMs: spec.timeoutMs,
       outputLimitBytes: this.config.logBytesLimit,
       onSpawn: pidFile ? (pid) => recordAgentPid(pidFile, pid, spec.labels ?? {}) : undefined,
+      onActivityLine: spec.onActivityLine,
     })
 
     return {

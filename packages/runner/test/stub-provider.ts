@@ -234,7 +234,67 @@ const MISSING_HARNESS_COVERAGE = {
   evidence_md: 'No state-level suite exercises the redirect end to end.',
 }
 
+/** A stream-json transcript: init, two tool uses interleaved with results, then the result line. */
+const ACTIVITY_TRANSCRIPT = [
+  JSON.stringify({ type: 'system', subtype: 'init', session_id: 'stub-session' }),
+  JSON.stringify({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'Looking at the file.' }] },
+  }),
+  JSON.stringify({
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'a.ts' } }],
+    },
+  }),
+  JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1' }] },
+  }),
+  JSON.stringify({
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'toolu_2', name: 'Edit', input: { file_path: 'a.ts' } }],
+    },
+  }),
+  JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_2' }] },
+  }),
+  telemetry,
+].join('\n')
+
 switch (mode) {
+  case 'activity': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${ACTIVITY_TRANSCRIPT}\n`)
+    break
+  }
+  case 'activity-garbled': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
+    await writeResult(validResult())
+    // A CLI without structured streaming support still has to leave the stage
+    // standing (REQ-212/AC-228) — mixed garbage and half-written JSON among
+    // otherwise valid lines must never throw or drop the run.
+    const noisy = [
+      'not json at all',
+      '{ this is not valid json',
+      JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: 'not-an-array' },
+      }),
+      ACTIVITY_TRANSCRIPT,
+    ].join('\n')
+    await Bun.write(Bun.stdout, `${noisy}\n`)
+    break
+  }
   case 'conversation': {
     await writeConversation('The artifacts choose the safer option.\n')
     await writeResult(validResult())

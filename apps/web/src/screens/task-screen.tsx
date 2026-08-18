@@ -69,6 +69,50 @@ function payloadValue(event: TimelineEvent, key: string): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
+/** Human-facing verb per known tool name; an unrecognized tool falls back to its own name. */
+const ACTIVITY_VERBS: Record<string, string> = {
+  Read: 'Reading',
+  Edit: 'Editing',
+  MultiEdit: 'Editing',
+  Write: 'Writing',
+  NotebookEdit: 'Editing',
+  Bash: 'Running',
+  BashOutput: 'Checking',
+  Glob: 'Searching',
+  Grep: 'Searching',
+  WebFetch: 'Fetching',
+  WebSearch: 'Searching',
+  Task: 'Delegating to',
+  TodoWrite: 'Updating plan',
+}
+
+/** REQ-915: a live `stage.activity` event reads as "Editing src/foo.ts", not raw tool/target keys. */
+export function stageActivityLabel(event: TimelineEvent): string {
+  const tool = payloadValue(event, 'tool') ?? 'Unknown tool'
+  const target = payloadValue(event, 'target')
+  const verb = ACTIVITY_VERBS[tool] ?? tool
+
+  return target ? `${verb} ${target}` : verb
+}
+
+/**
+ * REQ-915/AC-941: once an attempt's result is accepted — or it fails, or it's
+ * interrupted — its activity is stale. Demoted here by dropping it from the
+ * timeline rather than leaving it standing beside the outcome.
+ */
+export function visibleTimelineEvents(
+  events: readonly TimelineEvent[],
+  stages: readonly { id: string; status: string }[],
+): TimelineEvent[] {
+  const runningStageIds = new Set(
+    stages.filter((stage) => stage.status === 'running').map((stage) => stage.id),
+  )
+
+  return events.filter(
+    (event) => event.type !== 'stage.activity' || runningStageIds.has(event.stageId ?? ''),
+  )
+}
+
 /** Mirrors the engine's own `countRedirects`, so the client reads the cap the same way the server enforces it. */
 export function countGateRedirects(events: readonly TimelineEvent[], gateKey: string): number {
   return events.filter(
@@ -444,7 +488,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const redirectsUsed =
     currentGate?.kind === 'gate' ? countGateRedirects(timeline.data.events, currentGate.key) : 0
   const redirectCapSpent = redirectCap ? redirectsUsed >= redirectCap.limit : false
-  const items = timeline.data.events
+  const items = visibleTimelineEvents(timeline.data.events, stageRows)
   const messages = conversation.data?.messages ?? []
   const actions = conversation.data?.actions ?? []
   const decisionRows = decisions.data.decisions
@@ -755,6 +799,30 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
 
           <ol className="mt-2 divide-y divide-border">
             {items.map((event) => {
+              if (event.type === 'stage.activity') {
+                return (
+                  <li
+                    key={`event-${event.seq}`}
+                    className="attention-pulse grid gap-2 border-l-2 border-amber/55 bg-amber/5 px-3 py-4 sm:grid-cols-[7rem_minmax(0,1fr)]"
+                    data-timeline-kind="stage-activity"
+                  >
+                    <div className="font-mono text-[0.68rem] leading-5 text-muted">
+                      <p>#{event.seq}</p>
+                      <time dateTime={String(event.createdAt)}>
+                        {formatTimestamp(event.createdAt)}
+                      </time>
+                    </div>
+                    <p
+                      className="flex items-center gap-2 font-mono text-xs text-amber"
+                      role="status"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
+                      {stageActivityLabel(event)}
+                    </p>
+                  </li>
+                )
+              }
+
               const stage = payloadValue(event, 'nodeKey') ?? payloadValue(event, 'stage')
 
               return (

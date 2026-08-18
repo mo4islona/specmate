@@ -24,6 +24,7 @@ import {
   runnerConfigFrom,
   taskRunnerEnvironment,
 } from './runner.ts'
+import { emitEvent } from './store.ts'
 
 /** Docker/`.env` supply unset variables as empty strings; treat those as absent. */
 const optionalString = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional())
@@ -121,6 +122,12 @@ const service = new WorkspaceService(workspaces, db, (workspace, image) =>
   backend.resolveEnvironment(workspace.path, image),
 )
 const provider = providerFor(runnerConfig, backend)
+// Best-effort but ordered: chained rather than fire-and-forget, so concurrent
+// inserts can't commit out of the order the tool uses actually happened in —
+// `events.seq` is what the SSE stream's cursor advances on. A dropped event
+// must still never take down the run it describes, so each link swallows its
+// own error rather than letting one failed write break the chain.
+let activityChain: Promise<unknown> = Promise.resolve()
 const executor = new StageExecutor({
   config: runnerConfig,
   provider,
@@ -128,6 +135,18 @@ const executor = new StageExecutor({
   workspaces: service,
   ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
   deferCommit: true,
+  onActivity: (activity) => {
+    activityChain = activityChain.then(() =>
+      emitEvent(db, {
+        taskId: activity.taskId,
+        stageId: activity.stageId,
+        type: 'stage.activity',
+        payload: { attempt: activity.attempt, tool: activity.tool, target: activity.target },
+      }).catch((e: Error) =>
+        console.error(`activity event for stage ${activity.stageId}: ${e.message}`),
+      ),
+    )
+  },
 })
 const conversationExecutor = new ConversationExecutor({
   config: runnerConfig,

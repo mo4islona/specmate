@@ -28,6 +28,8 @@ export interface ExecSpec {
    * a dead orchestrator left running. Ignored by the in-process backend.
    */
   readonly labels?: Readonly<Record<string, string>>
+  /** Fired once per complete stdout line, as the process produces it. */
+  readonly onActivityLine?: (line: string) => void
 }
 
 export interface ExecResult {
@@ -68,6 +70,30 @@ export interface SpawnOptions {
   readonly onTimeout?: () => void
   /** Runs synchronously once the child exists, with its pid. */
   readonly onSpawn?: (pid: number) => void
+  /** Fired once per complete stdout line, as the process produces it. */
+  readonly onActivityLine?: (line: string) => void
+}
+
+/**
+ * Turns a stream of raw chunks into complete lines. Pipe chunking is not
+ * line-aligned, so a line can arrive split across two `data` events — the
+ * tail from the previous push is what makes the next one whole.
+ */
+export class LineBuffer {
+  private tail = ''
+
+  push(chunk: string, onLine: (line: string) => void): void {
+    const combined = this.tail + chunk
+    const lines = combined.split('\n')
+    this.tail = lines.pop() ?? ''
+    for (const line of lines) onLine(line)
+  }
+
+  /** Call once the stream has ended; a final line with no trailing newline is still a line. */
+  flush(onLine: (line: string) => void): void {
+    if (this.tail.length > 0) onLine(this.tail)
+    this.tail = ''
+  }
 }
 
 /**
@@ -101,16 +127,26 @@ export function spawnBoundedHandle(options: SpawnOptions): ExecHandle {
     let stderr = ''
     let timedOut = false
 
-    const capture = (current: string, chunk: Buffer): string =>
+    const capture = (current: string, text: string): string =>
       current.length >= options.outputLimitBytes
         ? current
-        : (current + chunk.toString('utf8')).slice(0, options.outputLimitBytes)
+        : (current + text).slice(0, options.outputLimitBytes)
 
+    // Stateful decoders: a multi-byte UTF-8 character can land split across
+    // two `data` chunks, and decoding each chunk in isolation would corrupt
+    // it on both sides. `{ stream: true }` holds the dangling bytes over to
+    // the next chunk instead.
+    const stdoutDecoder = new TextDecoder('utf-8')
+    const stderrDecoder = new TextDecoder('utf-8')
+
+    const activityLines = options.onActivityLine ? new LineBuffer() : undefined
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout = capture(stdout, chunk)
+      const text = stdoutDecoder.decode(chunk, { stream: true })
+      stdout = capture(stdout, text)
+      activityLines?.push(text, options.onActivityLine as (line: string) => void)
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = capture(stderr, chunk)
+      stderr = capture(stderr, stderrDecoder.decode(chunk, { stream: true }))
     })
 
     const deadline = setTimeout(() => {
@@ -124,6 +160,7 @@ export function spawnBoundedHandle(options: SpawnOptions): ExecHandle {
 
       done = true
       clearTimeout(deadline)
+      activityLines?.flush(options.onActivityLine as (line: string) => void)
       settle({ exitCode, stdout, stderr, durationMs: Date.now() - started, timedOut })
     }
 

@@ -8,6 +8,7 @@ import {
   type ProviderStatus,
   parseStageResult,
   ROLE_CONTRACTS,
+  type StageActivity,
   type StageJob,
   type StageOutcome,
   type StageTelemetry,
@@ -48,9 +49,23 @@ export class ClaudeCodeProvider implements AgentProvider {
 
   constructor(private readonly deps: ClaudeProviderDeps) {}
 
+  /**
+   * `stream-json` is the only format that reports anything before the process
+   * exits — `json` buffers the whole run into one object printed at the end.
+   * `--verbose` is required alongside it under `-p`/`--print`: the CLI refuses
+   * to start without it, regardless of whether per-token deltas are used.
+   */
   argv(role: AgentRole): string[] {
     const { config } = this.deps
-    const argv = [config.cli, '-p', '--output-format', 'json', '--model', config.model]
+    const argv = [
+      config.cli,
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--model',
+      config.model,
+    ]
     // Nobody is present to answer a permission prompt; the container boundary
     // and the post-run scope check are the safety property, not the prompt.
     argv.push('--permission-mode', 'bypassPermissions')
@@ -84,6 +99,11 @@ export class ClaudeCodeProvider implements AgentProvider {
       environment: job.environment,
       label,
       labels: stageContainerLabels(job),
+      onActivityLine: job.onActivity
+        ? (line) => {
+            for (const activity of parseActivityLine(line)) job.onActivity?.(activity)
+          }
+        : undefined,
     })
 
     const log = `$ ${this.argv(job.role).join(' ')}\n\n${run.stdout}\n${run.stderr}`
@@ -304,21 +324,87 @@ function readModel(envelope: Record<string, unknown>): string | null {
   return null
 }
 
+/**
+ * `stream-json` output is many lines, not one document: parse each
+ * independently and keep the last one shaped like the CLI's terminal result.
+ * The "array whose last entry is the result" tolerance some CLI versions need
+ * still applies per line, one level down from where it used to apply to the
+ * whole buffer.
+ */
 function parseEnvelope(stdout: string): Record<string, unknown> | null {
-  const trimmed = stdout.trim()
-  if (!trimmed) return null
+  let result: Record<string, unknown> | null = null
+
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+
+    const candidate = Array.isArray(parsed) ? parsed.at(-1) : parsed
+    if (isRecord(candidate) && candidate.type === 'result') result = candidate
+  }
+
+  return result
+}
+
+/** Tool-use targets, tried in priority order — the first present string wins. */
+const ACTIVITY_TARGET_KEYS = [
+  'file_path',
+  'notebook_path',
+  'pattern',
+  'path',
+  'command',
+  'url',
+  'query',
+  'description',
+] as const
+
+/**
+ * One `stream-json` line, parsed for recognized tool use. Everything else —
+ * text/thinking deltas, system/init, tool results, the terminal result line —
+ * is read and discarded, per REQ-212/AC-227. A single assistant turn can
+ * report more than one tool call, so this returns every one found on the line.
+ */
+export function parseActivityLine(line: string): StageActivity[] {
+  const trimmed = line.trim()
+  if (!trimmed) return []
 
   let parsed: unknown
   try {
     parsed = JSON.parse(trimmed)
   } catch {
-    return null
+    return []
+  }
+  if (!isRecord(parsed) || parsed.type !== 'assistant') return []
+
+  const message = parsed.message
+  if (!isRecord(message) || !Array.isArray(message.content)) return []
+
+  const activities: StageActivity[] = []
+  for (const block of message.content) {
+    if (!isRecord(block) || block.type !== 'tool_use') continue
+    if (typeof block.name !== 'string' || block.name.length === 0) continue
+
+    activities.push({ tool: block.name, target: activityTarget(block.input) })
   }
 
-  // Some CLI versions emit a transcript array whose last entry is the result.
-  const candidate = Array.isArray(parsed) ? parsed.at(-1) : parsed
+  return activities
+}
 
-  return isRecord(candidate) ? candidate : null
+function activityTarget(input: unknown): string {
+  if (!isRecord(input)) return ''
+
+  for (const key of ACTIVITY_TARGET_KEYS) {
+    const value = input[key]
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+
+  return ''
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
