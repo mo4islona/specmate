@@ -30,6 +30,7 @@ import {
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
 import { createTask, taskSpend } from '@specmate/orchestrator/store'
+import { GitError, type WorkspaceService } from '@specmate/workspace'
 import { and, asc, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
@@ -44,6 +45,7 @@ export interface AppDeps {
   db: Database
   config: Config
   gates: GateOperations
+  workspace: WorkspaceDiffOperations
   now?: () => Date
   stream?: Partial<StreamSettings>
 }
@@ -59,6 +61,8 @@ export type GateOperations = Pick<
   | 'answer'
   | 'dismiss'
 >
+
+export type WorkspaceDiffOperations = Pick<WorkspaceService, 'diffFiles' | 'diffFile'>
 
 interface StreamSettings {
   pollIntervalMs: number
@@ -157,6 +161,10 @@ const RestartStage = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
 })
 
+const FileDiffQuery = z.object({
+  path: z.string().trim().min(1),
+})
+
 const GATE_CONFLICT_ERRORS = new Set([
   'GateEdgeError',
   'IllegalTransitionError',
@@ -207,6 +215,20 @@ function validateJson<T extends z.ZodType>(schema: T) {
     const parsed = schema.safeParse(body)
     if (!parsed.success) {
       throw new ApiError('validation', 'request body is invalid', {
+        status: 400,
+        fields: validationFields(parsed.error),
+      })
+    }
+
+    return parsed.data
+  }
+}
+
+function validateQuery<T extends z.ZodType>(schema: T) {
+  return (value: unknown): z.output<T> => {
+    const parsed = schema.safeParse(value)
+    if (!parsed.success) {
+      throw new ApiError('validation', 'request query is invalid', {
         status: 400,
         fields: validationFields(parsed.error),
       })
@@ -296,6 +318,7 @@ export function createApp({
   db,
   config,
   gates,
+  workspace,
   now = () => new Date(),
   stream: streamOverrides,
 }: AppDeps) {
@@ -350,6 +373,35 @@ export function createApp({
       }
       if (error instanceof Error && GATE_CONFLICT_ERRORS.has(error.name)) {
         throw new ApiError('conflict', error.message, { status: 409 })
+      }
+
+      throw error
+    }
+  }
+
+  /**
+   * A branch or commit that no longer resolves — the task was never
+   * provisioned, a repo host deleted it externally, or its history was
+   * rewritten out from under the task branch — is a not-found response, not
+   * a crash (`task-surface` REQ-1010's error-shape rule, `code-diff-view`
+   * design's Risks section: "a pre-existing possibility for any git-history
+   * read").
+   */
+  async function performDiffOperation<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.name === 'TaskBranchMissingError' || error.name === 'BaseBranchMissingError')
+      ) {
+        throw new ApiError('not_found', error.message, { status: 404 })
+      }
+      // GitError's own message embeds the mirror's absolute filesystem path
+      // and raw stderr — never forwarded to the client, and not assumed to
+      // mean "not found": it also covers a transient fetch/network failure.
+      if (error instanceof GitError) {
+        throw new ApiError('not_found', 'task branch history is not resolvable', { status: 404 })
       }
 
       throw error
@@ -671,6 +723,21 @@ export function createApp({
       }
 
       return c.json({ artifact })
+    })
+
+    .get('/tasks/:id/diff/files', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const files = await performDiffOperation(() => workspace.diffFiles(task))
+
+      return c.json({ files })
+    })
+
+    .get('/tasks/:id/diff/file', validator('query', validateQuery(FileDiffQuery)), async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const { path } = c.req.valid('query')
+      const diff = await performDiffOperation(() => workspace.diffFile(task, path))
+
+      return c.json({ path, diff })
     })
 
     .post(

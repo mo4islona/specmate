@@ -101,6 +101,14 @@ type ArtifactResponse = InferResponseType<
   (typeof apiClient.api.v1.tasks)[':id']['artifacts'][':artifactId']['$get'],
   200
 >
+type DiffFilesResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['diff']['files']['$get'],
+  200
+>
+type FileDiffResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['diff']['file']['$get'],
+  200
+>
 type CreateTaskRequest = InferRequestType<typeof apiClient.api.v1.tasks.$post>
 type FeedbackRequest = InferRequestType<(typeof apiClient.api.v1.tasks)[':id']['feedback']['$post']>
 type ConversationMessageRequest = InferRequestType<
@@ -143,6 +151,8 @@ export type ConversationMessage = ConversationResponse['messages'][number]
 export type ConversationAction = ConversationResponse['actions'][number]
 export type ArtifactSummary = ArtifactsResponse['artifacts'][number]
 export type ArtifactDetail = ArtifactResponse['artifact']
+export type DiffFileSummary = DiffFilesResponse['files'][number]
+export type FileDiff = FileDiffResponse
 export type CreateTaskInput = CreateTaskRequest['json']
 export type FeedbackInput = FeedbackRequest['json']
 export type ConversationMessageInput = Omit<ConversationMessageRequest['json'], 'idempotencyKey'>
@@ -373,4 +383,29 @@ export async function getArtifact(
   )
 
   return readJson<ArtifactResponse>(response)
+}
+
+export async function listDiffFiles(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<DiffFilesResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].diff.files.$get(
+    { param: { id: taskId } },
+    { init: { signal } },
+  )
+
+  return readJson<DiffFilesResponse>(response)
+}
+
+export async function getFileDiff(
+  taskId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileDiffResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].diff.file.$get(
+    { param: { id: taskId }, query: { path } },
+    { init: { signal } },
+  )
+
+  return readJson<FileDiffResponse>(response)
 }

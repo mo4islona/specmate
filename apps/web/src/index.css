@@ -313,6 +313,41 @@ select {
   font-size: 0.75rem;
 }
 
+.diff-document {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.diff-line {
+  white-space: pre;
+  padding: 0 1.25rem;
+}
+
+.diff-line-add {
+  background: color-mix(in srgb, var(--color-phosphor) 12%, transparent);
+  color: var(--color-phosphor);
+}
+
+.diff-line-remove {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+
+.diff-line-hunk {
+  margin-top: 0.5rem;
+  color: var(--color-cyan);
+}
+
+.diff-line-meta {
+  color: var(--color-muted);
+}
+
+.diff-line-context {
+  color: var(--color-text);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

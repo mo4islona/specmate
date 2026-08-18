@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { instantiateDefinition, PIPELINE_CATALOG, type TaskState } from '@specmate/core'
 import {
   conversationActions,
@@ -16,8 +19,15 @@ import {
 } from '@specmate/db'
 import { Engine } from '@specmate/orchestrator/engine'
 import { createTask as createOrchestratedTask } from '@specmate/orchestrator/store'
+import {
+  Git,
+  resolveWorkspaceConfig,
+  taskBranch,
+  WorkspaceManager,
+  WorkspaceService,
+} from '@specmate/workspace'
 import { asc, eq, inArray } from 'drizzle-orm'
-import { createApp } from '../src/app.ts'
+import { createApp, type WorkspaceDiffOperations } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 
 const url = process.env.DATABASE_URL
@@ -38,6 +48,11 @@ function createEngine(db: Database): Engine {
   })
 }
 
+const workspaceStub: WorkspaceDiffOperations = {
+  diffFiles: () => Promise.reject(new Error('API tests do not read task diffs here')),
+  diffFile: () => Promise.reject(new Error('API tests do not read task diffs here')),
+}
+
 describeDb('api conversations', () => {
   let app: ReturnType<typeof createApp>
   let db: Database
@@ -49,6 +64,7 @@ describeDb('api conversations', () => {
     app = createApp({
       db,
       gates: createEngine(db),
+      workspace: workspaceStub,
       config: loadConfig({
         DATABASE_URL: url,
         NODE_ENV: 'test',
@@ -369,6 +385,7 @@ describeDb('api', () => {
     app = createApp({
       db,
       gates: createGateEngine(db),
+      workspace: workspaceStub,
       config: loadConfig({
         DATABASE_URL: url,
         NODE_ENV: 'test',
@@ -515,6 +532,7 @@ describeDb('api', () => {
         const isolatedApp = createApp({
           db: tx as unknown as Database,
           gates: createGateEngine(tx as unknown as Database),
+          workspace: workspaceStub,
           config: loadConfig({
             DATABASE_URL: url,
             NODE_ENV: 'test',
@@ -1435,5 +1453,222 @@ describeDb('api', () => {
     expect(sawHeartbeat).toBe(true)
 
     await reader.cancel()
+  })
+})
+
+describeDb('api task diff', () => {
+  let app: ReturnType<typeof createApp>
+  let db: Database
+  let manager: WorkspaceManager
+  let git: Git
+  let originDir: string
+  let originUrl: string
+  let root: string
+  const createdTaskIds: string[] = []
+  const auth = { authorization: 'Bearer test-password' }
+
+  beforeAll(async () => {
+    db = createDb(url)
+    originDir = await mkdtemp(join(tmpdir(), 'api-diff-origin-'))
+    git = new Git(resolveWorkspaceConfig({ root: originDir }))
+    await git.run(['init', '--quiet', '-b', 'main', originDir])
+    await writeFile(join(originDir, 'README.md'), '# origin\n')
+    await git.run(['add', '-A'], { cwd: originDir })
+    await git.run(['commit', '--quiet', '-m', 'init'], { cwd: originDir })
+    originUrl = `file://${originDir}`
+
+    root = await mkdtemp(join(tmpdir(), 'api-diff-root-'))
+    manager = new WorkspaceManager({ config: { root } })
+    const workspaceService = new WorkspaceService(manager, db, () =>
+      Promise.reject(new Error('diff tests never resolve an environment')),
+    )
+
+    app = createApp({
+      db,
+      gates: createEngine(db),
+      workspace: workspaceService,
+      config: loadConfig({
+        DATABASE_URL: url,
+        NODE_ENV: 'test',
+        SPECMATE_PASSWORD: 'test-password',
+        WORKSPACE_ROOT: root,
+      }),
+    })
+  })
+
+  afterAll(async () => {
+    try {
+      if (createdTaskIds.length > 0) {
+        await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
+      }
+    } finally {
+      await db.$client.close()
+      await rm(originDir, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  async function createDiffTask(slug: string): Promise<string> {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug,
+        title: 'Diff fixture',
+        type: 'feature',
+        repoUrl: originUrl,
+        baseBranch: 'main',
+      })
+      .returning()
+    assert(task)
+    createdTaskIds.push(task.id)
+
+    return task.id
+  }
+
+  test('lists changed files with status and line counts (AC-1034)', async () => {
+    const slug = `diff-files-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    await mkdir(join(workspace.path, 'src'), { recursive: true })
+    await writeFile(join(workspace.path, 'src', 'added.ts'), 'export const a = 1\n')
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      files: [{ path: 'src/added.ts', status: 'added', additions: 1, deletions: 0 }],
+    })
+  })
+
+  test('returns an empty list before any product-code commit exists (AC-1035)', async () => {
+    const slug = `diff-empty-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ files: [] })
+  })
+
+  test('returns one file unified diff by path (AC-1036)', async () => {
+    const slug = `diff-file-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    await writeFile(join(workspace.path, 'README.md'), '# origin\nextra line\n')
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/file?path=README.md`, {
+      headers: auth,
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { path: string; diff: string }
+    expect(body.path).toBe('README.md')
+    expect(body.diff).toContain('+extra line')
+  })
+
+  test('reads the same diff after the workspace has been released (AC-1037)', async () => {
+    const slug = `diff-released-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    await writeFile(join(workspace.path, 'README.md'), '# origin\nafter release\n')
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+    await manager.release(slug, originUrl)
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      files: [{ path: 'README.md', status: 'modified', additions: 1, deletions: 0 }],
+    })
+  })
+
+  test('reports a resolvable-but-missing branch as not-found, not a crash (2.4)', async () => {
+    const taskId = await createDiffTask(`diff-missing-${crypto.randomUUID().slice(0, 8)}`)
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'not_found' })
+  })
+
+  test('requires a path query parameter for the one-file diff', async () => {
+    const taskId = await createDiffTask(`diff-noquery-${crypto.randomUUID().slice(0, 8)}`)
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/file`, { headers: auth })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'validation' })
+  })
+
+  test('treats the path query parameter as one literal file, not a git pathspec (regression)', async () => {
+    const slug = `diff-pathspec-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    await writeFile(join(workspace.path, 'README.md'), '# origin\nextra line\n')
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/file?path=.`, {
+      headers: auth,
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ path: '.', diff: '' })
+  })
+
+  test('reports a task branch with no common history as not-found, not a crash', async () => {
+    const slug = `diff-unrelated-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+
+    const strangerDir = await mkdtemp(join(tmpdir(), 'api-diff-stranger-'))
+    const strangerGit = new Git(resolveWorkspaceConfig({ root: strangerDir }))
+    await strangerGit.run(['init', '--quiet', '-b', 'stranger', strangerDir])
+    await writeFile(join(strangerDir, 'STRANGER.md'), '# unrelated history\n')
+    await strangerGit.run(['add', '-A'], { cwd: strangerDir })
+    await strangerGit.run(['commit', '--quiet', '-m', 'unrelated root commit'], {
+      cwd: strangerDir,
+    })
+    const strangerHead = (
+      await strangerGit.run(['rev-parse', 'HEAD'], { cwd: strangerDir })
+    ).stdout.trim()
+    await git.inMirror(workspace.mirrorPath, ['fetch', '--quiet', strangerDir, 'stranger'])
+    await git.inMirror(workspace.mirrorPath, [
+      'update-ref',
+      `refs/heads/${taskBranch(slug)}`,
+      strangerHead,
+    ])
+    await rm(strangerDir, { recursive: true, force: true })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+    const body = (await response.json()) as { code: string; detail: string }
+
+    expect(response.status).toBe(404)
+    expect(body.code).toBe('not_found')
+    // The underlying GitError's own message embeds the mirror's absolute
+    // filesystem path — never forwarded to the client (regression).
+    expect(body.detail).not.toContain(workspace.mirrorPath)
   })
 })

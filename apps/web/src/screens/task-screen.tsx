@@ -537,6 +537,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             <Link href={`/tasks/${taskId}/artifacts`} className="button-secondary">
               Read artifacts
             </Link>
+            <Link href={`/tasks/${taskId}/diff`} className="button-secondary">
+              Files changed
+            </Link>
             <span className="flex items-center gap-2 border border-border px-3 py-2 font-mono text-xs text-muted">
               <span
                 className={`h-2 w-2 rounded-full ${connectionClasses(connection)}`}

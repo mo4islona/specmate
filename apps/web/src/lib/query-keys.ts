@@ -10,4 +10,6 @@ export const queryKeys = {
   decisions: (taskId: string) => ['tasks', taskId, 'decisions'] as const,
   artifact: (taskId: string, artifactId: string) =>
     ['tasks', taskId, 'artifacts', artifactId] as const,
+  diffFiles: (taskId: string) => ['tasks', taskId, 'diff', 'files'] as const,
+  diffFile: (taskId: string, path: string) => ['tasks', taskId, 'diff', 'file', path] as const,
 }

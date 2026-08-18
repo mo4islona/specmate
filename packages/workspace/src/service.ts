@@ -1,6 +1,7 @@
 import { type ExecutionEnvironment, isTerminal, type TaskState } from '@specmate/core'
 import { type Database, events, tasks } from '@specmate/db'
 import { and, eq, isNull } from 'drizzle-orm'
+import { type DiffFile, resolveTaskDiffRange, taskFileDiff, taskFilesChanged } from './diff.ts'
 import { Git } from './git.ts'
 import { type IndexedArtifact, indexChangeFolder } from './index-artifacts.ts'
 import type {
@@ -11,6 +12,7 @@ import type {
   Workspace,
   WorkspaceManager,
 } from './manager.ts'
+import { changeDir } from './paths.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
 export const ENVIRONMENT_REPINNED_EVENT = 'task.environment_repinned'
@@ -24,6 +26,12 @@ export type EnvironmentResolver = (
   workspace: Workspace,
   image: string,
 ) => Promise<ExecutionEnvironment>
+
+export interface DiffTaskRef {
+  readonly slug: string
+  readonly repoUrl: string
+  readonly baseBranch: string
+}
 
 export class TaskNotFoundError extends Error {
   constructor(taskId: string) {
@@ -137,6 +145,28 @@ export class WorkspaceService {
 
   headCommit(workspace: Workspace): Promise<string> {
     return this.manager.headCommit(workspace)
+  }
+
+  /**
+   * Reads straight from the shared mirror rather than `workspace.path`, so
+   * this works for a task whose per-task worktree has already been released
+   * (REQ-1013/AC-1037) — there is no live checkout to depend on.
+   *
+   * Takes the task itself rather than a taskId: both diff routes already
+   * load the task to check it exists before calling in, and a second,
+   * identical `SELECT` here would be pure waste on an endpoint an operator
+   * re-fetches while browsing files.
+   */
+  async diffFiles(task: DiffTaskRef): Promise<DiffFile[]> {
+    const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
+
+    return taskFilesChanged(this.git, range, changeDir(task.slug))
+  }
+
+  async diffFile(task: DiffTaskRef, path: string): Promise<string> {
+    const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
+
+    return taskFileDiff(this.git, range, path, changeDir(task.slug))
   }
 
   async release(taskId: string): Promise<void> {
