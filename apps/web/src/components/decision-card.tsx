@@ -1,7 +1,16 @@
-import { budgetFromRaiseOption } from '@specmate/core'
+import { type BudgetKey, budgetFromRaiseOption } from '@specmate/core'
 import { useEffect, useState } from 'react'
 import type { DecisionItem } from '../lib/api-client.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
+
+/** Mirrors the server's Budgets schema (packages/core/src/state.ts): whole minutes, any positive cost. */
+function isValidRaiseValue(budget: BudgetKey, value: string): boolean {
+  if (!value.trim()) return false
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return false
+
+  return budget === 'max_wall_clock_minutes' ? Number.isInteger(numeric) : true
+}
 
 export interface DecisionCardProps {
   readonly decision: DecisionItem
@@ -94,13 +103,14 @@ export function DecisionCard({
             }
 
             const value = raiseValues[option.id] ?? ''
+            const isMinutes = raiseBudget === 'max_wall_clock_minutes'
 
             return (
               <div key={option.id} className="flex shrink-0 items-center gap-2">
                 <input
                   type="number"
-                  min="0"
-                  step="any"
+                  min={isMinutes ? '1' : '0.01'}
+                  step={isMinutes ? '1' : 'any'}
                   className="control w-28"
                   value={value}
                   onChange={(event) =>
@@ -112,7 +122,7 @@ export function DecisionCard({
                 <button
                   type="button"
                   className="button-secondary"
-                  disabled={busy || !value.trim()}
+                  disabled={busy || !isValidRaiseValue(raiseBudget, value)}
                   onClick={() => onAnswerOption(option.id, value.trim())}
                 >
                   {option.label}

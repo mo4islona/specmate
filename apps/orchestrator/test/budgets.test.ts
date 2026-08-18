@@ -10,23 +10,27 @@ import {
   stages,
   tasks,
 } from '@specmate/db'
+import type { StageExecution } from '@specmate/runner'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
   BudgetDecisionRequiresOptionError,
+  BudgetExhaustedResumeError,
   BudgetRaiseTooLowError,
   BudgetRaiseValueError,
   Engine,
   type EngineSettings,
   NotParkedError,
 } from '../src/engine.ts'
-import type { RunGraphRow } from '../src/store.ts'
+import { type RunGraphRow, taskSpend } from '../src/store.ts'
 import {
   fakeConversationDispatcher,
   fakeDispatcher,
   fakeWorkspaces,
+  okConversationExecution,
   okExecution,
   reload,
   seedTask,
+  until,
 } from './fixtures.ts'
 
 const url = process.env.DATABASE_URL
@@ -227,6 +231,44 @@ describeDb('budget-enforcement', () => {
       expect((await reload(db, task.id)).status).toBe('paused')
     })
 
+    test('a queued conversation response still dispatches for a task paused for a reason other than budget — REQ-1502', async () => {
+      const { engine, stagesDispatcher, conversationsDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'research' })
+      let finish: (value: StageExecution) => void = () => {}
+      stagesDispatcher.plan(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      )
+      await engine.tick()
+      await until(() => stagesDispatcher.dispatches.length === 1)
+      const [running] = await db.select().from(stages).where(eq(stages.taskId, task.id))
+      assert(running)
+
+      await engine.stopStage({
+        taskId: task.id,
+        stageId: running.id,
+        graphId: running.graphId,
+        nodeKey: running.nodeKey,
+        attempt: running.attempt,
+        actor: 'owner',
+      })
+      finish(okExecution('researcher'))
+      expect((await reload(db, task.id)).status).toBe('paused')
+
+      const { response } = await seedMessage(task.id)
+      conversationsDispatcher.plan(() => okConversationExecution('Still here.'))
+      await engine.tick()
+      await engine.idle()
+
+      const [answered] = await db
+        .select()
+        .from(conversationMessages)
+        .where(eq(conversationMessages.id, response.id))
+      expect(answered).toMatchObject({ status: 'completed' })
+    })
+
     test('a task whose runs report no cost still pauses once its agent-minutes budget is reached — REQ-1505, AC-1514', async () => {
       const { engine, stagesDispatcher } = makeEngine()
       const { task, graph } = await seed({ at: 'research', budgets: { max_wall_clock_minutes: 1 } })
@@ -293,6 +335,22 @@ describeDb('budget-enforcement', () => {
       expect((await reload(db, task.id)).budgets.max_cost_usd).toBe(1)
     })
 
+    test('a raise within float-drift epsilon of current spend is refused rather than silently resuming into a re-pause — REQ-1504', async () => {
+      const { engine } = makeEngine()
+      const { task, graph } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      // Just under the cap by less than BUDGET_EPSILON — computeSpend
+      // already reads this as exhausted, so the raise check must agree.
+      await seedSpentAttempt(graph, { costUsd: 0.9999999999999999 })
+      await engine.tick()
+      await engine.idle()
+      assert((await reload(db, task.id)).status === 'paused')
+
+      await expect(engine.raiseBudget(task.id, 'evgeny', 'max_cost_usd', 1)).rejects.toThrow(
+        BudgetRaiseTooLowError,
+      )
+      expect((await reload(db, task.id)).status).toBe('paused')
+    })
+
     test('refuses to raise a budget on a task that is not paused', async () => {
       const { engine } = makeEngine()
       const { task } = await seed({ at: 'research' })
@@ -300,6 +358,13 @@ describeDb('budget-enforcement', () => {
       await expect(engine.raiseBudget(task.id, 'evgeny', 'max_cost_usd', 100)).rejects.toThrow(
         NotParkedError,
       )
+    })
+
+    test('the generic resume operation refuses a task still paused for exhaustion — REQ-1503, AC-1508', async () => {
+      const { engine, task } = await seedPaused({ max_cost_usd: 1 })
+
+      await expect(engine.resume(task.id, 'evgeny')).rejects.toThrow(BudgetExhaustedResumeError)
+      expect((await reload(db, task.id)).status).toBe('paused')
     })
 
     test('answering the exhaustion decision with a value at or below spend is refused and leaves it open; a sufficient value resumes — REQ-1503, REQ-1504', async () => {
@@ -372,6 +437,52 @@ describeDb('budget-enforcement', () => {
       ).toBe('open')
     })
 
+    test('answering with an option for a budget this decision never reached is refused, not silently accepted — REQ-1503', async () => {
+      const { engine, task } = await seedPaused({ max_cost_usd: 1 })
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+      // Only the cost budget is reached, so only `raise:max_cost_usd` and
+      // `cancel` are legitimately offered — `raise:max_wall_clock_minutes`
+      // merely looks like a raise option.
+      expect(decision.options.map((option) => option.id)).not.toContain(
+        'raise:max_wall_clock_minutes',
+      )
+
+      await expect(
+        engine.answer({
+          taskId: task.id,
+          decisionId: decision.id,
+          actor: 'evgeny',
+          optionId: 'raise:max_wall_clock_minutes',
+          text: '60',
+        }),
+      ).rejects.toThrow(BudgetDecisionRequiresOptionError)
+      expect((await reload(db, task.id)).status).toBe('paused')
+      expect((await reload(db, task.id)).budgets.max_wall_clock_minutes).not.toBe(60)
+      expect(
+        (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+      ).toBe('open')
+    })
+
+    test('answering with an option id this decision never offered at all is refused rather than stranding the task paused — REQ-1503', async () => {
+      const { engine, task } = await seedPaused({ max_cost_usd: 1 })
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+
+      await expect(
+        engine.answer({
+          taskId: task.id,
+          decisionId: decision.id,
+          actor: 'evgeny',
+          optionId: 'not-a-real-option',
+        }),
+      ).rejects.toThrow(BudgetDecisionRequiresOptionError)
+      expect((await reload(db, task.id)).status).toBe('paused')
+      expect(
+        (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
+      ).toBe('open')
+    })
+
     test('dismissal is refused rather than stranding the task paused — REQ-1503', async () => {
       const { engine, task } = await seedPaused({ max_cost_usd: 1 })
       const [decision] = await openDecisions(task.id)
@@ -427,9 +538,16 @@ describeDb('budget-enforcement', () => {
       const after = await reload(db, task.id)
       expect(after.status).toBe('paused')
       expect(after.budgets.max_cost_usd).toBe(100)
-      expect(
-        (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]?.status,
-      ).toBe('open')
+      const stillOpen = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
+      expect(stillOpen?.status).toBe('open')
+      // The decision is refreshed in place: it stops offering to raise the
+      // budget that was just cleared, and its prompt states the new cap
+      // rather than the one that no longer applies — REQ-1503.
+      expect(stillOpen?.options.map((option) => option.id)).toEqual([
+        'raise:max_wall_clock_minutes',
+        'cancel',
+      ])
+      expect(stillOpen?.promptMd).toContain('$100.00')
 
       const resumed = await engine.raiseBudget(task.id, 'evgeny', 'max_wall_clock_minutes', 60)
       expect(resumed.status).toBe('research')
@@ -524,6 +642,33 @@ describeDb('budget-enforcement', () => {
       await engine.tick()
       await engine.idle()
       expect((await reload(db, task.id)).status).toBe('spec_review')
+    })
+  })
+
+  describe('spend completeness', () => {
+    test('an orphaned conversation response records a real, self-timed duration rather than an unknown one — REQ-1505', async () => {
+      const { engine } = makeEngine()
+      const { task } = await seed({ at: 'research' })
+      const { response } = await seedMessage(task.id)
+      const claimedAt = new Date(Date.now() - 5_000)
+      await db
+        .update(conversationMessages)
+        .set({ status: 'responding', updatedAt: claimedAt })
+        .where(eq(conversationMessages.id, response.id))
+
+      expect(await engine.sweep()).toBe(1)
+
+      const [settled] = await db
+        .select()
+        .from(conversationMessages)
+        .where(eq(conversationMessages.id, response.id))
+      expect(settled?.status).toBe('queued')
+      const [entry] = settled?.telemetry ?? []
+      expect(entry?.startedAt).toBe(claimedAt.toISOString())
+      expect(entry?.durationMs).toBeGreaterThanOrEqual(5_000)
+
+      const spend = await taskSpend(db, task.id)
+      expect(spend.agentMinutes).toBeGreaterThan(0)
     })
   })
 })

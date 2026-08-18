@@ -1,3 +1,4 @@
+import { type BudgetKey, spendAgainstBudget } from '@specmate/core'
 import type { TaskDetail } from '../lib/api-client.ts'
 
 type Budgets = TaskDetail['task']['budgets']
@@ -10,22 +11,25 @@ interface BudgetRow {
   readonly incomplete: boolean
 }
 
+function ratioAgainst(spend: Spend, budgets: Budgets, key: BudgetKey): number {
+  const cap = budgets[key]
+
+  return cap > 0 ? spendAgainstBudget(spend, key) / cap : 0
+}
+
 /** REQ-1505: incomplete cost is shown as incomplete, never silently as a bare number. */
 function budgetRows(budgets: Budgets, spend: Spend): BudgetRow[] {
   return [
     {
       label: 'Cost',
       display: `$${spend.costUsd.toFixed(2)} of $${budgets.max_cost_usd.toFixed(2)}`,
-      ratio: budgets.max_cost_usd > 0 ? spend.costUsd / budgets.max_cost_usd : 0,
+      ratio: ratioAgainst(spend, budgets, 'max_cost_usd'),
       incomplete: !spend.costComplete,
     },
     {
       label: 'Agent-minutes',
       display: `${spend.agentMinutes.toFixed(1)} of ${budgets.max_wall_clock_minutes} min`,
-      ratio:
-        budgets.max_wall_clock_minutes > 0
-          ? spend.agentMinutes / budgets.max_wall_clock_minutes
-          : 0,
+      ratio: ratioAgainst(spend, budgets, 'max_wall_clock_minutes'),
       incomplete: false,
     },
   ]

@@ -3,6 +3,8 @@ import {
   BUDGET_DECISION_CANCEL_OPTION,
   BUDGET_DECISION_KEY,
   BUDGET_DECISION_NODE_KEY,
+  BUDGET_EPSILON,
+  type BudgetExhaustion,
   type BudgetKey,
   Budgets,
   bindStageProvider,
@@ -31,6 +33,7 @@ import {
   ROLE_CONTRACTS,
   type RoundToRecord,
   renderDecisionLog,
+  type Spend,
   type StageNode,
   type StageTelemetry,
   spendAgainstBudget,
@@ -152,6 +155,14 @@ export class BudgetRaiseTooLowError extends Error {
   }
 }
 
+export class BudgetExhaustedResumeError extends Error {
+  override readonly name = 'BudgetExhaustedResumeError'
+
+  constructor(taskId: string) {
+    super(`task ${taskId} is paused for an exhausted budget; raise it before resuming`)
+  }
+}
+
 export class IllegalTransitionError extends Error {
   constructor(taskId: string, from: TaskState, to: TaskState) {
     super(`task ${taskId} may not move ${from} → ${to} under its pinned pipeline`)
@@ -239,7 +250,7 @@ export class BudgetDecisionRequiresOptionError extends Error {
 
   constructor(decisionId: string) {
     super(
-      `decision ${decisionId} is the budget-exhaustion decision and requires choosing an option`,
+      `decision ${decisionId} is the budget-exhaustion decision and requires choosing one of its offered options`,
     )
   }
 }
@@ -739,12 +750,28 @@ export class Engine {
       // The queue scan is only a snapshot. Re-check the owning task under the
       // conversation lock so a terminal transition cannot race into a new run.
       const [owner] = await tx
-        .select({ taskStatus: tasks.status })
+        .select({ task: tasks })
         .from(conversations)
         .innerJoin(tasks, eq(conversations.taskId, tasks.id))
         .where(eq(conversations.id, candidate.conversationId))
         .limit(1)
-      if (!owner || isTerminal(owner.taskStatus)) return null
+      if (!owner || isTerminal(owner.task.status)) return null
+
+      // `dispatch()`'s pauseIfBudgetExhausted check ran in its own
+      // transaction, under the task lock, before this transaction started —
+      // that lock is already released by now, leaving a window where a
+      // concurrent stage commit can push spend past budget before this claim
+      // runs. Re-verify live, under a try-lock on the same task, rather than
+      // trust the pre-check's now-possibly-stale answer. A lock miss (the
+      // task is mid-transition elsewhere) or fresh exhaustion both decline
+      // the claim — the task's own dispatch path is what pauses it properly.
+      const taskLocked = await tx.execute(
+        sql`select pg_try_advisory_xact_lock(hashtextextended(${owner.task.id}, 0)) as locked`,
+      )
+      const [taskLock] = taskLocked as { locked?: boolean }[]
+      if (!taskLock?.locked) return null
+      const { exhaustion } = await this.checkExhaustion(tx, owner.task)
+      if (exhaustion.exhausted) return null
 
       const [runningResponse] = await tx
         .select({ id: conversationMessages.id })
@@ -770,6 +797,16 @@ export class Engine {
     })
   }
 
+  /** The spend/exhaustion pair every budget check needs, read fresh under the caller's lock. */
+  private async checkExhaustion(
+    tx: DbClient,
+    task: Task,
+  ): Promise<{ spend: Spend; exhaustion: BudgetExhaustion }> {
+    const spend = await taskSpend(tx, task.id)
+
+    return { spend, exhaustion: budgetExhaustion(spend, task.budgets) }
+  }
+
   /**
    * REQ-1502, REQ-1503: the budget check every dispatch path shares, run
    * inside the caller's task-locked transaction. `task` must be the row read
@@ -782,8 +819,7 @@ export class Engine {
     graph: RunGraphRow,
     about: string,
   ): Promise<boolean> {
-    const spend = await taskSpend(tx, task.id)
-    const exhaustion = budgetExhaustion(spend, task.budgets)
+    const { spend, exhaustion } = await this.checkExhaustion(tx, task)
     if (!exhaustion.exhausted) return false
 
     await raiseDecision(
@@ -810,33 +846,31 @@ export class Engine {
    * `claimResponse` locks the conversation, not the task — mutating task
    * status needs the task's own lock, so a conversation dispatch takes it
    * separately before claiming, rather than inside `claimResponse` itself.
-   * Returning `true` means "do not dispatch this candidate": either it was
-   * just paused here, or it was already `paused`. A `waiting_human` task is
-   * parked on an unrelated decision rather than budget — `pauseForExhaustedBudget`
-   * assumes a genuine dispatchable node so it can record where to resume, and
-   * nesting it on top of an existing park would overwrite the `resumeStatus`
-   * that park depends on to ever resume — so an exhausted `waiting_human`
-   * task blocks this dispatch without mutating task state at all; the real
+   * Returning `true` means "do not dispatch this candidate": its spend has
+   * reached a budget, whether that's why it's currently parked or not.
+   * `paused`, `waiting_human`, and `blocked` are each parked on something of
+   * their own rather than a genuine dispatchable node — `pauseForExhaustedBudget`
+   * assumes the latter so it can record where to resume, and nesting it on
+   * top of an existing park would overwrite the `resumeStatus` that park
+   * depends on to ever resume — so an exhausted task already parked in one of
+   * these blocks this dispatch without mutating task state at all; the real
    * pause, with correct resume semantics, happens the moment this task's own
-   * stage next tries to claim a slot.
+   * stage next tries to claim a slot. A task parked for a reason other than
+   * budget, with spend still under budget, is left free to keep answering —
+   * that budget check belongs to conversation dispatch, not to park state.
    */
   private async pauseIfBudgetExhausted(task: Task, about: string): Promise<boolean> {
-    // A cheap check against the tick()-level snapshot skips taking the
-    // task's advisory lock — and blocking a concurrent stage-claim
-    // transaction that holds it — for the common case of a task that is
-    // plainly already paused. A stale snapshot only ever under-skips here;
-    // the fresh, lock-guarded read below is still the authority.
-    if (task.status === 'paused') return true
     if (isTerminal(task.status)) return false
 
     return this.withTaskLock(task.id, async (tx) => {
       const { task: liveTask, graph } = await this.taskWithGraph(task.id, tx)
       if (isTerminal(liveTask.status)) return false
-      if (liveTask.status === 'paused') return true
-      if (liveTask.status === 'waiting_human') {
-        const spend = await taskSpend(tx, liveTask.id)
-
-        return budgetExhaustion(spend, liveTask.budgets).exhausted
+      if (
+        liveTask.status === 'paused' ||
+        liveTask.status === 'waiting_human' ||
+        liveTask.status === 'blocked'
+      ) {
+        return (await this.checkExhaustion(tx, liveTask)).exhaustion.exhausted
       }
 
       return this.pauseForExhaustedBudget(tx, liveTask, graph, about)
@@ -1860,12 +1894,17 @@ export class Engine {
     if (!cleaned) return
 
     const finishedAt = new Date()
+    // REQ-1505: agent-minutes stays complete even here — the provider never
+    // reported back, but `claimResponse` stamped `updatedAt` the moment this
+    // attempt started, so the orchestrator's own clock still yields a real
+    // duration instead of an unknown one.
+    const startedAt = response.updatedAt
     const telemetry: ExecutionUsage = {
       provider: this.resolveAnswerProvider(),
       model: null,
-      startedAt: null,
+      startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),
-      durationMs: null,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
       tokens: null,
       costUsd: null,
       raw: null,
@@ -2474,6 +2513,14 @@ export class Engine {
       const to = task.resumeStatus
       if (!to) throw new NoResumeStateError(taskId)
 
+      // REQ-1503, AC-1508: this generic resume has no "raise" of its own —
+      // a budget-paused task must go through raiseBudget instead, or it
+      // would just walk straight into a re-pause on the next dispatch.
+      const spend = await taskSpend(tx, taskId)
+      if (budgetExhaustion(spend, task.budgets).exhausted) {
+        throw new BudgetExhaustedResumeError(taskId)
+      }
+
       await emitEvent(tx, { taskId, type: 'task.resumed', payload: { to, actor } })
       await this.applyTransition(tx, task, graph.dag, to, { cause: 'resume', actor })
     })
@@ -2521,7 +2568,11 @@ export class Engine {
 
     const spend = await taskSpend(tx, taskId)
     const current = spendAgainstBudget(spend, budget)
-    if (value <= current) throw new BudgetRaiseTooLowError(taskId, budget, current)
+    // The same epsilon the exhaustion check tolerates: without it, a raise to
+    // exactly the value the UI displays (itself rounded from a spend that
+    // sits inside the epsilon window) can pass here yet still read as
+    // exhausted below, silently repeating as a no-op.
+    if (value <= current + BUDGET_EPSILON) throw new BudgetRaiseTooLowError(taskId, budget, current)
 
     const budgets = { ...task.budgets, [budget]: value }
     await tx.update(tasks).set({ budgets, updatedAt: new Date() }).where(eq(tasks.id, taskId))
@@ -2530,8 +2581,22 @@ export class Engine {
     // Both budgets can be exhausted at once. Resuming while the other is
     // still over its cap would just walk straight into a re-pause on the
     // very next dispatch — stay paused and leave the exhaustion decision
-    // open instead.
-    if (budgetExhaustion(spend, budgets).exhausted) {
+    // open instead, refreshed so it stops offering the budget just raised
+    // and states the now-current spend.
+    const exhaustion = budgetExhaustion(spend, budgets)
+    if (exhaustion.exhausted) {
+      await raiseDecision(
+        tx,
+        taskId,
+        null,
+        budgetExhaustionDecision({
+          about: 'the task to resume',
+          spend,
+          budgets,
+          reached: exhaustion.reached,
+        }),
+      )
+
       return { task: { ...task, budgets }, resumed: false }
     }
 
@@ -2563,6 +2628,16 @@ export class Engine {
       .where(and(eq(decisions.id, options.decisionId), eq(decisions.taskId, options.taskId)))
       .limit(1)
     if (!decision) throw new DecisionNotFoundError(options.decisionId)
+
+    // REQ-1503, AC-1508: the budget decision only ever legally resolves
+    // through one of its own offered options — a raise for a budget it
+    // actually reached, or cancel — never a bare free-text answer, a missing
+    // option, or an option id that merely resembles a raise (stale UI state,
+    // a malformed request) but targets a budget this decision never offered.
+    if (this.isBudgetDecision(decision)) {
+      const offered = decision.options.some((option) => option.id === options.optionId)
+      if (!offered) throw new BudgetDecisionRequiresOptionError(options.decisionId)
+    }
 
     // REQ-1504, AC-1510: a raise must be validated and applied *before* the
     // decision is marked answered — unlike the coverage decision's options,
@@ -2602,11 +2677,26 @@ export class Engine {
       })
     }
 
-    // The budget decision's only other legal resolution is `cancel` — a bare
-    // free-text answer would mark it answered without raising anything or
-    // resuming the task, stranding it paused with nothing left open.
-    if (this.isBudgetDecision(decision) && !options.optionId) {
-      throw new BudgetDecisionRequiresOptionError(options.decisionId)
+    // Resolving the budget decision as cancelled and actually cancelling the
+    // task run in one transaction, same as the raise path above — a crash
+    // between two separate transactions would otherwise strand the decision
+    // closed with the task still paused and nothing left open to retry.
+    if (this.isBudgetDecision(decision) && options.optionId === BUDGET_DECISION_CANCEL_OPTION) {
+      const done = await this.withTaskLock(options.taskId, async (tx) => {
+        await this.resolveDecisionInTx(
+          tx,
+          options.taskId,
+          options.decisionId,
+          options.actor,
+          'answered',
+          { text: options.text, optionId: options.optionId },
+        )
+
+        return this.cancelInTx(tx, options.taskId, options.actor)
+      })
+      await this.releaseIfTerminal(done.task, done.dag, 'cancelled')
+
+      return done.task
     }
 
     const resolved = await this.resolveDecision(
@@ -2621,18 +2711,6 @@ export class Engine {
     // free-text chat answer (§4.5) records normally but triggers nothing here.
     if (this.isCoverageDecision(resolved.decision) && options.optionId) {
       return this.applyCoverageChoice(resolved.task, options.optionId, options.actor)
-    }
-    const isBudgetCancel =
-      this.isBudgetDecision(resolved.decision) && options.optionId === BUDGET_DECISION_CANCEL_OPTION
-    if (isBudgetCancel) {
-      await this.cancel(resolved.task.id, options.actor)
-      const [cancelled] = await this.deps.db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, resolved.task.id))
-        .limit(1)
-
-      return cancelled ?? { ...resolved.task, status: 'cancelled', resumeStatus: null }
     }
 
     return resolved.task
@@ -2870,14 +2948,30 @@ export class Engine {
   }
 
   async cancel(taskId: string, actor: string): Promise<void> {
-    const done = await this.withTaskLock(taskId, async (tx) => {
-      const { task, graph } = await this.taskWithGraph(taskId, tx)
-      await emitEvent(tx, { taskId, type: 'task.cancelled', payload: { actor } })
-      await this.applyTransition(tx, task, graph.dag, 'cancelled', { cause: 'cancel', actor })
-
-      return { task, dag: graph.dag }
-    })
+    const done = await this.withTaskLock(taskId, (tx) => this.cancelInTx(tx, taskId, actor))
     await this.releaseIfTerminal(done.task, done.dag, 'cancelled')
+  }
+
+  /**
+   * The guts of `cancel`, factored out so `answer`'s budget-decision-cancel
+   * path can run it and the decision's resolution inside one transaction
+   * instead of two — see the comment at that call site.
+   */
+  private async cancelInTx(
+    tx: DbClient,
+    taskId: string,
+    actor: string,
+  ): Promise<{ task: Task; dag: PinnedGraph }> {
+    const { task, graph } = await this.taskWithGraph(taskId, tx)
+    await emitEvent(tx, { taskId, type: 'task.cancelled', payload: { actor } })
+    await this.applyTransition(tx, task, graph.dag, 'cancelled', { cause: 'cancel', actor })
+
+    const [cancelled] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+
+    return {
+      task: cancelled ?? { ...task, status: 'cancelled', resumeStatus: null },
+      dag: graph.dag,
+    }
   }
 
   /**
