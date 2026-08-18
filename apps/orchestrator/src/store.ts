@@ -536,9 +536,7 @@ export async function latestHarnessCoverage(
   const [row] = await db
     .select({ result: stages.result })
     .from(stages)
-    .where(
-      and(eq(stages.taskId, taskId), sql`${stages.result} ->> 'harness_coverage' is not null`),
-    )
+    .where(and(eq(stages.taskId, taskId), sql`${stages.result} ->> 'harness_coverage' is not null`))
     .orderBy(desc(stages.finishedAt))
     .limit(1)
 

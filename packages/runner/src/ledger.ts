@@ -143,7 +143,9 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
   // Collapsed once and checked for its own truthiness — a whitespace-only
   // evidence_md (valid under the assessment schema's z.string().min(1),
   // which does not trim) must read as absent, not as a dangling "— ".
-  const harnessEvidence = snapshot.harnessEvidence ? collapseWhitespace(snapshot.harnessEvidence) : ''
+  const harnessEvidence = snapshot.harnessEvidence
+    ? collapseWhitespace(snapshot.harnessEvidence)
+    : ''
 
   const lines = [
     '## Task',
