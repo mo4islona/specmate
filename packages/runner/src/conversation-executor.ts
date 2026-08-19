@@ -5,7 +5,9 @@ import type {
   AgentProvider,
   ConversationActionOption,
   ConversationActionProposal,
+  ModelId,
   ProviderId,
+  ReasoningEffort,
   StageJob,
   StageResult,
   StageTelemetry,
@@ -43,6 +45,9 @@ export interface ConversationRequest {
   readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
   readonly actionOptions: readonly ConversationActionOption[]
   readonly provider?: ProviderId
+  /** Resolved from the task's stored model bindings for the `answerer` role. */
+  readonly model: ModelId
+  readonly reasoningEffort: ReasoningEffort
   readonly workspace: ConversationWorkspace
   readonly baseBranch: string
   readonly environment: StageJob['environment']
@@ -108,6 +113,8 @@ export class ConversationExecutor {
       node: 'conversation',
       role: 'answerer',
       provider: provider.id,
+      model: request.model,
+      reasoningEffort: request.reasoningEffort,
       workspacePath: request.workspace.path,
       changeDir: request.workspace.changeDir,
       prompt,

@@ -80,10 +80,14 @@ const executor = new StageExecutor({
   ledger: (id) => renderLedgerForTask(db, config, id),
 })
 
+const binding = provisionedTask.modelBindings[role.data]
+
 const execution = await executor.execute({
   taskId: task.id,
   stageId: crypto.randomUUID(),
   role: role.data,
+  model: binding.model,
+  reasoningEffort: binding.reasoningEffort,
   workspace,
   baseBranch: task.baseBranch,
   environment: taskRunnerEnvironment(provisionedTask.environment),

@@ -5,6 +5,7 @@ import { ArtifactsScreen } from './screens/artifacts-screen.tsx'
 import { AttentionScreen } from './screens/attention-screen.tsx'
 import { FilesChangedScreen } from './screens/files-changed-screen.tsx'
 import { NewTaskScreen } from './screens/new-task-screen.tsx'
+import { SettingsScreen } from './screens/settings-screen.tsx'
 import { TaskScreen } from './screens/task-screen.tsx'
 
 export function App() {
@@ -14,6 +15,7 @@ export function App() {
         <Switch>
           <Route path="/" component={AttentionScreen} />
           <Route path="/tasks/new" component={NewTaskScreen} />
+          <Route path="/settings" component={SettingsScreen} />
           <Route path="/tasks/:taskId/artifacts/:artifactId">
             {(params) => <ArtifactsScreen taskId={params.taskId} artifactId={params.artifactId} />}
           </Route>

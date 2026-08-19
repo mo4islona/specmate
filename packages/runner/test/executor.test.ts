@@ -72,6 +72,8 @@ function request(harness: Harness, overrides: Partial<StageRequest> = {}): Stage
     taskId: TASK_ID,
     stageId: '44444444-4444-4444-8444-444444444444',
     role: 'researcher',
+    model: 'claude-opus-5',
+    reasoningEffort: 'high',
     workspace: harness.workspace,
     baseBranch: 'main',
     environment: { image: 'local://host', toolchains: [] },
@@ -216,6 +218,47 @@ describe('stage execution', () => {
     await executor.execute(request(harness, { environment }))
 
     expect(jobEnvironment).toEqual(environment)
+  })
+
+  test('dispatches the model and reasoning effort resolved on the request, not the process-level default (AC-230, AC-231)', async () => {
+    const harness = await makeHarness('task-model')
+    await harness.commitAll('baseline')
+    const dispatched: { model: string; reasoningEffort: string }[] = []
+    // The process-level config carries its own default model (and no effort at
+    // all) — proving the dispatched values differ from it is what shows the
+    // resolved binding wins (AC-231).
+    const config = makeConfig({ forwardEnv: STUB_ENV })
+    const delegate = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
+    const provider: AgentProvider = {
+      id: delegate.id,
+      run(job) {
+        dispatched.push({ model: job.model, reasoningEffort: job.reasoningEffort })
+
+        return delegate.run(job)
+      },
+      healthcheck: () => delegate.healthcheck(),
+    }
+    setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, SPECMATE_STUB_MODE: 'ok' })
+    const executor = new StageExecutor({
+      config,
+      provider,
+      git: harness.git,
+      workspaces: workspaceAdapter(harness),
+      ledger: async () => '',
+    })
+
+    await executor.execute(
+      request(harness, { role: 'researcher', model: 'claude-sonnet-5', reasoningEffort: 'low' }),
+    )
+    await executor.execute(
+      request(harness, { role: 'implementer', model: 'claude-fable-5', reasoningEffort: 'max' }),
+    )
+
+    expect(dispatched).toEqual([
+      { model: 'claude-sonnet-5', reasoningEffort: 'low' },
+      { model: 'claude-fable-5', reasoningEffort: 'max' },
+    ])
+    expect(dispatched.map((d) => d.model)).not.toContain(config.model)
   })
 
   test('commits the output of a run that stayed in scope', async () => {

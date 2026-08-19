@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { instantiateDefinition, PIPELINE_CATALOG, type TaskState } from '@specmate/core'
+import {
+  DEFAULT_MODEL_BINDINGS,
+  instantiateDefinition,
+  PIPELINE_CATALOG,
+  type TaskState,
+} from '@specmate/core'
 import {
   conversationActions,
   conversationMessages,
@@ -13,9 +18,11 @@ import {
   decisions,
   events,
   feedback,
+  getModelDefaults,
   runGraphs,
   stages,
   tasks,
+  updateModelDefaults,
 } from '@specmate/db'
 import { Engine } from '@specmate/orchestrator/engine'
 import { createTask as createOrchestratedTask } from '@specmate/orchestrator/store'
@@ -472,6 +479,205 @@ describeDb('api', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ code: 'validation' })
+  })
+
+  interface ModelBindingJson {
+    model: string
+    reasoningEffort: string
+  }
+
+  describe('model defaults — REQ-1014, REQ-1001, REQ-917', () => {
+    let originalDefaults: Awaited<ReturnType<typeof getModelDefaults>>
+
+    beforeAll(async () => {
+      originalDefaults = await getModelDefaults(db)
+    })
+
+    afterAll(async () => {
+      await updateModelDefaults(db, originalDefaults)
+    })
+
+    test('reads the current default model and reasoning effort for every role — AC-1040', async () => {
+      const response = await app.request('/api/v1/settings/model-defaults', { headers: auth })
+
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { modelDefaults: Record<string, ModelBindingJson> }
+      expect(body.modelDefaults.researcher).toEqual(originalDefaults.researcher)
+    })
+
+    test('updates one role, a later read reflects it, and a task created afterward without an override for that role uses it — AC-1041', async () => {
+      const updated = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ reviewer: { model: 'claude-sonnet-5' } }),
+      })
+      expect(updated.status).toBe(200)
+      const updatedBody = (await updated.json()) as {
+        modelDefaults: Record<string, ModelBindingJson>
+      }
+      expect(updatedBody.modelDefaults.reviewer.model).toBe('claude-sonnet-5')
+
+      const read = await app.request('/api/v1/settings/model-defaults', { headers: auth })
+      const readBody = (await read.json()) as { modelDefaults: Record<string, ModelBindingJson> }
+      expect(readBody.modelDefaults.reviewer.model).toBe('claude-sonnet-5')
+
+      const created = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Picks up updated default fixture',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/picks-up-updated-default',
+        }),
+      })
+      expect(created.status).toBe(201)
+      const createdBody = (await created.json()) as {
+        task: { id: string; modelBindings: Record<string, ModelBindingJson> }
+      }
+      createdTaskIds.push(createdBody.task.id)
+      expect(createdBody.task.modelBindings.reviewer.model).toBe('claude-sonnet-5')
+    })
+
+    test("updates one role's reasoning effort only, leaving that role's model untouched — AC-1041", async () => {
+      const modelBefore = (await getModelDefaults(db)).implementer.model
+      const updated = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ implementer: { reasoningEffort: 'max' } }),
+      })
+
+      expect(updated.status).toBe(200)
+      const body = (await updated.json()) as { modelDefaults: Record<string, ModelBindingJson> }
+      expect(body.modelDefaults.implementer).toEqual({
+        model: modelBefore,
+        reasoningEffort: 'max',
+      })
+    })
+
+    test('rejects an update naming a model outside the known catalog, leaving the stored default unchanged — AC-1042', async () => {
+      const before = await getModelDefaults(db)
+      const rejected = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ implementer: { model: 'gpt-99' } }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({ code: 'validation' })
+      const unchanged = await getModelDefaults(db)
+      expect(unchanged.implementer).toEqual(before.implementer)
+    })
+
+    test('rejects an update naming a reasoning effort outside the known levels, leaving the stored default unchanged — AC-1042', async () => {
+      const before = await getModelDefaults(db)
+      const rejected = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ implementer: { reasoningEffort: 'ultra' } }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({ code: 'validation' })
+      const unchanged = await getModelDefaults(db)
+      expect(unchanged.implementer).toEqual(before.implementer)
+    })
+
+    test('resetting sends the full shipped defaults and every role returns to them in one save — AC-949', async () => {
+      await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({
+          researcher: { model: 'claude-fable-5' },
+          reviewer: { reasoningEffort: 'low' },
+        }),
+      })
+
+      const reset = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify(DEFAULT_MODEL_BINDINGS),
+      })
+
+      expect(reset.status).toBe(200)
+      const body = (await reset.json()) as { modelDefaults: Record<string, ModelBindingJson> }
+      expect(body.modelDefaults).toEqual(DEFAULT_MODEL_BINDINGS)
+    })
+
+    test('launching with a model override reflects it for that role and current defaults elsewhere — AC-1038', async () => {
+      const created = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Model override fixture',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/model-override',
+          modelBindings: { implementer: { model: 'claude-fable-5' } },
+        }),
+      })
+      expect(created.status).toBe(201)
+      const body = (await created.json()) as {
+        task: { id: string; modelBindings: Record<string, ModelBindingJson> }
+      }
+      createdTaskIds.push(body.task.id)
+      expect(body.task.modelBindings.implementer.model).toBe('claude-fable-5')
+      const currentDefaults = await getModelDefaults(db)
+      expect(body.task.modelBindings.researcher).toEqual(currentDefaults.researcher)
+    })
+
+    test('launching with a reasoning-effort-only override inherits the current default model for that role — AC-1038', async () => {
+      const currentDefaults = await getModelDefaults(db)
+      const created = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Effort override fixture',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/effort-override',
+          modelBindings: { implementer: { reasoningEffort: 'low' } },
+        }),
+      })
+      expect(created.status).toBe(201)
+      const body = (await created.json()) as {
+        task: { id: string; modelBindings: Record<string, ModelBindingJson> }
+      }
+      createdTaskIds.push(body.task.id)
+      expect(body.task.modelBindings.implementer).toEqual({
+        model: currentDefaults.implementer.model,
+        reasoningEffort: 'low',
+      })
+    })
+
+    test('rejects a task launched with a model override naming an unknown model, creating no task — AC-1039', async () => {
+      const rejected = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Unknown model override fixture',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/unknown-model-override',
+          modelBindings: { implementer: { model: 'gpt-99' } },
+        }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({ code: 'validation' })
+    })
+
+    test('rejects a task launched with a reasoning-effort override naming an unknown level, creating no task — AC-1039', async () => {
+      const rejected = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Unknown effort override fixture',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/unknown-effort-override',
+          modelBindings: { implementer: { reasoningEffort: 'ultra' } },
+        }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({ code: 'validation' })
+    })
   })
 
   test('task detail reports spend against budget, with cost marked incomplete rather than zero when telemetry is missing — REQ-1505, AC-1512, AC-1513', async () => {

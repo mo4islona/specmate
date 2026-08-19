@@ -5,6 +5,7 @@ import * as schema from './schema.ts'
 
 export * from './conversation-store.ts'
 export * from './schema.ts'
+export * from './settings-store.ts'
 export { schema }
 
 export type Database = ReturnType<typeof createDb>

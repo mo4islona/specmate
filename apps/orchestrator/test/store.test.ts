@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition } from '@specmate/core'
+import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition, type ModelBindings } from '@specmate/core'
 import {
   conversations,
   createDb,
   type Database,
   decisions,
   events,
+  getModelDefaults,
   iterations,
   runGraphs,
   stages,
   tasks,
+  updateModelDefaults,
 } from '@specmate/db'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import {
@@ -335,6 +337,62 @@ describeDb('task store', () => {
       expect([first.created, second.created].filter(Boolean)).toHaveLength(1)
       const rows = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
       expect(rows).toHaveLength(1)
+    })
+  })
+
+  describe('model bindings', () => {
+    let originalDefaults: ModelBindings
+
+    beforeAll(async () => {
+      originalDefaults = await getModelDefaults(db)
+    })
+
+    afterAll(async () => {
+      await updateModelDefaults(db, originalDefaults)
+    })
+
+    test('a task created without an override stores the then-current defaults, and a later default change does not alter it (AC-333, AC-334)', async () => {
+      await updateModelDefaults(db, { researcher: { model: 'claude-sonnet-5' } })
+      const { task } = await make()
+      expect(task.modelBindings.researcher.model).toBe('claude-sonnet-5')
+
+      await updateModelDefaults(db, { researcher: { model: 'claude-fable-5' } })
+      const [reloaded] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+      expect(reloaded?.modelBindings.researcher.model).toBe('claude-sonnet-5')
+    })
+
+    test('a task created with a one-role override stores that override and current defaults for the rest (AC-1038)', async () => {
+      await updateModelDefaults(db, { reviewer: { model: 'claude-sonnet-5' } })
+      const slug = `store-${crypto.randomUUID().slice(0, 8)}`
+      const { task } = await createTask(db, {
+        slug,
+        title: `Fixture ${slug}`,
+        type: 'feature',
+        repoUrl: 'file:///dev/null',
+        modelBindings: { implementer: { model: 'claude-fable-5' } },
+      })
+      created.push(task.id)
+
+      expect(task.modelBindings.implementer.model).toBe('claude-fable-5')
+      expect(task.modelBindings.reviewer.model).toBe('claude-sonnet-5')
+    })
+
+    test('a task created with an effort-only override stores that effort and inherits the current default model for the same role (AC-1038)', async () => {
+      await updateModelDefaults(db, { implementer: { model: 'claude-sonnet-5' } })
+      const slug = `store-${crypto.randomUUID().slice(0, 8)}`
+      const { task } = await createTask(db, {
+        slug,
+        title: `Fixture ${slug}`,
+        type: 'feature',
+        repoUrl: 'file:///dev/null',
+        modelBindings: { implementer: { reasoningEffort: 'max' } },
+      })
+      created.push(task.id)
+
+      expect(task.modelBindings.implementer).toEqual({
+        model: 'claude-sonnet-5',
+        reasoningEffort: 'max',
+      })
     })
   })
 })

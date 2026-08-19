@@ -7,6 +7,7 @@ import {
   isHumanGate,
   isTerminal,
   listConversations,
+  ModelBindingsOverride,
   openConversation,
   readConversation,
   TaskState,
@@ -21,12 +22,14 @@ import {
   decisions,
   events,
   feedback,
+  getModelDefaults,
   ping,
   runGraphs,
   type Stage,
   stages,
   type Task,
   tasks,
+  updateModelDefaults,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
 import { createTask, taskSpend } from '@specmate/orchestrator/store'
@@ -104,7 +107,10 @@ const CreateTask = z.object({
   type: z.enum(['feature', 'bugfix']),
   repoUrl: z.url(),
   baseBranch: z.string().trim().min(1).default('main'),
+  modelBindings: ModelBindingsOverride.optional(),
 })
+
+const UpdateModelDefaults = ModelBindingsOverride
 
 const CreateComment = z.object({
   comment: z.string().trim().min(1).max(20_000),
@@ -637,13 +643,28 @@ export function createApp({
 
     .get('/events/stream', (c) => eventStream(c))
 
+    .get('/settings/model-defaults', async (c) => {
+      const defaults = await getModelDefaults(db)
+      return c.json({ modelDefaults: defaults })
+    })
+
+    .put(
+      '/settings/model-defaults',
+      validator('json', validateJson(UpdateModelDefaults)),
+      async (c) => {
+        const update = c.req.valid('json')
+        const defaults = await updateModelDefaults(db, update)
+        return c.json({ modelDefaults: defaults })
+      },
+    )
+
     .get('/tasks', async (c) => {
       const rows = await db.select().from(tasks).orderBy(desc(tasks.createdAt)).limit(100)
       return c.json({ tasks: rows })
     })
 
     .post('/tasks', validator('json', validateJson(CreateTask)), async (c) => {
-      const { title, description, type, repoUrl, baseBranch } = c.req.valid('json')
+      const { title, description, type, repoUrl, baseBranch, modelBindings } = c.req.valid('json')
       const { task } = await createTask(db, {
         slug: `${slugify(title)}-${Bun.randomUUIDv7().slice(0, 8)}`,
         title,
@@ -651,6 +672,7 @@ export function createApp({
         type,
         repoUrl,
         baseBranch,
+        modelBindings,
       })
 
       return c.json({ task }, 201)

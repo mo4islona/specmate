@@ -70,6 +70,8 @@ function request(workspace: ConversationWorkspace): ConversationRequest {
     ],
     workspace,
     baseBranch: 'main',
+    model: 'claude-opus-5',
+    reasoningEffort: 'high',
     environment: { image: 'local://host', toolchains: [] },
     attempt: 0,
   }

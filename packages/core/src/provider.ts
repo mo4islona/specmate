@@ -1,4 +1,5 @@
 import type { ExecutionEnvironment } from './environment.ts'
+import type { ModelId, ReasoningEffort } from './models.ts'
 import type { StageResult } from './result.ts'
 import type { AgentRole, ProviderId } from './roles.ts'
 
@@ -9,6 +10,10 @@ export interface StageJob {
   readonly node?: string
   readonly role: AgentRole
   readonly provider: ProviderId
+  /** Resolved from the task's stored model bindings for this stage's role — never process config. */
+  readonly model: ModelId
+  /** Resolved from the same binding as `model`; passed to the CLI's `--effort` flag. */
+  readonly reasoningEffort: ReasoningEffort
   /** Absolute path of the worktree the stage runs in. */
   readonly workspacePath: string
   /** Change folder relative to the workspace, e.g. openspec/changes/<slug>. */

@@ -140,6 +140,13 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
+type ModelDefaultsResponse = InferResponseType<
+  (typeof apiClient.api.v1.settings)['model-defaults']['$get'],
+  200
+>
+type UpdateModelDefaultsRequest = InferRequestType<
+  (typeof apiClient.api.v1.settings)['model-defaults']['$put']
+>
 
 export type TaskSummary = TasksResponse['tasks'][number]
 export type AttentionItem = AttentionResponse['items'][number]
@@ -163,6 +170,8 @@ export type RestartStageInput = RestartStageRequest['json']
 export type DecisionItem = DecisionsResponse['decisions'][number]
 export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
+export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
+export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
 export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   const response = await apiClient.api.v1.tasks.$get(undefined, { init: { signal } })
@@ -370,6 +379,22 @@ export async function listArtifacts(
   )
 
   return readJson<ArtifactsResponse>(response)
+}
+
+export async function getModelDefaults(signal?: AbortSignal): Promise<ModelDefaultsResponse> {
+  const response = await apiClient.api.v1.settings['model-defaults'].$get(undefined, {
+    init: { signal },
+  })
+
+  return readJson<ModelDefaultsResponse>(response)
+}
+
+export async function updateModelDefaults(
+  input: UpdateModelDefaultsInput,
+): Promise<ModelDefaultsResponse> {
+  const response = await apiClient.api.v1.settings['model-defaults'].$put({ json: input })
+
+  return readJson<ModelDefaultsResponse>(response)
 }
 
 export async function getArtifact(
