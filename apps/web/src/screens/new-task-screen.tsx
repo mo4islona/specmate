@@ -1,6 +1,14 @@
+import {
+  AGENT_ROLES,
+  type AgentRole,
+  type ModelBinding,
+  type ModelId,
+  type ReasoningEffort,
+} from '@specmate/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { useLocation } from 'wouter'
+import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { ApiRequestError, type CreateTaskInput, createTask } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 
@@ -10,17 +18,46 @@ const INITIAL_FORM: CreateTaskInput = {
   type: 'bugfix',
   repoUrl: '',
   baseBranch: 'main',
+  modelBindings: {},
 }
 
 /**
  * REQ-903: the request is optional, so a blank textarea must reach intake as
  * absent, not as an empty string — trimmed at the edges only, everything
- * between is the owner's exact words, blank lines included.
+ * between is the owner's exact words, blank lines included. An untouched
+ * override control must reach intake as no override at all, not as `{}`.
  */
 export function buildCreateTaskPayload(form: CreateTaskInput): CreateTaskInput {
   const description = form.description?.trim()
+  const modelBindings = form.modelBindings ?? {}
+  const hasOverride = Object.keys(modelBindings).length > 0
 
-  return { ...form, description: description || undefined }
+  return {
+    ...form,
+    description: description || undefined,
+    modelBindings: hasOverride ? modelBindings : undefined,
+  }
+}
+
+/** Setting a field to `undefined` ("Use default") drops it; an empty role object drops the role too. */
+export function setOverrideField<K extends keyof ModelBinding>(
+  modelBindings: CreateTaskInput['modelBindings'],
+  role: AgentRole,
+  field: K,
+  value: ModelBinding[K] | undefined,
+): CreateTaskInput['modelBindings'] {
+  const nextRole = { ...modelBindings?.[role], [field]: value }
+
+  if (nextRole[field] === undefined) delete nextRole[field]
+
+  const next = { ...modelBindings }
+  if (Object.keys(nextRole).length > 0) {
+    next[role] = nextRole
+  } else {
+    delete next[role]
+  }
+
+  return next
 }
 
 export function NewTaskScreen() {
@@ -149,6 +186,50 @@ export function NewTaskScreen() {
           />
           {fieldError('repoUrl') && <p className="field-error">{fieldError('repoUrl')}</p>}
         </div>
+
+        <details className="border-t border-border pt-5">
+          <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted">
+            Override models for this task
+          </summary>
+          {fieldError('modelBindings') && (
+            <p className="field-error mt-2">{fieldError('modelBindings')}</p>
+          )}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {AGENT_ROLES.map((role) => (
+              <div key={role} className="border border-border p-3">
+                <p className="field-label">{role}</p>
+                <ModelSelectPair
+                  role={role}
+                  includeUseDefault
+                  modelValue={form.modelBindings?.[role]?.model ?? ''}
+                  reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
+                  onModelChange={(value) =>
+                    setForm({
+                      ...form,
+                      modelBindings: setOverrideField(
+                        form.modelBindings,
+                        role,
+                        'model',
+                        (value || undefined) as ModelId | undefined,
+                      ),
+                    })
+                  }
+                  onReasoningEffortChange={(value) =>
+                    setForm({
+                      ...form,
+                      modelBindings: setOverrideField(
+                        form.modelBindings,
+                        role,
+                        'reasoningEffort',
+                        (value || undefined) as ReasoningEffort | undefined,
+                      ),
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        </details>
 
         {launch.isError && !(launch.error instanceof ApiRequestError) && (
           <p className="border border-danger/35 bg-danger/10 p-3 text-sm text-danger">

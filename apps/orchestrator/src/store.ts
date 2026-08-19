@@ -8,12 +8,14 @@ import {
   type HarnessCoverageAssessment,
   instantiateDefinition,
   isUniqueViolation,
+  type ModelBindingsOverride,
   nodeAt,
   PIPELINE_CATALOG,
   type PinnedGraph,
   type RecordedRound,
   type RoundToRecord,
   renderHarnessGapPrompt,
+  resolveModelBindings,
   type Spend,
   type SpendAttempt,
   type TaskState,
@@ -28,6 +30,7 @@ import {
   type Decision,
   decisions,
   events,
+  getModelDefaults,
   iterations,
   runGraphs,
   type StageUsage,
@@ -80,6 +83,8 @@ export interface CreateTaskInput {
   readonly baseBranch?: string
   readonly caps?: Partial<Caps>
   readonly budgets?: Partial<Budgets>
+  /** Per-role, per-field override; unnamed roles/fields resolve from the current model-defaults setting. */
+  readonly modelBindings?: ModelBindingsOverride
   /** Dev-only: position the task at a named stage node, for manual runs until intake exists. */
   readonly at?: TaskState
 }
@@ -111,6 +116,10 @@ export async function createTask(
   // One transaction: a task without its pinned graph is invisible to the loop
   // and unrepairable, so the two rows exist together or not at all.
   return db.transaction(async (tx) => {
+    // Read inside the transaction: the resolved bindings this task stores must
+    // reflect the model-defaults row as of this create, not a stale snapshot.
+    const currentDefaults = await getModelDefaults(tx)
+
     const [task] = await tx
       .insert(tasks)
       .values({
@@ -123,6 +132,7 @@ export async function createTask(
         status: input.at ?? 'draft',
         caps: Caps.parse(input.caps ?? {}),
         budgets: Budgets.parse(input.budgets ?? {}),
+        modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),
       })
       .returning()
     if (!task) throw new Error(`task ${input.slug} could not be created`)

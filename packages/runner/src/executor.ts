@@ -1,7 +1,9 @@
 import {
   type AgentProvider,
   type AgentRole,
+  type ModelId,
   type ProviderId,
+  type ReasoningEffort,
   ROLE_CONTRACTS,
   type StageActivity,
   type StageJob,
@@ -37,6 +39,9 @@ export interface StageRequest {
   readonly role: AgentRole
   /** Provider the engine bound and recorded for this stage; a mismatch is refused. */
   readonly provider?: ProviderId
+  /** Resolved from the task's stored model bindings for this stage's role. */
+  readonly model: ModelId
+  readonly reasoningEffort: ReasoningEffort
   readonly workspace: Workspace
   readonly baseBranch: string
   /** Immutable runner image and exact toolchains pinned for this task. */
@@ -164,6 +169,8 @@ export class StageExecutor {
       node: request.node,
       role: request.role,
       provider: provider.id,
+      model: request.model,
+      reasoningEffort: request.reasoningEffort,
       workspacePath: request.workspace.path,
       changeDir: request.workspace.changeDir,
       prompt,

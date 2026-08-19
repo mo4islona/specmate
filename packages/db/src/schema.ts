@@ -9,8 +9,10 @@ import {
   DEFAULT_CAPS,
   type ExecutionEnvironment,
   type ExecutionUsage,
+  type ModelBindings,
   type PinnedGraph,
   type ReviewFinding,
+  resolveModelBindings,
   type StageResult,
   type TaskState,
 } from '@specmate/core'
@@ -182,6 +184,16 @@ export const providerCredentials = pgTable('provider_credentials', {
   updatedAt: timestamps.updatedAt,
 })
 
+/**
+ * A future setting is a new row here, not a migration — see model-settings/design.md. Only
+ * `model-defaults` is wired up today; nothing generic reads or writes an arbitrary key.
+ */
+export const appSettings = pgTable('app_settings', {
+  key: text().primaryKey(),
+  value: jsonb().$type<Record<string, unknown>>().notNull(),
+  updatedAt: timestamps.updatedAt,
+})
+
 // ─── tasks ────────────────────────────────────────────────────────────────────
 
 export const tasks = pgTable(
@@ -210,6 +222,10 @@ export const tasks = pgTable(
       .$type<Caps>()
       .notNull()
       .default({ ...DEFAULT_CAPS }),
+    modelBindings: jsonb('model_bindings')
+      .$type<ModelBindings>()
+      .notNull()
+      .default(resolveModelBindings({})),
     environment: jsonb().$type<ExecutionEnvironment>(),
     ...timestamps,
   },
@@ -522,6 +538,7 @@ export const events = pgTable(
 
 export type Task = typeof tasks.$inferSelect
 export type NewTask = typeof tasks.$inferInsert
+export type AppSetting = typeof appSettings.$inferSelect
 export type Conversation = typeof conversations.$inferSelect
 export type ConversationMessage = typeof conversationMessages.$inferSelect
 export type ConversationAction = typeof conversationActions.$inferSelect

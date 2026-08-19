@@ -20,6 +20,12 @@ export function AppShell({ children }: AppShellProps) {
           <Link href="/tasks/new" className="button-secondary mt-4 flex w-full justify-center">
             + Launch task
           </Link>
+          <Link
+            href="/settings"
+            className="mt-2 flex w-full justify-center py-1.5 font-mono text-xs uppercase tracking-widest text-muted transition-colors hover:text-text"
+          >
+            Settings
+          </Link>
         </div>
         <div className="p-3">
           <TaskNavigation />
@@ -34,6 +40,12 @@ export function AppShell({ children }: AppShellProps) {
             </Link>
             <Link href="/tasks/new" className="button-secondary py-1.5 text-xs">
               + Task
+            </Link>
+            <Link
+              href="/settings"
+              className="font-mono text-xs uppercase tracking-widest text-muted"
+            >
+              Settings
             </Link>
           </div>
           <details className="mt-3 border-t border-border pt-2">

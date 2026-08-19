@@ -5,8 +5,10 @@ import {
   type AgentProvider,
   type AgentRole,
   checkReviseHasFindings,
+  type ModelId,
   type ProviderStatus,
   parseStageResult,
+  type ReasoningEffort,
   ROLE_CONTRACTS,
   type StageActivity,
   type StageJob,
@@ -55,7 +57,7 @@ export class ClaudeCodeProvider implements AgentProvider {
    * `--verbose` is required alongside it under `-p`/`--print`: the CLI refuses
    * to start without it, regardless of whether per-token deltas are used.
    */
-  argv(role: AgentRole): string[] {
+  argv(role: AgentRole, model: ModelId, reasoningEffort: ReasoningEffort): string[] {
     const { config } = this.deps
     const argv = [
       config.cli,
@@ -64,7 +66,9 @@ export class ClaudeCodeProvider implements AgentProvider {
       'stream-json',
       '--verbose',
       '--model',
-      config.model,
+      model,
+      '--effort',
+      reasoningEffort,
     ]
     // Nobody is present to answer a permission prompt; the container boundary
     // and the post-run scope check are the safety property, not the prompt.
@@ -89,7 +93,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     await rm(resultPath, { force: true })
 
     const run = await backend.run({
-      argv: this.argv(job.role),
+      argv: this.argv(job.role, job.model, job.reasoningEffort),
       stdin: job.prompt,
       workspacePath: job.workspacePath,
       env: {},
@@ -106,7 +110,7 @@ export class ClaudeCodeProvider implements AgentProvider {
         : undefined,
     })
 
-    const log = `$ ${this.argv(job.role).join(' ')}\n\n${run.stdout}\n${run.stderr}`
+    const log = `$ ${this.argv(job.role, job.model, job.reasoningEffort).join(' ')}\n\n${run.stdout}\n${run.stderr}`
     await writeFile(join(scratch, 'run.log'), log)
 
     if (run.timedOut) {

@@ -40,6 +40,8 @@ function job(harness: Harness, overrides: Partial<StageJob> = {}): StageJob {
     stageId: '22222222-2222-4222-8222-222222222222',
     role: 'researcher',
     provider: 'claude-code',
+    model: 'claude-opus-5',
+    reasoningEffort: 'high',
     workspacePath: harness.workspace.path,
     changeDir: harness.workspace.changeDir,
     prompt: 'PROMPT-BODY-MARKER',
@@ -55,23 +57,26 @@ describe('provider invocation', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     const claude = provider('ok', harness)
 
-    expect(claude.argv('researcher')).toContain('--disallowedTools')
-    expect(claude.argv('researcher')).toContain('Bash')
-    expect(claude.argv('implementer')).not.toContain('--disallowedTools')
+    expect(claude.argv('researcher', 'claude-opus-5', 'high')).toContain('--disallowedTools')
+    expect(claude.argv('researcher', 'claude-opus-5', 'high')).toContain('Bash')
+    expect(claude.argv('implementer', 'claude-opus-5', 'high')).not.toContain('--disallowedTools')
   })
 
-  test('pins the model and runs headless with streaming output', () => {
+  test('runs the model and reasoning effort it is given, not the process-level config', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
-    const argv = provider('ok', harness).argv('researcher')
+    // The provider's config defaults to claude-opus-5; passing a different
+    // model here and seeing it win is what proves argv() isn't reading config.
+    const argv = provider('ok', harness).argv('researcher', 'claude-sonnet-5', 'xhigh')
 
     expect(argv).toContain('-p')
-    expect(argv[argv.indexOf('--model') + 1]).toBe('claude-opus-5')
+    expect(argv[argv.indexOf('--model') + 1]).toBe('claude-sonnet-5')
+    expect(argv[argv.indexOf('--effort') + 1]).toBe('xhigh')
     expect(argv[argv.indexOf('--output-format') + 1]).toBe('stream-json')
   })
 
   test('pairs --output-format stream-json with --verbose, which the CLI requires under -p', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
-    const argv = provider('ok', harness).argv('researcher')
+    const argv = provider('ok', harness).argv('researcher', 'claude-opus-5', 'high')
 
     expect(argv).toContain('--verbose')
   })

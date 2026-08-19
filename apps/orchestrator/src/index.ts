@@ -179,6 +179,7 @@ const dispatcher: StageDispatcher = async ({
   // The environment is pinned during provision, moments after the tick took
   // its task snapshot — dispatch on the pin, not on the snapshot.
   const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+  const binding = task.modelBindings[node.role]
 
   return executor.execute({
     taskId: task.id,
@@ -186,6 +187,8 @@ const dispatcher: StageDispatcher = async ({
     node: node.key,
     role: node.role,
     provider,
+    model: binding.model,
+    reasoningEffort: binding.reasoningEffort,
     workspace,
     baseBranch: task.baseBranch,
     environment: taskRunnerEnvironment(current?.environment ?? null),
@@ -210,6 +213,7 @@ const conversationDispatcher: ConversationDispatcher = async ({
   workspace,
 }) => {
   const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+  const binding = task.modelBindings.answerer
 
   return conversationExecutor.execute({
     taskId: task.id,
@@ -224,6 +228,8 @@ const conversationDispatcher: ConversationDispatcher = async ({
     contextPath,
     actionOptions,
     provider,
+    model: binding.model,
+    reasoningEffort: binding.reasoningEffort,
     workspace,
     baseBranch: task.baseBranch,
     environment: taskRunnerEnvironment(current?.environment ?? null),

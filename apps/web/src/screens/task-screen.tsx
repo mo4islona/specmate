@@ -6,6 +6,7 @@ import { BudgetPanel } from '../components/budget-panel.tsx'
 import { DecisionCard } from '../components/decision-card.tsx'
 import { HarnessBadge } from '../components/harness-badge.tsx'
 import { KickoffBrief } from '../components/kickoff-brief.tsx'
+import { ModelBindingsPanel } from '../components/model-bindings-panel.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
 import { TelemetryChart } from '../components/telemetry-chart.tsx'
@@ -751,6 +752,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       )}
 
       <BudgetPanel budgets={detail.data.task.budgets} spend={detail.data.spend} />
+      <ModelBindingsPanel modelBindings={detail.data.task.modelBindings} />
 
       {detail.data.graph && (
         <section className="panel p-4 sm:p-5">
