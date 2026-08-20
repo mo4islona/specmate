@@ -49,11 +49,21 @@ export class TaskEnvironmentMissingError extends Error {
   }
 }
 
+const FORBIDDEN_RUNNER_ENV_PREFIXES = ['GITHUB_'] as const
+
 export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string, pidDir?: string): RunnerConfig {
   // The in-process backend shares this process's filesystem and machine with an
   // agent that runs a foreign repository's code. In production that is not a
   // warning, it is a refusal.
   if (env.RUNNER_BACKEND === 'local' && nodeEnv === 'production') throw new UnsafeBackendError()
+
+  const forwardEnv = env.RUNNER_FORWARD_ENV?.split(',').map((name) => name.trim()) ?? []
+  const forbidden = forwardEnv.find((name) =>
+    FORBIDDEN_RUNNER_ENV_PREFIXES.some((prefix) => name.startsWith(prefix)),
+  )
+  if (forbidden) {
+    throw new Error(`${forbidden} must not be forwarded into a runner`)
+  }
 
   return resolveRunnerConfig({
     backend: env.RUNNER_BACKEND,
@@ -66,7 +76,7 @@ export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string, pidDir?: strin
     memory: env.RUNNER_MEMORY,
     rolesDir: env.ROLES_DIR,
     stageTimeoutMs: env.STAGE_TIMEOUT_MS,
-    forwardEnv: env.RUNNER_FORWARD_ENV?.split(',').map((name) => name.trim()) ?? [],
+    forwardEnv,
     pidDir,
   })
 }

@@ -17,6 +17,8 @@ import {
   type EngineWorkspaces,
   type StageDispatcher,
 } from './engine.ts'
+import { githubToken } from './github-auth.ts'
+import { Publisher } from './publish.ts'
 import {
   backendFor,
   providerFor,
@@ -44,8 +46,8 @@ const Env = z.object({
   WORKSPACE_ROOT: z.string().min(1).default('workspaces'),
   GIT_AUTHOR_NAME: z.string().min(1).default('SpecMate'),
   GIT_AUTHOR_EMAIL: z.string().min(1).default('specmate@localhost'),
-  /** Read-only key for target repositories; absent is legal for public origins. */
-  REPO_SSH_KEY_PATH: optionalString,
+  /** Public OAuth application identifier; authorization state is stored in the database. */
+  GITHUB_APP_CLIENT_ID: optionalString,
   NODE_ENV: z.string().min(1).default('development'),
   ...RunnerEnv.shape,
 })
@@ -63,7 +65,7 @@ const workspaces = new WorkspaceManager({
     root: env.WORKSPACE_ROOT,
     authorName: env.GIT_AUTHOR_NAME,
     authorEmail: env.GIT_AUTHOR_EMAIL,
-    sshKeyPath: env.REPO_SSH_KEY_PATH,
+    githubToken: () => githubToken({ db, clientId: env.GITHUB_APP_CLIENT_ID }),
   },
 })
 
@@ -121,6 +123,12 @@ try {
 const service = new WorkspaceService(workspaces, db, (workspace, image) =>
   backend.resolveEnvironment(workspace.path, image),
 )
+const publisher = new Publisher({
+  db,
+  git: new Git(workspaces.config),
+  workspaceConfig: workspaces.config,
+  token: () => githubToken({ db, clientId: env.GITHUB_APP_CLIENT_ID }),
+})
 const provider = providerFor(runnerConfig, backend)
 // Best-effort but ordered: chained rather than fire-and-forget, so concurrent
 // inserts can't commit out of the order the tool uses actually happened in —
@@ -247,6 +255,7 @@ const engine = new Engine({
     availableProviders: ['claude-code'],
   },
   dispatcher,
+  actionDispatcher: ({ task, graph, node }) => publisher.run(task, graph, node),
   conversationDispatcher,
   // Local agents are detached children that survive a crash exactly like a
   // container does; both backends leave something the sweep must kill.

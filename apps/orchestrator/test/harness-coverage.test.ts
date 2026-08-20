@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { StageResult } from '@specmate/core'
+import { forwardTarget, StageResult } from '@specmate/core'
 import {
   conversationActions,
   conversationMessages,
@@ -77,6 +77,12 @@ describeDb('harness-coverage', () => {
         ...overrides,
       },
       dispatcher: stagesDispatcher.dispatcher,
+      actionDispatcher: async ({ task, graph, node }) => {
+        await db
+          .update(tasks)
+          .set({ status: forwardTarget(graph, node.key), updatedAt: new Date() })
+          .where(eq(tasks.id, task.id))
+      },
       log: (message) => logs.push(message),
     })
     engines.push(engine)
@@ -432,12 +438,16 @@ describeDb('harness-coverage', () => {
         .where(eq(tasks.id, dependent.id))
 
       await engine.approve(blocker1.id, 'evgeny')
+      await engine.tick()
+      await engine.idle()
 
       let after = await reload(db, dependent.id)
       expect(after.status).toBe('blocked')
       expect(after.blockedBy).toEqual([blocker2.id])
 
       await engine.approve(blocker2.id, 'evgeny')
+      await engine.tick()
+      await engine.idle()
 
       after = await reload(db, dependent.id)
       expect(after.status).toBe('planning')

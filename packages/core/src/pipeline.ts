@@ -62,7 +62,13 @@ export interface GateNode {
   readonly rework?: readonly TaskState[]
 }
 
-export type PipelineNode = StageNode | GateNode
+/** An orchestrator-owned operation. It has neither an agent role nor a human edge. */
+export interface ActionNode {
+  readonly kind: 'action'
+  readonly key: TaskState
+}
+
+export type PipelineNode = StageNode | GateNode | ActionNode
 
 export interface PipelineDefinition {
   readonly id: string
@@ -163,6 +169,7 @@ export function validateDefinition(def: PipelineDefinition): string[] {
       }
       continue
     }
+    if (node.kind === 'action') continue
 
     if (!resolvable(node.approve)) {
       at(
@@ -214,10 +221,12 @@ function reachesTerminal(def: PipelineDefinition, from: TaskState): boolean {
     if (node.kind === 'stage') {
       queue.push(def.nodes[i + 1]?.key ?? def.terminal)
       if (node.loopEdge) queue.push(node.loopEdge.target)
-    } else {
+    } else if (node.kind === 'gate') {
       queue.push(node.approve)
       if (node.redirect) queue.push(node.redirect.target)
       queue.push(...(node.rework ?? []))
+    } else {
+      queue.push(def.nodes[i + 1]?.key ?? def.terminal)
     }
   }
 
@@ -240,9 +249,8 @@ export function loadPipelineCatalog<K extends string>(
 // ─── the feature/bugfix definition ────────────────────────────────────────────
 
 /**
- * The lifecycle spec as data. The publish node joins in Phase 6, so the final
- * gate's approval archives directly; the planning segment is declared but fails
- * loudly until the kickoff-brief change ships the planner prompt.
+ * The lifecycle spec as data. The planning segment is declared but fails loudly
+ * until the kickoff-brief change ships the planner prompt.
  */
 export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
   id: 'feature-bugfix',
@@ -284,9 +292,10 @@ export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
     {
       kind: 'gate',
       key: 'human_final_gate',
-      approve: 'archived',
+      approve: 'publish',
       rework: ['implement', 'research'],
     },
+    { kind: 'action', key: 'publish' },
   ],
 }
 
@@ -360,6 +369,10 @@ export function graphTransitions(graph: PinnedGraph): Record<TaskState, readonly
       if (node.loopEdge) targets.push(node.loopEdge.target)
       targets.push('failed')
       table[node.key] = dedupe(targets)
+      continue
+    }
+    if (node.kind === 'action') {
+      table[node.key] = [forwardTarget(graph, node.key), 'failed', 'cancelled']
       continue
     }
 

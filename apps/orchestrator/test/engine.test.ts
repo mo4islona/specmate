@@ -651,14 +651,14 @@ describeDb('conversation scheduling and interruption', () => {
     expect(ws.calls.discarded).toHaveLength(0)
   })
 
-  test('final-gate approval archives and releases the workspace; cancel releases too', async () => {
+  test('final-gate approval enters publish without releasing the workspace; cancel releases', async () => {
     const { engine, ws } = makeEngine()
     const { task } = await seed({ at: 'research', status: 'human_final_gate' })
 
     await engine.approve(task.id, 'evgeny')
 
-    expect((await reload(db, task.id)).status).toBe('archived')
-    expect(ws.calls.released).toContain(task.id)
+    expect((await reload(db, task.id)).status).toBe('publish')
+    expect(ws.calls.released).not.toContain(task.id)
 
     const other = await seed({ at: 'implement' })
     await engine.cancel(other.task.id, 'evgeny')

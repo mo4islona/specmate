@@ -5,6 +5,7 @@ import {
   Caps,
   canTransition,
   FEATURE_BUGFIX_PIPELINE,
+  forwardTarget,
   graphTransitions,
   HUMAN_GATES,
   instantiateDefinition,
@@ -203,9 +204,12 @@ describe('the feature/bugfix definition', () => {
     })
   })
 
-  test('the final gate approves straight into archive while publish is deferred', () => {
+  test('the final gate routes through publish before archive', () => {
     const final = FEATURE_BUGFIX_PIPELINE.nodes.find((n) => n.key === 'human_final_gate')
-    expect(final?.kind === 'gate' && final.approve).toBe('archived')
+    expect(final?.kind === 'gate' && final.approve).toBe('publish')
+    const publish = FEATURE_BUGFIX_PIPELINE.nodes.find((n) => n.key === 'publish')
+    expect(publish?.kind).toBe('action')
+    expect(forwardTarget(graph, 'publish')).toBe('archived')
   })
 
   function FEATURE_BUGFUX_STAGES() {
@@ -224,7 +228,7 @@ describe('derived transitions', () => {
    * rendering of the feature definition. Deliberate deltas from the deleted
    * original: `failed` is reachable from every stage (the attempt cap),
    * `waiting_human` entry is a generic rule rather than a listed edge, the
-   * final gate approves into `archived` while the publish node is deferred,
+   * final gate approves into the publish action before the terminal,
    * and a failed task may restart into any stage of its pinned graph.
    */
   const EXPECTED: Record<TaskState, readonly TaskState[]> = {
@@ -239,8 +243,8 @@ describe('derived transitions', () => {
     verify: ['code_review', 'implement', 'failed'],
     code_review: ['summarize', 'implement', 'failed'],
     summarize: ['human_final_gate', 'failed'],
-    human_final_gate: ['archived', 'implement', 'research', 'cancelled'],
-    publish: [],
+    human_final_gate: ['publish', 'implement', 'research', 'cancelled'],
+    publish: ['archived', 'failed', 'cancelled'],
     archived: [],
     waiting_human: [],
     paused: [],
@@ -286,6 +290,7 @@ describe('graph-derived legality', () => {
       'code_review',
       'summarize',
       'human_final_gate',
+      'publish',
       'archived',
     ]
     for (let i = 0; i < path.length - 1; i++) {

@@ -21,18 +21,23 @@ function recordingSpawn(): { spawn: GitSpawn; calls: SpawnSpec[] } {
 
 describe('git environment', () => {
   test('disables every prompt and ignores the host git config', () => {
-    const env = gitEnv(resolveWorkspaceConfig({ root: '/tmp/x' }))
+    const env = gitEnv()
     expect(env.GIT_TERMINAL_PROMPT).toBe('0')
     expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null')
     expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null')
-    expect(env.GIT_SSH_COMMAND).toBe('ssh -o BatchMode=yes')
+    expect(env.GIT_SSH_COMMAND).toBeUndefined()
   })
 
-  test('uses the configured key and nothing else from the agent', () => {
-    const env = gitEnv(resolveWorkspaceConfig({ root: '/tmp/x', sshKeyPath: '/keys/repo' }))
-    expect(env.GIT_SSH_COMMAND).toContain('-i "/keys/repo"')
-    expect(env.GIT_SSH_COMMAND).toContain('IdentitiesOnly=yes')
-    expect(env.GIT_SSH_COMMAND).toContain('BatchMode=yes')
+  test('builds a GitHub credential header only when configured', async () => {
+    const git = new Git(
+      resolveWorkspaceConfig({ root: '/tmp/x', githubToken: async () => 'a token' }),
+    )
+    await expect(git.authEnv('git@github.com:owner/repo.git')).resolves.toEqual({
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraheader',
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from('x-access-token:a token').toString('base64')}`,
+    })
+    await expect(git.authEnv('file:///tmp/repo')).resolves.toBeUndefined()
   })
 })
 

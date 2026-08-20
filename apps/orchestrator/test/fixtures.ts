@@ -214,6 +214,7 @@ export async function seedTask(
     resume?: TaskState
     caps?: Partial<Caps>
     budgets?: Partial<Budgets>
+    repoUrl?: string
   } = {},
 ): Promise<SeededTask> {
   const slug = `loop-${crypto.randomUUID().slice(0, 8)}`
@@ -221,7 +222,7 @@ export async function seedTask(
     slug,
     title: `Fixture ${slug}`,
     type: 'feature',
-    repoUrl: 'file:///dev/null',
+    repoUrl: options.repoUrl ?? 'file:///dev/null',
     caps: options.caps,
     budgets: options.budgets,
     at: options.at,

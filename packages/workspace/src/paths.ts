@@ -27,13 +27,24 @@ export function mirrorKey(repoUrl: string): string {
   return `${readable || 'repo'}-${digest}`
 }
 
-function normalizeRemote(repoUrl: string): string {
+export function normalizeRemote(repoUrl: string): string {
   const trimmed = repoUrl
     .trim()
     .replace(/\/+$/, '')
     .replace(/\.git$/i, '')
   const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/^[^/@]+@/, '')
   return withoutScheme.replace(':', '/').toLowerCase()
+}
+
+/** Accept the SSH and HTTPS GitHub spellings used by repository remotes. */
+export function githubRepository(repoUrl: string): string | undefined {
+  const normalized = normalizeRemote(repoUrl)
+  const match = normalized.match(/^github\.com\/([^/]+)\/([^/]+)$/)
+  if (!match) {
+    return undefined
+  }
+
+  return `${match[1]}/${match[2]}`
 }
 
 export function mirrorPath(config: WorkspaceConfig, repoUrl: string): string {
