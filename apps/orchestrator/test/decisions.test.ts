@@ -811,7 +811,7 @@ describeDb('kickoff brief questions', () => {
     expect(last?.markdown).toContain('Status: dismissed by evgeny')
   })
 
-  test('approving a gate whose target is itself terminal still dismisses open decisions as gate_approved, not terminal', async () => {
+  test('approving the final gate dismisses open decisions as gate_approved before publish', async () => {
     const { engine } = makeEngine()
     const { task } = await seed({ status: 'human_final_gate' })
     await db.insert(decisions).values({
@@ -826,7 +826,7 @@ describeDb('kickoff brief questions', () => {
 
     await engine.approve(task.id, 'evgeny')
 
-    expect((await reload(db, task.id)).status).toBe('archived')
+    expect((await reload(db, task.id)).status).toBe('publish')
     const all = await db.select().from(decisions).where(eq(decisions.taskId, task.id))
     expect(all).toMatchObject([{ status: 'dismissed' }])
 

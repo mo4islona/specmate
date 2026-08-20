@@ -16,6 +16,7 @@ import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { and, asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { Engine } from './engine.ts'
+import { githubLogin } from './github-auth.ts'
 import { createTask, latestGraph } from './store.ts'
 
 function flag(name: string): string | undefined {
@@ -44,6 +45,10 @@ const parsed = z
     GIT_AUTHOR_EMAIL: z.string().min(1).default('specmate@localhost'),
     STAGE_CONCURRENCY: z.coerce.number().int().positive().default(1),
     STAGE_ATTEMPT_CAP: z.coerce.number().int().positive().default(2),
+    GITHUB_APP_CLIENT_ID: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).optional(),
+    ),
   })
   .safeParse(process.env)
 if (!parsed.success) {
@@ -181,9 +186,17 @@ try {
       )
       break
     }
+    case 'github-login': {
+      await githubLogin({
+        db,
+        clientId: env.GITHUB_APP_CLIENT_ID,
+        log: (message) => console.info(message),
+      })
+      break
+    }
     default: {
       console.error(
-        'usage: admin.ts <create|approve|redirect|rework|answer|dismiss|resume|restart|cancel|show> [--flags]',
+        'usage: admin.ts <create|approve|redirect|rework|answer|dismiss|resume|restart|cancel|show|github-login> [--flags]',
       )
       process.exit(2)
     }
@@ -193,7 +206,7 @@ try {
   process.exit(1)
 }
 
-if (command !== 'create' && command !== 'show') {
+if (command !== 'create' && command !== 'show' && command !== 'github-login') {
   const taskId = required('task')
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
   console.info(JSON.stringify({ id: task?.id, status: task?.status }, null, 2))

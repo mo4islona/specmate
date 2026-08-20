@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { appendOwnerMessage } from '@specmate/core'
+import { appendOwnerMessage, forwardTarget } from '@specmate/core'
 import {
   conversationActions,
   conversations,
@@ -177,6 +177,12 @@ describeDb('the loop against a real repository', () => {
       },
       settings: { stageConcurrency: 1, stageAttemptCap: 2, availableProviders: ['claude-code'] },
       dispatcher,
+      actionDispatcher: async ({ task, graph, node }) => {
+        await db
+          .update(tasks)
+          .set({ status: forwardTarget(graph, node.key), updatedAt: new Date() })
+          .where(eq(tasks.id, task.id))
+      },
       conversationDispatcher,
     })
   }
@@ -732,10 +738,12 @@ describeDb('the loop against a real repository', () => {
     expect(harnessTask.description).toContain('No state-level suite exercises the redirect')
 
     // The harness task's own walk through its pipeline is exercised by the
-    // other e2e cases in this file; here only its terminal transition
-    // matters, so it is placed at the final gate directly.
+    // other e2e cases in this file; here only the terminal transition matters.
+    // Publish itself is covered by the publish action tests.
     await db.update(tasks).set({ status: 'human_final_gate' }).where(eq(tasks.id, harnessTaskId))
     await engine.approve(harnessTaskId, 'evgeny')
+    await engine.tick()
+    await engine.idle()
     expect((await reload(db, harnessTaskId)).status).toBe('archived')
 
     const released = await reload(db, task.id)

@@ -41,6 +41,15 @@ describe('runner configuration', () => {
     expect(config.forwardEnv).toEqual(['ANTHROPIC_API_KEY', 'OTHER'])
   })
 
+  test('refuses to forward GitHub authorization into a runner', () => {
+    expect(() =>
+      runnerConfigFrom(env({ RUNNER_FORWARD_ENV: 'GITHUB_APP_CLIENT_ID' }), 'production'),
+    ).toThrow(/GITHUB_APP_CLIENT_ID.*must not be forwarded/)
+    expect(() =>
+      runnerConfigFrom(env({ RUNNER_FORWARD_ENV: 'GITHUB_TOKEN' }), 'production'),
+    ).toThrow(/GITHUB_TOKEN.*must not be forwarded/)
+  })
+
   test('rejects a non-positive stage timeout', () => {
     expect(() => env({ STAGE_TIMEOUT_MS: '0' })).toThrow()
   })

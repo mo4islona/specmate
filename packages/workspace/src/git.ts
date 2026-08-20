@@ -1,4 +1,5 @@
 import type { WorkspaceConfig } from './config.ts'
+import { githubRepository } from './paths.ts'
 
 export interface GitResult {
   readonly stdout: string
@@ -6,12 +7,17 @@ export interface GitResult {
   readonly exitCode: number
 }
 
+/** Strips embedded HTTP Basic credentials (`https://user:token@host/...`) before an arg list is ever logged, stored, or surfaced to an operator. */
+function redact(args: readonly string[]): string[] {
+  return args.map((arg) => arg.replace(/(:\/\/[^/@]+:)[^@]+(@)/, '$1***$2'))
+}
+
 export class GitError extends Error {
   constructor(
     readonly args: readonly string[],
     readonly result: GitResult,
   ) {
-    super(`git ${args.join(' ')} exited ${result.exitCode}: ${result.stderr.trim()}`)
+    super(`git ${redact(args).join(' ')} exited ${result.exitCode}: ${result.stderr.trim()}`)
     this.name = 'GitError'
   }
 }
@@ -46,14 +52,11 @@ export const spawnGit: GitSpawn = (spec) =>
  * and the server's own git config is taken out of the picture so behaviour does
  * not depend on whoever set up the box.
  */
-export function gitEnv(config: WorkspaceConfig): Record<string, string> {
-  const ssh = ['ssh', '-o', 'BatchMode=yes']
-  if (config.sshKeyPath) ssh.push('-i', `"${config.sshKeyPath}"`, '-o', 'IdentitiesOnly=yes')
+export function gitEnv(): Record<string, string> {
   return {
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_SSH_COMMAND: ssh.join(' '),
     LC_ALL: 'C',
   }
 }
@@ -74,11 +77,14 @@ export class Git {
     ]
   }
 
-  async tryRun(args: string[], options: { cwd?: string } = {}): Promise<GitResult> {
+  async tryRun(
+    args: string[],
+    options: { cwd?: string; env?: Record<string, string> } = {},
+  ): Promise<GitResult> {
     const proc = this.spawn({
       cmd: ['git', ...this.identity, ...args],
       cwd: options.cwd,
-      env: { ...process.env, ...gitEnv(this.config) },
+      env: { ...process.env, ...gitEnv(), ...options.env },
     })
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -88,10 +94,39 @@ export class Git {
     return { stdout, stderr, exitCode }
   }
 
-  async run(args: string[], options: { cwd?: string } = {}): Promise<GitResult> {
+  async run(
+    args: string[],
+    options: { cwd?: string; env?: Record<string, string> } = {},
+  ): Promise<GitResult> {
     const result = await this.tryRun(args, options)
-    if (result.exitCode !== 0) throw new GitError(args, result)
+
+    if (result.exitCode !== 0) {
+      throw new GitError(args, result)
+    }
+
     return result
+  }
+
+  /**
+   * Per-invocation credential for a GitHub HTTPS remote, injected as a git
+   * config value via the environment. Unlike a token embedded in the remote
+   * URL, this never lands in a persisted remote config (`remote set-url`)
+   * or in an argv string a failure could echo back (`GitError`'s message).
+   */
+  async authEnv(repoUrl: string): Promise<Record<string, string> | undefined> {
+    const repository = githubRepository(repoUrl)
+    if (!repository || !this.config.githubToken) {
+      return undefined
+    }
+
+    const token = await this.config.githubToken()
+    const credential = Buffer.from(`x-access-token:${token}`).toString('base64')
+
+    return {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraheader',
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${credential}`,
+    }
   }
 
   /**
@@ -99,8 +134,12 @@ export class Git {
    * worktree subcommands need git to discover the repository, not be handed a
    * detached git dir.
    */
-  async inMirror(mirror: string, args: string[]): Promise<GitResult> {
-    return this.run(['-C', mirror, ...args])
+  async inMirror(
+    mirror: string,
+    args: string[],
+    options: { env?: Record<string, string> } = {},
+  ): Promise<GitResult> {
+    return this.run(['-C', mirror, ...args], options)
   }
 
   async tryInMirror(mirror: string, args: string[]): Promise<GitResult> {

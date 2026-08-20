@@ -1,4 +1,5 @@
 import {
+  type ActionNode,
   advance,
   BUDGET_DECISION_CANCEL_OPTION,
   BUDGET_DECISION_KEY,
@@ -286,6 +287,12 @@ export interface StageDispatch {
 
 export type StageDispatcher = (dispatch: StageDispatch) => Promise<StageExecution>
 
+export type ActionDispatcher = (dispatch: {
+  readonly task: Task
+  readonly graph: PinnedGraph
+  readonly node: ActionNode
+}) => Promise<void>
+
 export interface ConversationDispatch {
   readonly task: Task
   readonly conversationId: string
@@ -381,6 +388,8 @@ export interface EngineDeps {
   readonly settings: EngineSettings
   /** Absent in ops-only contexts (the admin CLI); tick() requires it. */
   readonly dispatcher?: StageDispatcher
+  /** Executes an orchestrator-owned action node without starting a runner. */
+  readonly actionDispatcher?: ActionDispatcher
   /** Answer-only runs use a disposable task snapshot and never enter the pinned graph. */
   readonly conversationDispatcher?: ConversationDispatcher
   /** Kills executions found by label during the sweep; absent means nothing to kill. */
@@ -412,6 +421,7 @@ const STUCK_ACTION_TIMEOUT_MS = 5 * 60_000
 export class Engine {
   private readonly inFlight = new Set<Promise<void>>()
   private readonly stageRuns = new Map<string, Promise<void>>()
+  private readonly actionRuns = new Map<string, Promise<void>>()
 
   constructor(private readonly deps: EngineDeps) {}
 
@@ -426,7 +436,7 @@ export class Engine {
    * slots, so newly runnable pipeline work can always overtake an answer.
    */
   async tick(): Promise<number> {
-    const { conversationDispatcher, db, settings, dispatcher } = this.deps
+    const { actionDispatcher, conversationDispatcher, db, settings, dispatcher } = this.deps
     if (!dispatcher) throw new Error('this engine has no dispatcher; tick() is not available')
 
     await this.recoverPendingInterruptions()
@@ -445,17 +455,23 @@ export class Engine {
       (settings.conversationConcurrency ?? settings.stageConcurrency) - (runningResponses?.n ?? 0)
     let dispatched = 0
     let stagesDispatched = 0
-    if (stageSlots > 0) {
-      const candidates = await db
-        .select()
-        .from(tasks)
-        .where(notInArray(tasks.status, NOT_RUNNABLE))
-        .orderBy(asc(tasks.updatedAt))
 
-      const graphs = await latestGraphsFor(
-        db,
-        candidates.map((task) => task.id),
-      )
+    // Stage and action dispatch both scan the same runnable-task snapshot; one
+    // query serves both instead of each block re-running it.
+    const candidates =
+      stageSlots > 0 || actionDispatcher
+        ? await db
+            .select()
+            .from(tasks)
+            .where(notInArray(tasks.status, NOT_RUNNABLE))
+            .orderBy(asc(tasks.updatedAt))
+        : []
+    const graphs = await latestGraphsFor(
+      db,
+      candidates.map((task) => task.id),
+    )
+
+    if (stageSlots > 0) {
       const runnable: { task: Task; graph: RunGraphRow; node: StageNode }[] = []
       for (const task of candidates) {
         const graph = graphs.get(task.id)
@@ -490,6 +506,32 @@ export class Engine {
           })
         this.inFlight.add(run)
         this.stageRuns.set(claimed.id, run)
+      }
+    }
+
+    if (actionDispatcher) {
+      for (const task of candidates) {
+        // A prior tick's run for this task (e.g. publish's push + PR call) may
+        // still be in flight; the task's status only changes once that run
+        // advances it, so without this guard the next tick would dispatch a
+        // second concurrent run of the same action.
+        if (this.actionRuns.has(task.id)) continue
+
+        const graph = graphs.get(task.id)
+        if (!graph) continue
+        const node = nodeAt(graph.dag, task.status)
+        if (node?.kind !== 'action') continue
+        dispatched += 1
+        const run = this.runAction(task, graph.dag, node, actionDispatcher)
+          .catch((error: Error) =>
+            this.deps.log?.(`action ${task.id}/${node.key} failed: ${error.message}`),
+          )
+          .finally(() => {
+            this.inFlight.delete(run)
+            if (this.actionRuns.get(task.id) === run) this.actionRuns.delete(task.id)
+          })
+        this.inFlight.add(run)
+        this.actionRuns.set(task.id, run)
       }
     }
 
@@ -1360,6 +1402,20 @@ export class Engine {
       log?.(
         `bookkeeping after ${task.id}/${node.key} attempt ${row.attempt}: ${(e as Error).message}`,
       )
+    }
+  }
+
+  private async runAction(
+    task: Task,
+    graph: PinnedGraph,
+    node: ActionNode,
+    dispatcher: ActionDispatcher,
+  ): Promise<void> {
+    await dispatcher({ task, graph, node })
+
+    const [current] = await this.deps.db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+    if (current?.status === graph.terminal) {
+      await this.releaseIfTerminal(current, graph, current.status)
     }
   }
 

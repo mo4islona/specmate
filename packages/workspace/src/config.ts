@@ -5,8 +5,8 @@ export interface WorkspaceConfig {
   readonly root: string
   readonly authorName: string
   readonly authorEmail: string
-  /** Read-only key for target repositories. Absent is legal: public or local origins. */
-  readonly sshKeyPath?: string
+  /** Obtains the orchestrator-held GitHub credential when a GitHub remote is used. */
+  readonly githubToken?: () => Promise<string>
   /** Schema recorded in a scaffolded change folder. */
   readonly changeSchema: string
   /** How often a held mirror lock refreshes its heartbeat. */
@@ -28,7 +28,7 @@ export const DEFAULT_WORKSPACE_CONFIG = {
   lockStaleMs: 15_000,
   lockWaitMs: 15 * 60_000,
   snapshotLimitBytes: 256 * 1024,
-} as const satisfies Omit<WorkspaceConfig, 'sshKeyPath'>
+} as const satisfies Omit<WorkspaceConfig, 'githubToken'>
 
 export type WorkspaceOptions = Partial<WorkspaceConfig>
 

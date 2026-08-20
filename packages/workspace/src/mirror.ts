@@ -31,8 +31,11 @@ export async function ensureMirror(
   repoUrl: string,
 ): Promise<string> {
   const path = mirrorPath(config, repoUrl)
+  const auth = await git.authEnv(repoUrl)
   if (await isDirectory(join(path, 'objects'))) {
-    await git.inMirror(path, ['fetch', 'origin', '--prune', '--quiet'])
+    await git.inMirror(path, ['remote', 'set-url', 'origin', repoUrl])
+    await git.inMirror(path, ['fetch', 'origin', '--prune', '--quiet'], { env: auth })
+
     return path
   }
 
@@ -42,15 +45,17 @@ export async function ensureMirror(
     await mkdir(dirname(path), { recursive: true })
     await git.run(['init', '--bare', '--quiet', temporary])
     await git.inMirror(temporary, ['remote', 'add', 'origin', repoUrl])
-    await git.inMirror(temporary, ['fetch', 'origin', '--prune', '--quiet'])
+    await git.inMirror(temporary, ['fetch', 'origin', '--prune', '--quiet'], { env: auth })
     // The mirror path exists only once it is complete: a clone killed half-way
     // leaves a temporary directory, never something a later run mistakes for a
     // usable cache.
     await rename(temporary, path)
   } catch (e) {
     await rm(temporary, { recursive: true, force: true })
+
     throw e
   }
+
   return path
 }
 
@@ -76,6 +81,7 @@ export async function resolveBaseCommit(
   if (result.exitCode !== 0 || !result.stdout.trim()) {
     throw new BaseBranchMissingError(repoUrl, baseBranch)
   }
+
   return result.stdout.trim()
 }
 
@@ -89,7 +95,10 @@ export async function ensureExcludes(mirror: string): Promise<void> {
   const infoDir = join(mirror, 'info')
   const excludePath = join(infoDir, 'exclude')
   const existing = await readFile(excludePath, 'utf8').catch(() => '')
-  if (existing.includes(EXCLUDE_MARKER)) return
+  if (existing.includes(EXCLUDE_MARKER)) {
+    return
+  }
+
   const block = `${EXCLUDE_MARKER} — never part of a stage commit\n/${RESULT_FILE}\n/${SCRATCH_DIR}/\n`
   await mkdir(infoDir, { recursive: true })
   await writeFile(excludePath, existing ? `${existing.trimEnd()}\n\n${block}` : block)
