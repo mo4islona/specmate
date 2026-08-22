@@ -9,6 +9,7 @@ import {
   decisionFromRequest,
   type EscalationInput,
   escalationForPark,
+  partitionRequests,
   renderDecisionLog,
   type StoredDecision,
 } from '../src/decisions.ts'
@@ -292,5 +293,56 @@ describe('renderDecisionLog', () => {
     ])
     expect(rendered).toContain('dismissed')
     expect(rendered).not.toMatch(/Answer:\s*$/m)
+  })
+})
+
+describe('partitionRequests', () => {
+  function question(key: string, blocking = false): DecisionRequest {
+    return { key, kind: 'question', prompt_md: `${key}?`, options: [], blocking }
+  }
+
+  test('records every question when the list is within the cap', () => {
+    const requests = [question('a'), question('b')]
+    const { recorded, refused } = partitionRequests(requests, 3)
+
+    expect(recorded).toEqual(requests)
+    expect(refused).toEqual([])
+  })
+
+  test('refuses the questions past the cap, keeping the order the stage returned', () => {
+    const requests = [question('a'), question('b'), question('c'), question('d')]
+    const { recorded, refused } = partitionRequests(requests, 2)
+
+    expect(recorded.map((r) => r.key)).toEqual(['a', 'b'])
+    expect(refused.map((r) => r.key)).toEqual(['c', 'd'])
+  })
+
+  test('never refuses a blocking request, whatever the cap', () => {
+    const requests = [question('a'), question('blocker', true), question('b'), question('c')]
+    const { recorded, refused } = partitionRequests(requests, 1)
+
+    expect(recorded.map((r) => r.key)).toEqual(['a', 'blocker'])
+    expect(refused.map((r) => r.key)).toEqual(['b', 'c'])
+  })
+
+  test('a blocking request does not consume the question cap', () => {
+    const escalation: DecisionRequest = {
+      key: 'stalled',
+      kind: 'escalation',
+      prompt_md: 'The loop is not converging.',
+      options: [],
+      blocking: true,
+    }
+    const { recorded, refused } = partitionRequests([escalation, question('a')], 1)
+
+    expect(recorded.map((r) => r.key)).toEqual(['stalled', 'a'])
+    expect(refused).toEqual([])
+  })
+
+  test('a cap of zero refuses every question and keeps every blocker', () => {
+    const { recorded, refused } = partitionRequests([question('a'), question('b', true)], 0)
+
+    expect(recorded.map((r) => r.key)).toEqual(['b'])
+    expect(refused.map((r) => r.key)).toEqual(['a'])
   })
 })

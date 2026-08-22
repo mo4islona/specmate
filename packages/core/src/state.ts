@@ -60,6 +60,13 @@ export const DEFAULT_CAPS = {
   max_plan_depth: 1,
   /** How many tasks one plan may create. Proposals past this are named to the owner, not dropped in silence. */
   max_prerequisite_tasks: 2,
+  /**
+   * How many non-blocking questions one stage result may turn into cards. The
+   * policy used to live only in the planner's prompt (REQ-1208); this is the
+   * floor under it. Blocking requests are never capped — each one is the
+   * reason a task parked.
+   */
+  max_questions_per_stage: 3,
 } as const
 
 export const Caps = z.object({
@@ -81,6 +88,11 @@ export const Caps = z.object({
     .int()
     .nonnegative()
     .default(DEFAULT_CAPS.max_prerequisite_tasks),
+  max_questions_per_stage: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(DEFAULT_CAPS.max_questions_per_stage),
 })
 export type Caps = z.infer<typeof Caps>
 

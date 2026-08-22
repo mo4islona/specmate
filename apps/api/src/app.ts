@@ -24,6 +24,7 @@ import {
   feedback,
   getModelDefaults,
   ping,
+  repoPolicies,
   runGraphs,
   type Stage,
   stages,
@@ -32,9 +33,9 @@ import {
   updateModelDefaults,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
-import { createTask, taskSpend } from '@specmate/orchestrator/store'
+import { createTask, revokePolicy, taskSpend } from '@specmate/orchestrator/store'
 import { GitError, type WorkspaceService } from '@specmate/workspace'
-import { and, asc, desc, eq, gt, inArray, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { streamSSE } from 'hono/streaming'
@@ -657,6 +658,41 @@ export function createApp({
         return c.json({ modelDefaults: defaults })
       },
     )
+
+    /**
+     * REQ-1015: the answers that outlive the task that gave them. Today there
+     * is one key — an accepted coverage gap — and the owner's only way to take
+     * one back.
+     */
+    .get('/repo-policies', async (c) => {
+      const rows = await db
+        .select({
+          id: repoPolicies.id,
+          repoUrl: repoPolicies.repoUrl,
+          key: repoPolicies.key,
+          value: repoPolicies.value,
+          originTaskId: repoPolicies.originTaskId,
+          originTitle: tasks.title,
+          createdAt: repoPolicies.createdAt,
+        })
+        .from(repoPolicies)
+        .leftJoin(tasks, eq(repoPolicies.originTaskId, tasks.id))
+        .where(isNull(repoPolicies.revokedAt))
+        .orderBy(desc(repoPolicies.createdAt))
+
+      return c.json({ policies: rows })
+    })
+
+    .delete('/repo-policies/:id', async (c) => {
+      const revoked = await revokePolicy(db, c.req.param('id'))
+      if (!revoked) {
+        throw new ApiError('not_found', 'repository policy was not found or is already revoked', {
+          status: 404,
+        })
+      }
+
+      return c.json({ policy: revoked })
+    })
 
     .get('/tasks', async (c) => {
       const rows = await db.select().from(tasks).orderBy(desc(tasks.createdAt)).limit(100)

@@ -11,6 +11,7 @@ import {
   type Database,
   decisions,
   iterations,
+  repoPolicies,
   stages,
   type Task,
   tasks,
@@ -79,6 +80,10 @@ describeDb('the loop against a real repository', () => {
     if (created.length > 0) {
       await db.update(tasks).set({ status: 'paused' }).where(inArray(tasks.id, created))
     }
+    // Every test here shares one origin, and an accepted coverage gap is
+    // recorded against the repository by design — the next test must start
+    // from a repository nothing has been accepted for.
+    await db.delete(repoPolicies).where(eq(repoPolicies.repoUrl, originUrl))
   })
 
   function makeEngine(options: { beforeStage?: () => Promise<void> } = {}) {
