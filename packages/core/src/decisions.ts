@@ -46,10 +46,15 @@ export interface PartitionedRequests {
 }
 
 /**
- * REQ-1208: the floor under how many questions one stage may raise. Blocking
- * requests always pass — dropping one would leave a parked task with nothing
- * open against it (REQ-1201) — and questions pass in the order the stage
- * returned them, so what survives is what the stage thought to say first.
+ * REQ-1208: the floor under how many non-blocking requests one stage may
+ * raise. Blocking requests always pass — dropping one would leave a parked
+ * task with nothing open against it (REQ-1201) — and the rest pass in the
+ * order the stage returned them, so what survives is what the stage thought
+ * to say first.
+ *
+ * The cap deliberately does not read `kind`: it is a field the agent writes,
+ * and a floor a stage can step over by relabelling a question `approval` is
+ * not a floor.
  */
 export function partitionRequests(
   requests: readonly DecisionRequest[],
@@ -57,17 +62,16 @@ export function partitionRequests(
 ): PartitionedRequests {
   const recorded: DecisionRequest[] = []
   const refused: DecisionRequest[] = []
-  let questions = 0
+  let seen = 0
 
   for (const request of requests) {
-    const capped = !request.blocking && request.kind === 'question'
-    if (!capped) {
+    if (request.blocking) {
       recorded.push(request)
       continue
     }
 
-    questions += 1
-    if (questions <= cap) recorded.push(request)
+    seen += 1
+    if (seen <= cap) recorded.push(request)
     else refused.push(request)
   }
 
