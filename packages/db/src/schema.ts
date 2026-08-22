@@ -11,6 +11,8 @@ import {
   type ExecutionUsage,
   type ModelBindings,
   type PinnedGraph,
+  PLAN_SIZES,
+  type PlanSize,
   type ReviewFinding,
   resolveModelBindings,
   type StageResult,
@@ -18,6 +20,7 @@ import {
 } from '@specmate/core'
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   customType,
@@ -89,6 +92,7 @@ export const harnessStatusEnum = pgEnum('harness_status', [
   'missing',
   'waived',
 ])
+export const planSizeEnum = pgEnum('plan_size', PLAN_SIZES)
 export const roleEnum = pgEnum('agent_role', [
   'planner',
   'researcher',
@@ -212,6 +216,14 @@ export const tasks = pgTable(
     resumeStatus: taskStatusEnum('resume_status').$type<TaskState>(),
     /** Task splits: harness task A blocks fix task B (§6). */
     blockedBy: uuid('blocked_by').array().notNull().default(sql`'{}'::uuid[]`),
+    /** The task whose plan created this one; null for a task the owner launched (REQ-617). */
+    originTaskId: uuid('origin_task_id').references((): AnyPgColumn => tasks.id, {
+      onDelete: 'set null',
+    }),
+    /** Denormalised so the depth cap is a column read, not a walk up the chain. */
+    planDepth: integer('plan_depth').notNull().default(0),
+    /** What planning declared; null until it has run. Selects the pipeline profile (REQ-408). */
+    planSize: planSizeEnum('plan_size').$type<PlanSize>(),
     harnessStatus: harnessStatusEnum('harness_status').notNull().default('unknown'),
     // Resolved at creation, not merged at read time: a task records the caps it ran with.
     budgets: jsonb()

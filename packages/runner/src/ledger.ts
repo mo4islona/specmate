@@ -42,6 +42,11 @@ export interface LedgerSnapshot {
   readonly harnessStatus: string
   /** The most recent probe's evidence, short form — null before any probe has run. */
   readonly harnessEvidence: string | null
+  /** What planning declared; null until it has (REQ-1306). */
+  readonly planSize: string | null
+  /** Where this task sits in the chain a plan built, and the title of the task that proposed it. */
+  readonly planDepth: number
+  readonly originTitle: string | null
   readonly caps: Caps
   readonly rounds: readonly LedgerRound[]
   readonly interventions: readonly {
@@ -98,6 +103,14 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
   ])
   const harnessEvidence = probeRows[0]?.result?.harness_coverage?.evidence_md ?? null
 
+  const [origin] = task.originTaskId
+    ? await db
+        .select({ title: tasks.title })
+        .from(tasks)
+        .where(eq(tasks.id, task.originTaskId))
+        .limit(1)
+    : []
+
   const interventions = feedbackRows
     .filter((row) => row.kind === 'intervention' && row.stageStatus === 'running')
     .map((row) => ({ id: row.id, instruction: row.textMd, target: row.target }))
@@ -120,6 +133,9 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
     status: task.status,
     harnessStatus: task.harnessStatus,
     harnessEvidence,
+    planSize: task.planSize,
+    planDepth: task.planDepth,
+    originTitle: origin?.title ?? null,
     caps: task.caps,
     rounds: rounds.map((round) => ({
       loop: round.loop,
@@ -158,6 +174,17 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     `- Base branch: ${snapshot.baseBranch}`,
     `- Current state: ${snapshot.status}`,
     `- Harness coverage: ${snapshot.harnessStatus}${harnessEvidence ? ` — ${harnessEvidence}` : ''}`,
+    '',
+    '## Plan',
+    '',
+    `- Declared size: ${snapshot.planSize ?? 'not yet declared'}`,
+    `- Chain depth: ${snapshot.planDepth} of ${snapshot.caps.max_plan_depth}`,
+    snapshot.originTitle
+      ? `- Proposed while planning: ${collapseWhitespace(snapshot.originTitle)}`
+      : '- Launched directly by the owner.',
+    snapshot.planDepth < snapshot.caps.max_plan_depth
+      ? `- A plan here may propose at most ${snapshot.caps.max_prerequisite_tasks} task(s) to land first.`
+      : '- At the chain depth limit: this work must be doable as one task, so declare no prerequisites.',
     '',
     '## Loops',
     '',

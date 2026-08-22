@@ -692,11 +692,14 @@ export function createApp({
         .where(eq(runGraphs.taskId, task.id))
         .orderBy(desc(runGraphs.version))
         .limit(1)
+      // Every version's stages, not just the newest graph's: a task whose
+      // declared size swapped its profile ran its earlier stages under the
+      // previous version, and those stay part of its history (AC-419).
       const taskStages = graph
         ? await db
             .select()
             .from(stages)
-            .where(eq(stages.graphId, graph.id))
+            .where(eq(stages.taskId, task.id))
             .orderBy(asc(stages.nodeKey), asc(stages.attempt))
         : []
       const spend = await spendPromise

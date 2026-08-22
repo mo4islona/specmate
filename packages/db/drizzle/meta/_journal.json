@@ -50,6 +50,13 @@
       "when": 1787124763755,
       "tag": "0006_tiny_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787409015781,
+      "tag": "0007_sharp_multiple_man",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,17 @@ const MISSING = {
 }
 const ADEQUATE = { classification: 'adequate' as const, evidence_md: 'An e2e suite covers it.' }
 
+const HARNESS_PREREQUISITE = {
+  key: 'reorg-harness',
+  title: 'Harness for the reorg path',
+  why_md: 'Nothing replays a reorg against real state, so no fix to it can be verified.',
+}
+const FIXTURE_PREREQUISITE = {
+  key: 'chain-fixtures',
+  title: 'Chain fixtures for the reorg harness',
+  why_md: 'The harness needs a recorded chain to replay.',
+}
+
 describeDb('harness-coverage', () => {
   let db: Database
   const created: string[] = []
@@ -372,8 +383,171 @@ describeDb('harness-coverage', () => {
     })
   })
 
+  describe('the declared plan', () => {
+    test('adequate coverage with proposed prerequisites still raises the choice — AC-1418', async () => {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief' })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: ADEQUATE,
+          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+        }),
+      )
+
+      await engine.tick()
+      await engine.idle()
+
+      const after = await reload(db, task.id)
+      expect(after.status).toBe('human_kickoff_gate')
+      expect(after.harnessStatus).toBe('adequate')
+      expect(after.planSize).toBe('medium')
+      const [open] = await openDecisions(task.id)
+      assert(open)
+      expect(open.key).toBe('harness-coverage')
+      expect(open.promptMd).toContain(HARNESS_PREREQUISITE.title)
+      expect(open.options.map((o) => o.id)).toEqual(['split', 'proceed', 'cancel'])
+    })
+
+    test('a task at the depth cap is offered no split, and is told why — AC-1419, AC-636', async () => {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task: origin } = await seed()
+      const { task } = await seed({
+        at: 'kickoff_brief',
+        originTaskId: origin.id,
+        planDepth: 1,
+      })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: MISSING,
+          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+        }),
+      )
+
+      await engine.tick()
+      await engine.idle()
+
+      const [open] = await openDecisions(task.id)
+      assert(open)
+      expect(open.options.map((o) => o.id)).toEqual(['proceed', 'cancel'])
+      expect(open.promptMd).toContain('Splitting is not offered')
+      expect(open.promptMd).toContain(HARNESS_PREREQUISITE.title)
+    })
+
+    test('answering split on a task at the depth cap creates nothing — the recursion this closes', async () => {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task: origin } = await seed()
+      const { task } = await seed({
+        at: 'kickoff_brief',
+        originTaskId: origin.id,
+        planDepth: 1,
+      })
+      stagesDispatcher.plan(() =>
+        result({ role: 'planner', status: 'ok', harness_coverage: MISSING }),
+      )
+      await engine.tick()
+      await engine.idle()
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+
+      await engine.answer({
+        taskId: task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'split',
+      })
+
+      const after = await reload(db, task.id)
+      expect(after.blockedBy).toEqual([])
+      expect(after.status).toBe('human_kickoff_gate')
+      const spawned = await db.select().from(tasks).where(eq(tasks.originTaskId, task.id))
+      expect(spawned).toEqual([])
+    })
+
+    test('a plan proposing more than the cap creates the cap and names the rest — AC-637', async () => {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief', caps: { max_prerequisite_tasks: 1 } })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: ADEQUATE,
+          plan: { size: 'large', prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE] },
+        }),
+      )
+      await engine.tick()
+      await engine.idle()
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+      expect(decision.promptMd).toContain('one plan may create at most 1')
+      expect(decision.promptMd).toContain(FIXTURE_PREREQUISITE.title)
+
+      await engine.answer({
+        taskId: task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'split',
+      })
+
+      const after = await reload(db, task.id)
+      expect(after.blockedBy).toHaveLength(1)
+      created.push(...after.blockedBy)
+      const [prerequisite] = await db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, after.blockedBy[0] as string))
+      expect(prerequisite?.title).toBe(HARNESS_PREREQUISITE.title)
+    })
+  })
+
   describe('the split', () => {
-    test('answering split creates a harness task carrying the evidence, and blocks the original — REQ-1404, AC-1411', async () => {
+    test('answering split creates the tasks the plan proposed, carrying their lineage — AC-1411, AC-1421', async () => {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief' })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: MISSING,
+          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE] },
+        }),
+      )
+      await engine.tick()
+      await engine.idle()
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+
+      await engine.answer({
+        taskId: task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'split',
+      })
+
+      const after = await reload(db, task.id)
+      expect(after.status).toBe('blocked')
+      expect(after.blockedBy).toHaveLength(2)
+      created.push(...after.blockedBy)
+
+      const spawned = await db
+        .select()
+        .from(tasks)
+        .where(inArray(tasks.id, [...after.blockedBy]))
+      expect(spawned.map((row) => row.title).sort()).toEqual(
+        [HARNESS_PREREQUISITE.title, FIXTURE_PREREQUISITE.title].sort(),
+      )
+      for (const row of spawned) {
+        expect(row.originTaskId).toBe(task.id)
+        expect(row.planDepth).toBe(1)
+        expect(row.repoUrl).toBe(task.repoUrl)
+        expect(row.status).toBe('planning')
+      }
+    })
+
+    test('answering split with nothing proposed falls back to the harness task carrying the evidence — REQ-1404, AC-1420', async () => {
       const { engine, stagesDispatcher } = makeEngine()
       const { task } = await seed({ at: 'kickoff_brief' })
       stagesDispatcher.plan(() =>
@@ -404,6 +578,8 @@ describeDb('harness-coverage', () => {
       expect(harnessTask.baseBranch).toBe(task.baseBranch)
       expect(harnessTask.status).toBe('planning')
       expect(harnessTask.description).toContain(MISSING.evidence_md)
+      expect(harnessTask.originTaskId).toBe(task.id)
+      expect(harnessTask.planDepth).toBe(1)
 
       const [pinnedGraph] = await db
         .select()

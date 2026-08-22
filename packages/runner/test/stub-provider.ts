@@ -120,6 +120,21 @@ const STUB_HARNESS_COVERAGE = {
   evidence_md: 'stub: an existing e2e suite covers this path.',
 }
 
+/**
+ * The stub's stand-in for a planning stage's declared plan. `medium` keeps the
+ * full profile, so a test that says nothing about size sees the shape it
+ * always saw; `SPECMATE_STUB_PLAN_SIZE` and `SPECMATE_STUB_PREREQS` are how a
+ * test drives the profile swap and the prerequisite proposals.
+ */
+function stubPlan() {
+  const raw = process.env.SPECMATE_STUB_PREREQS
+
+  return {
+    size: process.env.SPECMATE_STUB_PLAN_SIZE ?? 'medium',
+    prerequisites: raw ? JSON.parse(raw) : [],
+  }
+}
+
 function validResult(): string {
   const current = role()
 
@@ -128,7 +143,7 @@ function validResult(): string {
     role: current,
     status: 'ok',
     notes_md: 'stub run',
-    ...(current === 'planner' ? { harness_coverage: STUB_HARNESS_COVERAGE } : {}),
+    ...(current === 'planner' ? { harness_coverage: STUB_HARNESS_COVERAGE, plan: stubPlan() } : {}),
   })
 }
 
@@ -413,6 +428,7 @@ switch (mode) {
         status: 'ok',
         notes_md: 'stub run',
         harness_coverage: STUB_HARNESS_COVERAGE,
+        plan: stubPlan(),
       }),
     )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
@@ -452,6 +468,7 @@ switch (mode) {
         ],
         notes_md: 'stub brief with open questions',
         harness_coverage: STUB_HARNESS_COVERAGE,
+        plan: stubPlan(),
       }),
     )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
@@ -475,6 +492,7 @@ switch (mode) {
         ],
         notes_md: 'stub brief carrying a harness gap warning',
         harness_coverage: MISSING_HARNESS_COVERAGE,
+        plan: stubPlan(),
       }),
     )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
