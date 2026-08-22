@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { TimelineEvent } from '../lib/api-client.ts'
 import { mergeTimelineEvents } from './use-task-stream.ts'
 

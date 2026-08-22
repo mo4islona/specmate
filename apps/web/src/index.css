@@ -188,8 +188,67 @@ select {
   opacity: 0.42;
 }
 
+.button-ghost {
+  display: inline-flex;
+  min-height: 2.1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  padding: 0.35rem 0.7rem;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.button-ghost:hover {
+  border-color: var(--color-border-bright);
+  color: var(--color-text);
+}
+
+.button-ghost:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+/* Scroll panes inside the page (thread, rail) — visible, but not furniture. */
+.scroll-thin {
+  scrollbar-color: var(--color-border-bright) transparent;
+  scrollbar-width: thin;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-border-bright);
+}
+
 .attention-pulse {
   animation: attention-border 2.8s ease-in-out infinite;
+}
+
+/* Live markers breathe instead of blinking: the eye finds them without being pulled to them. */
+.dot-live {
+  animation: dot-breath 1.8s ease-in-out infinite;
+}
+
+@keyframes dot-breath {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 @keyframes attention-border {

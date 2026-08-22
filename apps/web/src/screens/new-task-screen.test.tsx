@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { CreateTaskInput } from '../lib/api-client.ts'
 import { buildCreateTaskPayload, setOverrideField } from './new-task-screen.tsx'
 

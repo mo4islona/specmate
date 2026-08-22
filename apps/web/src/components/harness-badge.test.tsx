@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
 import { HarnessBadge } from './harness-badge.tsx'
 
 describe('harness badge', () => {

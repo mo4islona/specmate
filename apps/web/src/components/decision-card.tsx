@@ -1,6 +1,7 @@
 import { type BudgetKey, budgetFromRaiseOption } from '@specmate/core'
 import { useEffect, useState } from 'react'
 import type { DecisionItem } from '../lib/api-client.ts'
+import { nodeLabel } from '../lib/task-thread.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 /** Mirrors the server's Budgets schema (packages/core/src/state.ts): whole minutes, any positive cost. */
@@ -23,6 +24,8 @@ export interface DecisionCardProps {
   readonly onDiscuss?: () => void
   readonly busy?: boolean
   readonly error?: string
+  /** History rendering: the question and its outcome, clamped, with nothing to act on. */
+  readonly compact?: boolean
 }
 
 /**
@@ -31,6 +34,10 @@ export interface DecisionCardProps {
  * open — an explicit statement that the task is stopped on it. Resolved,
  * it renders the outcome and stops offering controls; only the resolution
  * itself (never a chat message) ever changes that outcome.
+ *
+ * The offered options are the whole card when it is answerable in one click;
+ * writing an answer instead, dismissing, and discussing are quieter, since
+ * they are the rarer answers.
  */
 export function DecisionCard({
   decision,
@@ -41,6 +48,7 @@ export function DecisionCard({
   onDiscuss,
   busy = false,
   error,
+  compact = false,
 }: DecisionCardProps) {
   const [text, setText] = useState('')
   const [raiseValues, setRaiseValues] = useState<Record<string, string>>({})
@@ -62,30 +70,34 @@ export function DecisionCard({
 
   return (
     <li
-      className={`panel border-l-2 p-4 sm:p-5 ${isOpen ? 'border-l-amber attention-pulse' : 'border-l-border'}`}
+      className={`border border-l-2 p-4 ${
+        isOpen
+          ? 'attention-pulse border-amber/40 border-l-amber bg-amber/[0.03]'
+          : 'border-border border-l-border-bright'
+      }`}
       data-decision-status={decision.status}
       data-decision-kind={decision.kind}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="micro-label text-amber">
-            {decision.kind === 'escalation' ? 'Escalation' : 'Decision'} · {decision.nodeKey}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className={`micro-label ${isOpen ? 'text-amber' : 'text-muted'}`}>
+          {decision.kind === 'escalation' ? 'Escalation' : 'Question'} ·{' '}
+          {nodeLabel(decision.nodeKey)}
+        </p>
+        {isOpen && parkedOnThis ? (
+          <p className="font-mono text-[0.68rem] font-bold text-danger" role="status">
+            The task is stopped on this.
           </p>
-          {isOpen && parkedOnThis && (
-            <p className="mt-1 font-mono text-xs font-bold text-danger" role="status">
-              The task is stopped on this.
-            </p>
-          )}
-        </div>
-        <span className="shrink-0 font-mono text-xs text-muted">{decision.status}</span>
+        ) : (
+          <span className="font-mono text-[0.62rem] text-muted">{decision.status}</span>
+        )}
       </div>
 
-      <div className="artifact-document mt-3 text-sm">
+      <div className={`artifact-document mt-2 text-sm ${compact ? 'line-clamp-3' : ''}`}>
         <ArtifactMarkdown content={decision.promptMd} />
       </div>
 
       {isOpen && decision.options.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {decision.options.map((option) => {
             const raiseBudget = budgetFromRaiseOption(option.id)
             if (!raiseBudget) {
@@ -93,7 +105,7 @@ export function DecisionCard({
                 <button
                   key={option.id}
                   type="button"
-                  className="button-secondary"
+                  className="button-secondary min-h-9 py-1"
                   disabled={busy}
                   onClick={() => onAnswerOption(option.id)}
                 >
@@ -111,7 +123,7 @@ export function DecisionCard({
                   type="number"
                   min={isMinutes ? '1' : '0.01'}
                   step={isMinutes ? '1' : 'any'}
-                  className="control w-28"
+                  className="control min-h-9 w-28 py-1"
                   value={value}
                   onChange={(event) =>
                     setRaiseValues((prev) => ({ ...prev, [option.id]: event.currentTarget.value }))
@@ -121,7 +133,7 @@ export function DecisionCard({
                 />
                 <button
                   type="button"
-                  className="button-secondary"
+                  className="button-secondary min-h-9 py-1"
                   disabled={busy || !isValidRaiseValue(raiseBudget, value)}
                   onClick={() => onAnswerOption(option.id, value.trim())}
                 >
@@ -134,61 +146,58 @@ export function DecisionCard({
       )}
 
       {isOpen && !isBudgetDecision && (
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <textarea
-            className="control min-h-16 w-full min-w-0 resize-y"
-            value={text}
-            onChange={(event) => setText(event.currentTarget.value)}
-            placeholder="Free-text answer…"
-            aria-label={`Answer for ${decision.key}`}
-          />
-          <div className="flex shrink-0 flex-col gap-2 sm:w-40">
+        <details className="mt-3" open={decision.options.length === 0}>
+          <summary className="cursor-pointer font-mono text-[0.66rem] uppercase tracking-widest text-muted hover:text-text">
+            Answer in your own words…
+          </summary>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <textarea
+              className="control min-h-16 w-full min-w-0 resize-y"
+              value={text}
+              onChange={(event) => setText(event.currentTarget.value)}
+              placeholder="Free-text answer…"
+              aria-label={`Answer for ${decision.key}`}
+            />
             <button
               type="button"
-              className="button-primary"
+              className="button-primary shrink-0 sm:w-32"
               disabled={busy || !text.trim()}
               onClick={() => onAnswerText(text.trim())}
             >
               Answer
             </button>
-            <button type="button" className="button-secondary" disabled={busy} onClick={onDismiss}>
+          </div>
+        </details>
+      )}
+
+      {isOpen && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {!isBudgetDecision && (
+            <button type="button" className="button-ghost" disabled={busy} onClick={onDismiss}>
               Dismiss
             </button>
-            {onDiscuss && (
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={busy}
-                onClick={onDiscuss}
-              >
-                Discuss
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {isOpen && isBudgetDecision && onDiscuss && (
-        <div className="mt-4">
-          <button type="button" className="button-secondary" disabled={busy} onClick={onDiscuss}>
-            Discuss
-          </button>
-        </div>
-      )}
-
-      {!isOpen && (
-        <div className="mt-4 border-t border-border pt-3 text-sm">
-          <p className="micro-label text-muted">
-            {decision.status === 'dismissed' ? 'Dismissed' : 'Answered'} by{' '}
-            {decision.answeredBy ?? 'unknown'}
-          </p>
-          {decision.answerMd && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-muted">{decision.answerMd}</p>
+          )}
+          {onDiscuss && (
+            <button type="button" className="button-ghost" disabled={busy} onClick={onDiscuss}>
+              Discuss
+            </button>
           )}
         </div>
       )}
 
-      {error && <p className="field-error mt-3">{error}</p>}
+      {!isOpen && (
+        <p
+          className={`mt-3 border-t border-border pt-2 text-sm leading-6 text-muted ${compact ? 'line-clamp-2' : ''}`}
+        >
+          <span className="micro-label mr-2 text-muted">
+            {decision.status === 'dismissed' ? 'Dismissed' : 'Answered'} by{' '}
+            {decision.answeredBy ?? 'unknown'}
+          </span>
+          {decision.answerMd}
+        </p>
+      )}
+
+      {error && <p className="field-error">{error}</p>}
     </li>
   )
 }
