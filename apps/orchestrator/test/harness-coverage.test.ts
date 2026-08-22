@@ -8,8 +8,8 @@ import {
   createDb,
   type Database,
   decisions,
-  repoPolicies,
   runGraphs,
+  standingDecisions,
   tasks,
 } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
@@ -73,10 +73,10 @@ describeDb('harness-coverage', () => {
 
   afterEach(async () => {
     for (const engine of engines.splice(0)) await engine.idle()
-    // Repository policies outlive the task that created them by design, so
-    // the suite clears its own rather than leaving them behind.
+    // A standing decision outlives the task that made it by design, so the
+    // suite clears its own rather than leaving them behind.
     if (repos.length > 0) {
-      await db.delete(repoPolicies).where(inArray(repoPolicies.repoUrl, repos.splice(0)))
+      await db.delete(standingDecisions).where(inArray(standingDecisions.repoUrl, repos.splice(0)))
     }
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
   })
@@ -598,11 +598,11 @@ describeDb('harness-coverage', () => {
   })
 
   describe('an accepted gap outlives its task', () => {
-    async function livePolicies(repoUrl: string) {
+    async function inForce(repoUrl: string) {
       return db
         .select()
-        .from(repoPolicies)
-        .where(and(eq(repoPolicies.repoUrl, repoUrl), isNull(repoPolicies.revokedAt)))
+        .from(standingDecisions)
+        .where(and(eq(standingDecisions.repoUrl, repoUrl), isNull(standingDecisions.revokedAt)))
     }
 
     /** Runs one planning stage against a task and returns it reloaded. */
@@ -618,7 +618,7 @@ describeDb('harness-coverage', () => {
       return { engine, task: await reload(db, task.id) }
     }
 
-    test('proceeding records the acceptance against the repository — REQ-1406', async () => {
+    test('proceeding records the acceptance as a standing decision — REQ-1406', async () => {
       const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
       const { engine, task } = await planned(repoUrl, MISSING)
       const [decision] = await openDecisions(task.id)
@@ -631,9 +631,9 @@ describeDb('harness-coverage', () => {
         optionId: 'proceed',
       })
 
-      const policies = await livePolicies(repoUrl)
-      expect(policies).toHaveLength(1)
-      expect(policies[0]).toMatchObject({ key: 'harness-coverage', originTaskId: task.id })
+      const standing = await inForce(repoUrl)
+      expect(standing).toHaveLength(1)
+      expect(standing[0]).toMatchObject({ key: 'harness-coverage', originTaskId: task.id })
     })
 
     test('the next task in that repository inherits it instead of asking — AC-1422, AC-1423', async () => {
@@ -705,11 +705,11 @@ describeDb('harness-coverage', () => {
         actor: 'evgeny',
         optionId: 'proceed',
       })
-      expect(await livePolicies(repoUrl)).toHaveLength(1)
+      expect(await inForce(repoUrl)).toHaveLength(1)
 
       await planned(repoUrl, ADEQUATE)
 
-      expect(await livePolicies(repoUrl)).toEqual([])
+      expect(await inForce(repoUrl)).toEqual([])
     })
 
     test('accepting a second time leaves exactly one live record — AC-1427', async () => {
@@ -727,7 +727,7 @@ describeDb('harness-coverage', () => {
         }
       }
 
-      expect(await livePolicies(repoUrl)).toHaveLength(1)
+      expect(await inForce(repoUrl)).toHaveLength(1)
     })
   })
 

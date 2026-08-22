@@ -58,10 +58,10 @@ to enforce anything.
 
 - `packages/core/src/state.ts`: `max_questions_per_stage` in `Caps`.
 - `packages/core/src/decisions.ts`: the identity rule the store matches on.
-- `packages/db/src/schema.ts` + migration: a `repo_policies` table; one live record per
-  (repository, key).
-- `apps/orchestrator/src/store.ts`: the question cap and its event; the policy read in
-  `recordPlanOutcome`, the policy write on a waiver, and the revocation an adequate classification
+- `packages/db/src/schema.ts` + migration: a `standing_decisions` table — a decision that stays in
+  force after the task that made it ends; one in force per (repository, key).
+- `apps/orchestrator/src/store.ts`: the question cap and its event; the standing-decision read in
+  `recordPlanOutcome`, the write on a waiver, and the revocation an adequate classification
   performs.
 - `apps/api/src/app.ts`: list and revoke endpoints.
 - `apps/web`: a Settings section listing accepted coverage waivers, with a revoke control.
