@@ -59,7 +59,33 @@
 - [x] 5.4 Collapse the rail into one disclosure below `xl` and keep the page free of horizontal
       scrolling (REQ-911). Verify: 420px-wide screenshot of a running task.
 
-## 6. Gate
+## 6. Second pass, from the owner reading the deployed screen
+
+- [x] 6.1 Strip the duration, tokens, cost, and commit off chapter headers — the rail states
+      them for the same node. Verify: a chapter header's text is the stage name alone
+      (`thread-view.test.tsx`).
+- [x] 6.2 Render an open decision only where it is answered; keep the card in history once it
+      resolves. Verify: `bun run --cwd apps/web test` — "an open decision is not repeated".
+- [x] 6.3 Absorb a chapter opened by an event that precedes its node's stage row (`task.created`
+      at the entry node) into the run it precedes. Verify: `task-thread.test.ts`.
+- [x] 6.4 Stack several open questions: one answerable, the rest one line each
+      (`decision-stack.tsx`). Verify: `decision-stack.test.tsx`.
+- [x] 6.5 Count `blocked` as parked — it is the status the engine parks a task in when a
+      blocking decision is open, and it was excluded. Verify: a blocked task shows "The task is
+      stopped on this."
+- [x] 6.6 Give the action zone its own bottom edge and most of the column while the task is
+      stopped, so a clipped card never reads as the thread's first entry. Verify: a blocked task
+      at 940px viewport height.
+- [x] 6.7 Open an artifact in the thread's place (`artifact-reader.tsx`), not on its own screen.
+      Verify: click a rail artifact; the URL does not change and the rail stays.
+
+## 7. Test runner
+
+- [x] 7.1 Move `apps/web` to vitest + jsdom + testing-library; keep `bun test` everywhere else;
+      root `test` script runs both and CI calls `bun run test`.
+      Verify: `bun run test` runs 561 bun tests and 100 vitest tests.
+
+## 8. Gate
 
 - [x] 6.1 `bun run check && bun run typecheck && bun test apps/web` all clean.
 - [ ] 6.2 `bun run ci` — the database-backed suites (`packages/db`, `apps/api`,

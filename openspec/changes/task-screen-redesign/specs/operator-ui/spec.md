@@ -10,9 +10,12 @@ read as one thread rather than two lists. Work done at a gate SHALL read as that
 chapter. Only the newest chapter SHALL be open by default; every earlier one SHALL collapse
 to a single line carrying its own summary, and a chapter the owner opens or closes SHALL stay
 that way as new events arrive. A chapter MUST NOT repeat, as an entry inside itself, the
-dispatch or transition that the chapter's own existence and title already state. New activity
-SHALL NOT scroll the view away from an earlier chapter the owner is reading. Chapters and
-their controls SHALL be operable on a phone-sized viewport.
+dispatch or transition that the chapter's own existence and title already state, nor the
+duration, spend, or commit that the pinned pipeline states for the same node. An open decision
+SHALL appear only where it is answered, never also as a history entry. New activity SHALL NOT
+scroll the view away from an earlier chapter the owner is reading. Selecting one of the task's
+artifacts SHALL render it in the thread's place, leaving the pipeline, spend, and gate controls
+standing. Chapters and their controls SHALL be operable on a phone-sized viewport.
 
 #### Scenario: AC-950 — Going back to an earlier stage
 
@@ -33,6 +36,16 @@ their controls SHALL be operable on a phone-sized viewport.
 
 - **WHEN** an event arrives while the owner is reading an earlier chapter
 - **THEN** the entry SHALL be appended without moving the owner away from what they are reading
+
+#### Scenario: AC-956 — A question is one thing on the screen
+
+- **WHEN** a task has open questions and the owner opens it
+- **THEN** each question SHALL be presented once, where it is answered, and SHALL NOT also appear as a history entry
+
+#### Scenario: AC-957 — Reading a document without losing the task
+
+- **WHEN** the owner opens one of the task's artifacts from the task view
+- **THEN** it SHALL render in place, with the pipeline, spend, and anything waiting on the owner still visible
 
 ## MODIFIED Requirements
 
