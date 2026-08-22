@@ -15,7 +15,7 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test",
+    "test": "bun test apps/api apps/orchestrator packages && bun run --cwd apps/web test",
     "db:generate": "bun run --cwd packages/db generate",
     "db:migrate": "bun run --cwd packages/db migrate",
     "spec:validate": "openspec validate --all --strict",

@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import type { ModelBindings } from '@specmate/core'
+import { describe, expect, test } from 'vitest'
 import type { TaskDetail } from './api-client.ts'
 import { bindingBaseline, buildPipelineNodes, shortModel } from './task-pipeline.ts'
 

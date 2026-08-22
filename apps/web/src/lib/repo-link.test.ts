@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { commitUrl, repoLabel, shortCommit } from './repo-link.ts'
 
 describe('repoLabel', () => {

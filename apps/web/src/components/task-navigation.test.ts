@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { TaskSummary } from '../lib/api-client.ts'
 import { taskGroup } from './task-navigation.tsx'
 
