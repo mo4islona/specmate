@@ -12,31 +12,31 @@
 
 ## 3. Repository-scoped answers
 
-- [x] 3.1 Add a `repo_policies` table to `packages/db/src/schema.ts`: `repoUrl`, `key`, `value` jsonb, `originTaskId` (nullable, `on delete set null`), `revokedAt` (nullable), timestamps, and a partial unique index on `(repo_url, key) where revoked_at is null` (persistence AC-340, AC-342).
+- [x] 3.1 Add a `standing_decisions` table — a decision that stays in force after the task that made it ends — to `packages/db/src/schema.ts`: `repoUrl`, `key`, `value` jsonb, `originTaskId` (nullable, `on delete set null`), `revokedAt` (nullable), timestamps, and a partial unique index on `(repo_url, key) where revoked_at is null` (persistence AC-340, AC-342).
 - [x] 3.2 Generate the migration; hand-add the caps backfill merging `max_questions_per_stage` into existing rows.
-- [x] 3.3 Store functions in `apps/orchestrator/src/store.ts`: `livePolicy(db, repoUrl, key)`, `recordPolicy(db, {repoUrl, key, value, originTaskId})` (idempotent against the partial index — an existing live record wins, AC-1427), `revokePolicy(db, id)` for the owner's revocation, and `revokeLivePolicy(db, repoUrl, key)` for the one an adequate classification performs.
+- [x] 3.3 Store functions in `apps/orchestrator/src/store.ts`: `decisionInForce(db, repoUrl, key)`, `recordStandingDecision(db, {repoUrl, key, value, originTaskId})` (idempotent against the partial index — the one already in force wins, AC-1427), `revokeStandingDecision(db, id)` for the owner's revocation, and `revokeStandingDecisionInForce(db, repoUrl, key)` for the one an adequate classification performs.
 - [x] 3.4 Verify against a live database that the partial index refuses a second live row and permits a second row once the first is revoked.
 
 ## 4. Waiver and inheritance
 
-- [x] 4.1 Write the policy wherever the waiver is written today — `waiveHarnessStatus` in `apps/orchestrator/src/engine.ts`, which both the explicit `proceed` and the gate-approval route already share (harness-coverage REQ-1406).
-- [x] 4.2 In `recordPlanOutcome`: when coverage is short of adequate and a live policy exists for the task's repository, waive the task's coverage, write the resolved inheritance decision at `(human_kickoff_gate, harness-coverage)` naming the origin task, and build the choice with no coverage assessment so only a proposed plan can still raise a card (AC-1422, AC-1423, AC-1424).
-- [x] 4.3 In the same function: when coverage is classified adequate, revoke the repository's live policy — the gap it accepted is gone (AC-1425).
+- [x] 4.1 Write the standing decision wherever the waiver is written today — `waiveHarnessStatus` in `apps/orchestrator/src/engine.ts`, which both the explicit `proceed` and the gate-approval route already share (harness-coverage REQ-1406).
+- [x] 4.2 In `recordPlanOutcome`: when coverage is short of adequate and a standing decision is in force for the task's repository, waive the task's coverage, write the resolved inheritance decision at `(human_kickoff_gate, harness-coverage)` naming the origin task, and build the choice with no coverage assessment so only a proposed plan can still raise a card (AC-1422, AC-1423, AC-1424).
+- [x] 4.3 In the same function: when coverage is classified adequate, revoke the repository's standing decision — the gap it accepted is gone (AC-1425).
 - [x] 4.4 Make sure the inherited decision is not re-created on the second probing stage of the same task: `inheritCoverageWaiver` checks for an existing record at that identity, resolved or not, before writing one.
 
 ## 5. REST and UI
 
-- [x] 5.1 `GET /api/v1/repo-policies` returning the live records with their repository, key, origin task id and title, and creation time (task-surface AC-1043).
-- [x] 5.2 `DELETE /api/v1/repo-policies/:id` revoking one, responding with the structured not-found error when it does not exist or is already revoked (AC-1044, AC-1045).
+- [x] 5.1 `GET /api/v1/standing-decisions` returning what is in force with their repository, key, origin task id and title, and creation time (task-surface AC-1043).
+- [x] 5.2 `DELETE /api/v1/standing-decisions/:id` revoking one, responding with the structured not-found error when it does not exist or is already revoked (AC-1044, AC-1045).
 - [x] 5.3 API tests for both, including the not-found shape.
-- [x] 5.4 A `RepoPolicies` section on the Settings screen listing them with a revoke control and an explicit empty state (operator-ui AC-950, AC-951, AC-952).
+- [x] 5.4 A `StandingDecisions` section on the Settings screen listing them with a revoke control and an explicit empty state (operator-ui AC-950, AC-951, AC-952).
 
 ## 6. Test isolation
 
-- [x] 6.1 A repository-scoped record outlives the task that made it, which the DB-backed suites did not have to think about before: give each seeded fixture task its own repository URL, clear the harness-coverage suite's policies in its `afterEach`, and clear the shared e2e origin's between e2e tests.
+- [x] 6.1 A repository-scoped record outlives the task that made it, which the DB-backed suites did not have to think about before: give each seeded fixture task its own repository URL, clear the harness-coverage suite's standing decisions in its `afterEach`, and clear the shared e2e origin's between e2e tests.
 
 ## 7. Tests
 
-- [x] 7.1 `apps/orchestrator/test/harness-coverage.test.ts`: proceeding records the policy; a second task in the same repository inherits it with no open decision and a resolved inheritance record; an adequate classification revokes it; a plan with prerequisites still raises its card while inheriting the waiver.
+- [x] 7.1 `apps/orchestrator/test/harness-coverage.test.ts`: proceeding records the standing decision; a second task in the same repository inherits it with no open decision and a resolved inheritance record; an adequate classification revokes it; a plan with prerequisites still raises its card while inheriting the waiver.
 - [x] 7.2 A cap test: a planner result with five questions records three and emits the refusal event naming the other two.
 - [x] 7.3 `bun run ci` green: `check`, `typecheck`, `test`, `spec:validate`, `spec:lint`.

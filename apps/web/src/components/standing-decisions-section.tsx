@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'wouter'
 import {
   ApiRequestError,
-  listRepoPolicies,
-  type RepoPolicy,
-  revokeRepoPolicy,
+  listStandingDecisions,
+  revokeStandingDecision,
+  type StandingDecision,
 } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
@@ -13,8 +13,8 @@ const LABELS: Record<string, string> = {
   'harness-coverage': 'Coverage gap accepted for this repository',
 }
 
-function label(policy: RepoPolicy): string {
-  return LABELS[policy.key] ?? policy.key
+function label(decision: StandingDecision): string {
+  return LABELS[decision.key] ?? decision.key
 }
 
 /**
@@ -23,15 +23,15 @@ function label(policy: RepoPolicy): string {
  * screen, where revoking it would silently change every other task against the
  * same repository.
  */
-export function RepoPoliciesSection() {
+export function StandingDecisionsSection() {
   const queryClient = useQueryClient()
-  const policies = useQuery({
-    queryKey: queryKeys.repoPolicies,
-    queryFn: ({ signal }) => listRepoPolicies(signal),
+  const standing = useQuery({
+    queryKey: queryKeys.standingDecisions,
+    queryFn: ({ signal }) => listStandingDecisions(signal),
   })
   const revoke = useMutation({
-    mutationFn: (id: string) => revokeRepoPolicy(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.repoPolicies }),
+    mutationFn: (id: string) => revokeStandingDecision(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.standingDecisions }),
   })
 
   return (
@@ -45,10 +45,10 @@ export function RepoPoliciesSection() {
         </p>
       </div>
 
-      {policies.isError && (
+      {standing.isError && (
         <p className="field-error">
-          {policies.error instanceof ApiRequestError
-            ? policies.error.message
+          {standing.error instanceof ApiRequestError
+            ? standing.error.message
             : 'Could not load what is remembered'}
         </p>
       )}
@@ -58,43 +58,43 @@ export function RepoPoliciesSection() {
         </p>
       )}
 
-      {policies.data?.policies.length === 0 && (
+      {standing.data?.decisions.length === 0 && (
         <p className="text-sm text-muted">Nothing is remembered across tasks.</p>
       )}
 
       <ul className="space-y-3">
-        {policies.data?.policies.map((policy) => (
+        {standing.data?.decisions.map((decision) => (
           <li
-            key={policy.id}
+            key={decision.id}
             className="flex flex-wrap items-start justify-between gap-3 border border-border p-3"
           >
             <div className="min-w-0">
-              <p className="text-sm">{label(policy)}</p>
-              <p className="mt-1 break-all font-mono text-xs text-muted">{policy.repoUrl}</p>
+              <p className="text-sm">{label(decision)}</p>
+              <p className="mt-1 break-all font-mono text-xs text-muted">{decision.repoUrl}</p>
               <p className="mt-1 text-xs text-muted">
-                {policy.originTaskId ? (
+                {decision.originTaskId ? (
                   <>
                     Accepted on{' '}
                     <Link
-                      href={`/tasks/${policy.originTaskId}`}
+                      href={`/tasks/${decision.originTaskId}`}
                       className="text-cyan underline-offset-4 hover:underline"
                     >
-                      {policy.originTitle ?? policy.originTaskId.slice(0, 8)}
+                      {decision.originTitle ?? decision.originTaskId.slice(0, 8)}
                     </Link>
                   </>
                 ) : (
                   'Accepted on a task that no longer exists'
                 )}{' '}
-                · {formatTimestamp(policy.createdAt)}
+                · {formatTimestamp(decision.createdAt)}
               </p>
             </div>
             <button
               type="button"
               className="button-secondary"
-              disabled={revoke.isPending && revoke.variables === policy.id}
-              onClick={() => revoke.mutate(policy.id)}
+              disabled={revoke.isPending && revoke.variables === decision.id}
+              onClick={() => revoke.mutate(decision.id)}
             >
-              {revoke.isPending && revoke.variables === policy.id ? 'Revoking…' : 'Revoke'}
+              {revoke.isPending && revoke.variables === decision.id ? 'Revoking…' : 'Revoke'}
             </button>
           </li>
         ))}

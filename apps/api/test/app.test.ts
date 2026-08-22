@@ -19,9 +19,9 @@ import {
   events,
   feedback,
   getModelDefaults,
-  repoPolicies,
   runGraphs,
   stages,
+  standingDecisions,
   tasks,
   updateModelDefaults,
 } from '@specmate/db'
@@ -482,8 +482,8 @@ describeDb('api', () => {
     expect(await response.json()).toMatchObject({ code: 'validation' })
   })
 
-  describe('repository policies — REQ-1015', () => {
-    interface PolicyJson {
+  describe('standing decisions — REQ-1015', () => {
+    interface StandingDecisionJson {
       id: string
       repoUrl: string
       key: string
@@ -491,37 +491,37 @@ describeDb('api', () => {
       originTitle: string | null
     }
 
-    const repoUrl = `https://example.invalid/policy-${crypto.randomUUID().slice(0, 8)}.git`
+    const repoUrl = `https://example.invalid/standing-${crypto.randomUUID().slice(0, 8)}.git`
 
     afterAll(async () => {
-      await db.delete(repoPolicies).where(eq(repoPolicies.repoUrl, repoUrl))
+      await db.delete(standingDecisions).where(eq(standingDecisions.repoUrl, repoUrl))
     })
 
     test('lists what is in force with the task it came from, and revokes one — AC-1043, AC-1044', async () => {
-      const [policy] = await db
-        .insert(repoPolicies)
+      const [standing] = await db
+        .insert(standingDecisions)
         .values({ repoUrl, key: 'harness-coverage', value: { waived: true } })
         .returning()
-      expect(policy).toBeTruthy()
+      expect(standing).toBeTruthy()
 
-      const listed = await app.request('/api/v1/repo-policies', { headers: auth })
+      const listed = await app.request('/api/v1/standing-decisions', { headers: auth })
       expect(listed.status).toBe(200)
-      const body = (await listed.json()) as { policies: PolicyJson[] }
-      expect(body.policies.some((row) => row.repoUrl === repoUrl)).toBe(true)
+      const body = (await listed.json()) as { decisions: StandingDecisionJson[] }
+      expect(body.decisions.some((row) => row.repoUrl === repoUrl)).toBe(true)
 
-      const revoked = await app.request(`/api/v1/repo-policies/${policy?.id}`, {
+      const revoked = await app.request(`/api/v1/standing-decisions/${standing?.id}`, {
         method: 'DELETE',
         headers: auth,
       })
       expect(revoked.status).toBe(200)
 
-      const after = await app.request('/api/v1/repo-policies', { headers: auth })
-      const afterBody = (await after.json()) as { policies: PolicyJson[] }
-      expect(afterBody.policies.some((row) => row.repoUrl === repoUrl)).toBe(false)
+      const after = await app.request('/api/v1/standing-decisions', { headers: auth })
+      const afterBody = (await after.json()) as { decisions: StandingDecisionJson[] }
+      expect(afterBody.decisions.some((row) => row.repoUrl === repoUrl)).toBe(false)
     })
 
     test('revoking what is not there is a structured not-found — AC-1045', async () => {
-      const response = await app.request(`/api/v1/repo-policies/${crypto.randomUUID()}`, {
+      const response = await app.request(`/api/v1/standing-decisions/${crypto.randomUUID()}`, {
         method: 'DELETE',
         headers: auth,
       })

@@ -140,8 +140,8 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
-type RepoPoliciesResponse = InferResponseType<
-  (typeof apiClient.api.v1)['repo-policies']['$get'],
+type StandingDecisionsResponse = InferResponseType<
+  (typeof apiClient.api.v1)['standing-decisions']['$get'],
   200
 >
 type ModelDefaultsResponse = InferResponseType<
@@ -174,7 +174,7 @@ export type RestartStageInput = RestartStageRequest['json']
 export type DecisionItem = DecisionsResponse['decisions'][number]
 export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
-export type RepoPolicy = RepoPoliciesResponse['policies'][number]
+export type StandingDecision = StandingDecisionsResponse['decisions'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
@@ -184,16 +184,20 @@ export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   return readJson<TasksResponse>(response)
 }
 
-export async function listRepoPolicies(signal?: AbortSignal): Promise<RepoPoliciesResponse> {
-  const response = await apiClient.api.v1['repo-policies'].$get(undefined, { init: { signal } })
+export async function listStandingDecisions(
+  signal?: AbortSignal,
+): Promise<StandingDecisionsResponse> {
+  const response = await apiClient.api.v1['standing-decisions'].$get(undefined, {
+    init: { signal },
+  })
 
-  return readJson<RepoPoliciesResponse>(response)
+  return readJson<StandingDecisionsResponse>(response)
 }
 
-export async function revokeRepoPolicy(id: string): Promise<void> {
-  const response = await apiClient.api.v1['repo-policies'][':id'].$delete({ param: { id } })
+export async function revokeStandingDecision(id: string): Promise<void> {
+  const response = await apiClient.api.v1['standing-decisions'][':id'].$delete({ param: { id } })
 
-  await readJson<{ policy: RepoPolicy }>(response)
+  await readJson<{ decision: StandingDecision }>(response)
 }
 
 export async function listAttention(signal?: AbortSignal): Promise<AttentionResponse> {

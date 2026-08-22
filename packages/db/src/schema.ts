@@ -504,29 +504,32 @@ export const pullRequests = pgTable(
 )
 
 /**
- * An answer whose scope is a repository rather than a task (REQ-315). Today
- * there is exactly one key — an accepted coverage gap — and `key` is what lets
- * a second durable answer join without a second table.
+ * A decision that stands after the task that made it ends: its scope is a
+ * repository, not a task (REQ-315). Today there is exactly one key — an
+ * accepted coverage gap — and `key` is what lets a second durable answer join
+ * without a second table.
  *
  * Revoking sets `revokedAt` rather than deleting: what the owner accepted, and
  * when they took it back, both stay readable. The partial unique index is what
- * keeps "at most one live record" a database guarantee rather than a promise
- * from the code that writes it.
+ * keeps "at most one in force" a database guarantee rather than a promise from
+ * the code that writes it.
  */
-export const repoPolicies = pgTable(
-  'repo_policies',
+export const standingDecisions = pgTable(
+  'standing_decisions',
   {
     id: uuid().primaryKey().defaultRandom(),
     repoUrl: text('repo_url').notNull(),
     key: text().notNull(),
     value: jsonb().$type<Record<string, unknown>>().notNull().default({}),
-    /** The task whose resolution created it; nulled rather than cascaded, so the record outlives it. */
+    /** The task whose resolution made it; nulled rather than cascaded, so the record outlives it. */
     originTaskId: uuid('origin_task_id').references(() => tasks.id, { onDelete: 'set null' }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('repo_policies_live_idx').on(t.repoUrl, t.key).where(sql`${t.revokedAt} is null`),
+    uniqueIndex('standing_decisions_in_force_idx')
+      .on(t.repoUrl, t.key)
+      .where(sql`${t.revokedAt} is null`),
   ],
 )
 
@@ -583,5 +586,5 @@ export type ConversationMessage = typeof conversationMessages.$inferSelect
 export type ConversationAction = typeof conversationActions.$inferSelect
 export type Stage = typeof stages.$inferSelect
 export type Decision = typeof decisions.$inferSelect
-export type RepoPolicy = typeof repoPolicies.$inferSelect
+export type StandingDecision = typeof standingDecisions.$inferSelect
 export type SpecEvent = typeof events.$inferSelect

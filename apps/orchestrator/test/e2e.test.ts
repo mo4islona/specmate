@@ -11,8 +11,8 @@ import {
   type Database,
   decisions,
   iterations,
-  repoPolicies,
   stages,
+  standingDecisions,
   type Task,
   tasks,
 } from '@specmate/db'
@@ -83,7 +83,7 @@ describeDb('the loop against a real repository', () => {
     // Every test here shares one origin, and an accepted coverage gap is
     // recorded against the repository by design — the next test must start
     // from a repository nothing has been accepted for.
-    await db.delete(repoPolicies).where(eq(repoPolicies.repoUrl, originUrl))
+    await db.delete(standingDecisions).where(eq(standingDecisions.repoUrl, originUrl))
   })
 
   function makeEngine(options: { beforeStage?: () => Promise<void> } = {}) {

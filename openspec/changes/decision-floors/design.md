@@ -63,14 +63,20 @@ the same key on the same task, whatever node raised it; everything else keeps th
 prompt of the attached record is refreshed exactly as it already is when a retry changes it, so
 the second node's phrasing is not lost under the first's.
 
-### A repository policy, not a repository column
+### A standing decision, not a repository column
 
 The acceptance goes in its own table keyed by `(repo_url, key)` rather than on a `repositories`
-table, because there is no such table: a repository is a URL on a task row. A table of policies
-keyed by URL is the smallest thing that can hold a durable answer, and it generalises — `key`
-names which answer, and today there is exactly one.
+table, because there is no such table: a repository is a URL on a task row. A table keyed by URL
+is the smallest thing that can hold a durable answer, and it generalises — `key` names which
+answer, and today there is exactly one.
 
-At most one live record per `(repo_url, key)`, enforced by a partial unique index on the
+It is called a **standing decision**: a decision that stays in force after the task that made it
+ends. The name is deliberate. `decisions` is already the system's word for "a thing the owner
+resolved", the inheritance mechanism literally writes one, and the only property that
+distinguishes these is that they do not end with their task. An earlier draft called them
+repository *policies*, which said neither what they are nor who made them.
+
+At most one in force per `(repo_url, key)`, enforced by a partial unique index on the
 non-revoked rows. Revoking sets `revoked_at` rather than deleting: what the owner accepted, and
 when they took it back, stays readable.
 
@@ -110,9 +116,9 @@ situation the owner already accepted, and re-raising on it is precisely the loop
 
 ## Migration Plan
 
-One additive migration: the `repo_policies` table and its partial unique index. Nothing to
+One additive migration: the `standing_decisions` table and its partial unique index. Nothing to
 backfill — an existing task's `harnessStatus = 'waived'` stays exactly what it was, a fact about
-that task. It does not retroactively become a repository policy: the owner accepted it for that
+that task. It does not retroactively become a standing decision: the owner accepted it for that
 task, under that task's evidence, and inventing a repository-wide acceptance out of it would be
 the system deciding something the owner never said.
 

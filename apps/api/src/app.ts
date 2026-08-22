@@ -24,16 +24,16 @@ import {
   feedback,
   getModelDefaults,
   ping,
-  repoPolicies,
   runGraphs,
   type Stage,
   stages,
+  standingDecisions,
   type Task,
   tasks,
   updateModelDefaults,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
-import { createTask, revokePolicy, taskSpend } from '@specmate/orchestrator/store'
+import { createTask, revokeStandingDecision, taskSpend } from '@specmate/orchestrator/store'
 import { GitError, type WorkspaceService } from '@specmate/workspace'
 import { and, asc, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -660,38 +660,38 @@ export function createApp({
     )
 
     /**
-     * REQ-1015: the answers that outlive the task that gave them. Today there
-     * is one key — an accepted coverage gap — and the owner's only way to take
-     * one back.
+     * REQ-1015: decisions that stand after the task that made them ends. Today
+     * there is one key — an accepted coverage gap — and this is the owner's
+     * only way to take one back.
      */
-    .get('/repo-policies', async (c) => {
+    .get('/standing-decisions', async (c) => {
       const rows = await db
         .select({
-          id: repoPolicies.id,
-          repoUrl: repoPolicies.repoUrl,
-          key: repoPolicies.key,
-          value: repoPolicies.value,
-          originTaskId: repoPolicies.originTaskId,
+          id: standingDecisions.id,
+          repoUrl: standingDecisions.repoUrl,
+          key: standingDecisions.key,
+          value: standingDecisions.value,
+          originTaskId: standingDecisions.originTaskId,
           originTitle: tasks.title,
-          createdAt: repoPolicies.createdAt,
+          createdAt: standingDecisions.createdAt,
         })
-        .from(repoPolicies)
-        .leftJoin(tasks, eq(repoPolicies.originTaskId, tasks.id))
-        .where(isNull(repoPolicies.revokedAt))
-        .orderBy(desc(repoPolicies.createdAt))
+        .from(standingDecisions)
+        .leftJoin(tasks, eq(standingDecisions.originTaskId, tasks.id))
+        .where(isNull(standingDecisions.revokedAt))
+        .orderBy(desc(standingDecisions.createdAt))
 
-      return c.json({ policies: rows })
+      return c.json({ decisions: rows })
     })
 
-    .delete('/repo-policies/:id', async (c) => {
-      const revoked = await revokePolicy(db, c.req.param('id'))
+    .delete('/standing-decisions/:id', async (c) => {
+      const revoked = await revokeStandingDecision(db, c.req.param('id'))
       if (!revoked) {
-        throw new ApiError('not_found', 'repository policy was not found or is already revoked', {
+        throw new ApiError('not_found', 'standing decision was not found or is already revoked', {
           status: 404,
         })
       }
 
-      return c.json({ policy: revoked })
+      return c.json({ decision: revoked })
     })
 
     .get('/tasks', async (c) => {
