@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { ConversationMessage, DecisionItem, TaskDetail, TimelineEvent } from './api-client.ts'
 import {
   buildThread,
@@ -423,6 +423,32 @@ describe('buildThread', () => {
 
     expect(chapters).toHaveLength(1)
     expect(chapters[0]?.entries).toHaveLength(1)
+  })
+
+  test('an event that lands on a node before its stage row starts joins the run it precedes', () => {
+    const chapters = buildThread({
+      events: [
+        timelineEvent({
+          seq: 1,
+          type: 'task.created',
+          createdAt: '2026-08-16T09:59:00.000Z',
+          payload: { title: 'Harness: launch work' },
+        }),
+        timelineEvent({
+          seq: 2,
+          type: 'stage.completed',
+          stageId: research.id,
+          createdAt: '2026-08-16T10:05:00.000Z',
+        }),
+      ],
+      stages: [research],
+      messages: [],
+      entryState: 'research',
+    })
+
+    expect(chapters).toHaveLength(1)
+    expect(chapters[0]?.kind).toBe('stage')
+    expect(chapters[0]?.entries.map((entry) => entry.id)).toEqual(['event-1', 'event-2'])
   })
 
   test('a stage whose events fell outside the event window still gets its chapter', () => {

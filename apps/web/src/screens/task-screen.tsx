@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
-import { DecisionCard } from '../components/decision-card.tsx'
+import { ArtifactReader } from '../components/artifact-reader.tsx'
+import { DecisionStack } from '../components/decision-stack.tsx'
 import { GatePanel } from '../components/gate-panel.tsx'
 import { HarnessBadge } from '../components/harness-badge.tsx'
 import { KickoffBrief } from '../components/kickoff-brief.tsx'
@@ -133,6 +134,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const [reworkTarget, setReworkTarget] = useState<ReworkInput['target'] | ''>('')
   const [restartGuidance, setRestartGuidance] = useState('')
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  // An artifact opens in the thread's place, not on its own screen: the rail,
+  // the spend and the pipeline are the context that says whose document it is.
+  const [openArtifactId, setOpenArtifactId] = useState<string | null>(null)
   // Chapters default to closed except the newest; this holds only the ones the
   // owner has flipped, so a new stage arriving does not reopen old history.
   const [toggledChapters, setToggledChapters] = useState<ReadonlySet<string>>(new Set())
@@ -378,13 +382,18 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const actions = conversation.data?.actions ?? []
   const decisionRows = decisions.data.decisions
   const decisionsById = new Map(decisionRows.map((decision) => [decision.id, decision]))
-  const parked = task.status === 'waiting_human' || task.status === 'paused'
+  // `blocked` is what the engine parks a task in when a blocking decision is
+  // open — leaving it out here is what let three stopping questions render as
+  // if the task were merely running.
+  const parked =
+    task.status === 'waiting_human' || task.status === 'paused' || task.status === 'blocked'
   // What stops the task outranks what is merely open: a blocking question sits
   // above the run controls, a passing one below them.
   const openDecisions = decisionRows.filter((decision) => decision.status === 'open')
   const blocks = (decision: DecisionItem) => decision.blocking && parked
   const blockingDecisions = openDecisions.filter(blocks)
   const passingDecisions = openDecisions.filter((decision) => !blocks(decision))
+  const blocked = Boolean(currentGate) || blockingDecisions.length > 0
 
   const pipelineNodes = buildPipelineNodes({
     nodes: graph?.dag.nodes ?? [],
@@ -414,31 +423,28 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     return decisionActivity[decisionId]?.error
   }
 
-  function decisionList(rows: readonly DecisionItem[], label: string) {
-    if (rows.length === 0) return null
+  function decisionHandlers(decision: DecisionItem) {
+    return {
+      onAnswerOption: (optionId: string, value?: string) =>
+        answerOption.mutate({ decisionId: decision.id, optionId, value }),
+      onAnswerText: (text: string) => answerText.mutate({ decisionId: decision.id, text }),
+      onDismiss: () => dismiss.mutate(decision.id),
+      onDiscuss: decision.conversationId
+        ? () => setActiveConversationId(decision.conversationId ?? undefined)
+        : undefined,
+    }
+  }
 
+  function decisionList(rows: readonly DecisionItem[], label: string) {
     return (
-      <ol className="space-y-3" aria-label={label}>
-        {rows.map((decision) => (
-          <DecisionCard
-            key={decision.id}
-            decision={decision}
-            parkedOnThis={decision.blocking && parked}
-            busy={decisionBusy(decision.id)}
-            error={decisionError(decision.id)}
-            onAnswerOption={(optionId, value) =>
-              answerOption.mutate({ decisionId: decision.id, optionId, value })
-            }
-            onAnswerText={(text) => answerText.mutate({ decisionId: decision.id, text })}
-            onDismiss={() => dismiss.mutate(decision.id)}
-            onDiscuss={
-              decision.conversationId
-                ? () => setActiveConversationId(decision.conversationId ?? undefined)
-                : undefined
-            }
-          />
-        ))}
-      </ol>
+      <DecisionStack
+        decisions={rows}
+        label={label}
+        parked={parked}
+        busy={decisionBusy}
+        error={decisionError}
+        handlers={decisionHandlers}
+      />
     )
   }
 
@@ -480,6 +486,30 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     } else {
       feedback.mutate()
     }
+  }
+
+  // Reading a document is a deliberate switch of attention: the questions keep
+  // their place at the top, but stop owning most of the column while it is open.
+  const actionZoneHeight = openArtifactId
+    ? 'xl:max-h-[22vh]'
+    : blocked
+      ? 'xl:max-h-[62vh]'
+      : 'xl:max-h-[34vh]'
+
+  // The rail renders twice — collapsed on a phone, standing on a desktop — and
+  // both copies are the same rail.
+  const railProps = {
+    taskId,
+    nodes: pipelineNodes,
+    baseline,
+    repoUrl: task.repoUrl,
+    selectedKey: selectedNode ?? currentNodeKey,
+    onSelect: focusNode,
+    artifacts: artifacts.data?.artifacts ?? [],
+    openArtifactId,
+    onOpenArtifact: setOpenArtifactId,
+    budgets: task.budgets,
+    spend: detail.data.spend,
   }
 
   const failure = [...events].reverse().find((event) => event.type === 'task.failed')
@@ -539,12 +569,13 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
 
       <div className="grid min-h-0 min-w-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
-          {/* The zone that needs a person stays put while the thread scrolls; a
-              gate is given more of the column, since deciding on it is the screen. */}
+          {/* The zone that needs a person stays put while the thread scrolls, and
+              keeps its own bottom edge — a card cut off by its scroll must read as
+              cut off, never as the first entry of the thread below it. Whatever
+              blocks the task is given most of the column, since answering it is
+              then the whole screen. */}
           <div
-            className={`scroll-thin shrink-0 space-y-3 xl:overflow-y-auto ${
-              currentGate ? 'xl:max-h-[46vh]' : 'xl:max-h-[34vh]'
-            }`}
+            className={`scroll-thin shrink-0 space-y-3 border-b border-border pb-3 xl:overflow-y-auto ${actionZoneHeight}`}
           >
             {currentGate?.kind === 'gate' && (
               <GatePanel
@@ -689,21 +720,29 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             </p>
           )}
 
-          <div
-            ref={threadRef}
-            onScroll={onThreadScroll}
-            data-thread=""
-            className="scroll-thin min-h-0 flex-1 xl:overflow-y-auto"
-          >
-            <ThreadView
-              chapters={chapters}
-              decisionsById={decisionsById}
-              repoUrl={task.repoUrl}
-              activeNodeKey={currentNodeKey}
-              toggled={toggledChapters}
-              onToggle={toggleChapter}
+          {openArtifactId ? (
+            <ArtifactReader
+              taskId={taskId}
+              artifactId={openArtifactId}
+              onClose={() => setOpenArtifactId(null)}
             />
-          </div>
+          ) : (
+            <div
+              ref={threadRef}
+              onScroll={onThreadScroll}
+              data-thread=""
+              className="scroll-thin min-h-0 flex-1 xl:overflow-y-auto"
+            >
+              <ThreadView
+                chapters={chapters}
+                decisionsById={decisionsById}
+                repoUrl={task.repoUrl}
+                activeNodeKey={currentNodeKey}
+                toggled={toggledChapters}
+                onToggle={toggleChapter}
+              />
+            </div>
+          )}
 
           <div className="shrink-0">
             <TaskComposer
@@ -727,32 +766,12 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               Pipeline · {currentNodeKey ? nodeLabel(currentNodeKey).toLowerCase() : task.status}
             </summary>
             <div className="pt-4">
-              <TaskRail
-                taskId={taskId}
-                nodes={pipelineNodes}
-                baseline={baseline}
-                repoUrl={task.repoUrl}
-                selectedKey={selectedNode ?? currentNodeKey}
-                onSelect={focusNode}
-                artifacts={artifacts.data?.artifacts ?? []}
-                budgets={task.budgets}
-                spend={detail.data.spend}
-              />
+              <TaskRail {...railProps} />
             </div>
           </details>
 
           <div className="hidden xl:block">
-            <TaskRail
-              taskId={taskId}
-              nodes={pipelineNodes}
-              baseline={baseline}
-              repoUrl={task.repoUrl}
-              selectedKey={selectedNode ?? currentNodeKey}
-              onSelect={focusNode}
-              artifacts={artifacts.data?.artifacts ?? []}
-              budgets={task.budgets}
-              spend={detail.data.spend}
-            />
+            <TaskRail {...railProps} />
           </div>
         </aside>
       </div>

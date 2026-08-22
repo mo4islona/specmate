@@ -449,7 +449,34 @@ export function buildThread({
     open(`stage:${stage.id}`, 'stage', stage.nodeKey, stage)
   }
 
-  return chapters.sort((left, right) => chapterStart(left) - chapterStart(right))
+  return absorbPreStageChapters(
+    chapters.sort((left, right) => chapterStart(left) - chapterStart(right)),
+  )
+}
+
+/**
+ * An event can land on a node before that node's stage row starts — `task.created`
+ * arrives at the entry node with no stage behind it yet. Left alone it opens a
+ * second chapter for a node the very next chapter also names. It belongs to the
+ * run it precedes.
+ */
+function absorbPreStageChapters(chapters: readonly ThreadChapter[]): ThreadChapter[] {
+  const kept: ThreadChapter[] = []
+
+  for (const [index, chapter] of chapters.entries()) {
+    const next = chapters[index + 1]
+    const absorbedByNext =
+      chapter.kind !== 'stage' && next?.kind === 'stage' && next.nodeKey === chapter.nodeKey
+
+    if (absorbedByNext && next) {
+      next.entries.unshift(...chapter.entries)
+      continue
+    }
+
+    kept.push(chapter)
+  }
+
+  return kept
 }
 
 function chapterStart(chapter: ThreadChapter): number {

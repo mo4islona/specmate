@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
 import type { TaskDetail } from '../lib/api-client.ts'
 import { BudgetPanel } from './budget-panel.tsx'
 
