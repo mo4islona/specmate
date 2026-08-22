@@ -89,6 +89,8 @@ describe('task telemetry chart', () => {
       durationMs: 250,
       costUsd: 0,
     })
+    // Stage attempts are stored 0-based, and count from one wherever a human reads them.
+    expect(attempts[1]).toMatchObject({ label: 'research / attempt 1', model: 'stage-model' })
   })
 
   test('keeps zero cost distinct from absent cost in the rendered budget trace', () => {
