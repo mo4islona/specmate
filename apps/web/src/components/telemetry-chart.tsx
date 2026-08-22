@@ -116,7 +116,8 @@ export function buildTelemetryAttempts(
     attempts.push({
       id: `stage:${stage.id}`,
       kind: 'stage',
-      label: `${stage.nodeKey} / attempt ${stage.attempt}`,
+      // Attempts are stored 0-based; every label a human reads counts from one.
+      label: `${stage.nodeKey} / attempt ${stage.attempt + 1}`,
       provider: stage.provider,
       model: stage.telemetry.model ?? null,
       startedAt: stage.telemetry.startedAt ?? stage.startedAt,
