@@ -85,7 +85,7 @@ export interface CreateTaskInput {
   readonly budgets?: Partial<Budgets>
   /** Per-role, per-field override; unnamed roles/fields resolve from the current model-defaults setting. */
   readonly modelBindings?: ModelBindingsOverride
-  /** Dev-only: position the task at a named stage node, for manual runs until intake exists. */
+  /** Start at a named stage node instead of the pipeline's entry — skips the stages before it. */
   readonly at?: TaskState
 }
 
@@ -129,7 +129,10 @@ export async function createTask(
         type: input.type as TaskType,
         repoUrl: input.repoUrl,
         baseBranch: input.baseBranch ?? 'main',
-        status: input.at ?? 'draft',
+        // `draft` is a reserved state the poll never dispatches, so a task
+        // created there waits forever with nothing to advance it. Creating is
+        // launching: the task starts at its pipeline's entry node.
+        status: input.at ?? dag.entry,
         caps: Caps.parse(input.caps ?? {}),
         budgets: Budgets.parse(input.budgets ?? {}),
         modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),

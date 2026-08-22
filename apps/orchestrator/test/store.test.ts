@@ -56,7 +56,7 @@ describeDb('task store', () => {
   test('creating a task pins its type’s definition into the run graph', async () => {
     const { task, graph } = await make()
 
-    expect(task.status).toBe('draft')
+    expect(task.status).toBe('planning')
     expect(graph.version).toBe(1)
     expect(graph.dag).toEqual(instantiateDefinition(FEATURE_BUGFIX_PIPELINE))
     expect(task.caps.max_spec_iterations).toBe(3)

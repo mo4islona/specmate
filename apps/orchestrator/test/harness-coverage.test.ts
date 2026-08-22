@@ -402,7 +402,7 @@ describeDb('harness-coverage', () => {
       assert(harnessTask)
       expect(harnessTask.repoUrl).toBe(task.repoUrl)
       expect(harnessTask.baseBranch).toBe(task.baseBranch)
-      expect(harnessTask.status).toBe('draft')
+      expect(harnessTask.status).toBe('planning')
       expect(harnessTask.description).toContain(MISSING.evidence_md)
 
       const [pinnedGraph] = await db
