@@ -140,10 +140,7 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
-type CoverageWaiversResponse = InferResponseType<
-  (typeof apiClient.api.v1)['coverage-waivers']['$get'],
-  200
->
+type RepositoriesResponse = InferResponseType<typeof apiClient.api.v1.repositories.$get, 200>
 type ModelDefaultsResponse = InferResponseType<
   (typeof apiClient.api.v1.settings)['model-defaults']['$get'],
   200
@@ -174,7 +171,7 @@ export type RestartStageInput = RestartStageRequest['json']
 export type DecisionItem = DecisionsResponse['decisions'][number]
 export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
-export type CoverageWaiver = CoverageWaiversResponse['waivers'][number]
+export type Repository = RepositoriesResponse['repositories'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
@@ -184,18 +181,18 @@ export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   return readJson<TasksResponse>(response)
 }
 
-export async function listCoverageWaivers(signal?: AbortSignal): Promise<CoverageWaiversResponse> {
-  const response = await apiClient.api.v1['coverage-waivers'].$get(undefined, {
-    init: { signal },
-  })
+export async function listRepositories(signal?: AbortSignal): Promise<RepositoriesResponse> {
+  const response = await apiClient.api.v1.repositories.$get(undefined, { init: { signal } })
 
-  return readJson<CoverageWaiversResponse>(response)
+  return readJson<RepositoriesResponse>(response)
 }
 
-export async function revokeCoverageWaiver(id: string): Promise<void> {
-  const response = await apiClient.api.v1['coverage-waivers'][':id'].$delete({ param: { id } })
+export async function revokeCoverageWaiver(repositoryId: string): Promise<void> {
+  const response = await apiClient.api.v1.repositories[':id']['coverage-waiver'].$delete({
+    param: { id: repositoryId },
+  })
 
-  await readJson<{ waiver: CoverageWaiver }>(response)
+  await readJson<{ waiver: unknown }>(response)
 }
 
 export async function listAttention(signal?: AbortSignal): Promise<AttentionResponse> {

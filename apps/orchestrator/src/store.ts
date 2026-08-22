@@ -793,21 +793,11 @@ export async function recordCoverageWaiver(
   return waiver ?? null
 }
 
-/** Revoking marks the waiver; what was accepted and when it ended both stay readable. */
-export async function revokeCoverageWaiver(
-  db: DbClient,
-  id: string,
-): Promise<CoverageWaiver | null> {
-  const [revoked] = await db
-    .update(coverageWaivers)
-    .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(coverageWaivers.id, id), isNull(coverageWaivers.revokedAt)))
-    .returning()
-
-  return revoked ?? null
-}
-
-/** Revokes whatever a repository has in force; a no-op when it has nothing. */
+/**
+ * Revoking marks the waiver; what was accepted and when it ended both stay
+ * readable. Addressed by repository rather than by record id — at most one is
+ * ever in force, so the repository is the whole identity a caller needs.
+ */
 export async function revokeCoverageWaiverInForce(
   db: DbClient,
   repoUrl: string,

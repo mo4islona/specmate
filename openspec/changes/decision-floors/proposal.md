@@ -51,7 +51,7 @@ to enforce anything.
 - `harness-coverage`: the waiver becomes a repository-scoped record a later task inherits, with
   the inheritance visible and reversible.
 - `persistence`: the accepted coverage gap becomes a durable, revocable record scoped to a repository rather than a task.
-- `task-surface`: those waivers are readable and revocable over REST.
+- `task-surface`: repositories become readable over REST, each carrying the waiver in force for it, revocable in place.
 - `operator-ui`: the Settings screen lists them and can revoke one.
 
 ## Impact
@@ -63,7 +63,8 @@ to enforce anything.
 - `apps/orchestrator/src/store.ts`: the question cap and its event; the waiver read in
   `recordPlanOutcome`, the write when one is accepted, and the revocation an adequate
   classification performs.
-- `apps/api/src/app.ts`: list and revoke endpoints.
+- `apps/api/src/app.ts`: a repositories collection carrying each repository's waiver, and the
+  revocation as a sub-resource of the repository it applies to.
 - `apps/web`: a Settings section listing accepted coverage waivers, with a revoke control.
 
 ## Non-goals

@@ -14,7 +14,7 @@
 
 - [x] 3.1 Add a `coverage_waivers` table to `packages/db/src/schema.ts`: `repoUrl`, `originTaskId` (nullable, `on delete set null`), `revokedAt` (nullable), timestamps, and a partial unique index on `(repo_url) where revoked_at is null`. No `key`/`value` pair — the table holds one kind of thing (persistence AC-340, AC-342).
 - [x] 3.2 Generate the migration; hand-add the caps backfill merging `max_questions_per_stage` into existing rows.
-- [x] 3.3 Store functions in `apps/orchestrator/src/store.ts`: `coverageWaiverInForce(db, repoUrl)`, `recordCoverageWaiver(db, {repoUrl, originTaskId})` (idempotent against the partial index — the one already in force wins, AC-1427), `revokeCoverageWaiver(db, id)` for the owner's revocation, and `revokeCoverageWaiverInForce(db, repoUrl)` for the one an adequate classification performs.
+- [x] 3.3 Store functions in `apps/orchestrator/src/store.ts`: `coverageWaiverInForce(db, repoUrl)`, `recordCoverageWaiver(db, {repoUrl, originTaskId})` (idempotent against the partial index — the one already in force wins, AC-1427), and `revokeCoverageWaiverInForce(db, repoUrl)`, which serves both the owner's revocation and the one an adequate classification performs. No revoke-by-record-id: at most one is ever in force, so the repository is the whole identity.
 - [x] 3.4 Verify against a live database that the partial index refuses a second live row and permits a second row once the first is revoked.
 
 ## 4. Waiver and inheritance
@@ -26,10 +26,10 @@
 
 ## 5. REST and UI
 
-- [x] 5.1 `GET /api/v1/coverage-waivers` returning what is in force with their repository, key, origin task id and title, and creation time (task-surface AC-1043).
-- [x] 5.2 `DELETE /api/v1/coverage-waivers/:id` revoking one, responding with the structured not-found error when it does not exist or is already revoked (AC-1044, AC-1045).
+- [x] 5.1 `GET /api/v1/repositories` returning each repository this system has tasks against — identified by `mirrorKey`, the path-safe digest the workspace layer already names its mirror by — with its task count and the coverage waiver in force for it, if any (task-surface AC-1043).
+- [x] 5.2 `DELETE /api/v1/repositories/:id/coverage-waiver` revoking that repository's acceptance — a sub-resource of the repository it applies to, not a top-level record — responding with the structured not-found error when none is in force (AC-1044, AC-1045).
 - [x] 5.3 API tests for both, including the not-found shape.
-- [x] 5.4 A `CoverageWaivers` section on the Settings screen listing them with a revoke control and an explicit empty state (operator-ui AC-950, AC-951, AC-952).
+- [x] 5.4 A `CoverageWaivers` section on the Settings screen listing the repositories that carry one, with a revoke control and an explicit empty state (operator-ui AC-950, AC-951, AC-952).
 
 ## 6. Test isolation
 
