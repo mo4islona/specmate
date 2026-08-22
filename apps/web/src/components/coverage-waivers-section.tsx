@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'wouter'
-import { ApiRequestError, listCoverageWaivers, revokeCoverageWaiver } from '../lib/api-client.ts'
+import { ApiRequestError, listRepositories, revokeCoverageWaiver } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 
@@ -12,14 +12,16 @@ import { queryKeys } from '../lib/query-keys.ts'
  */
 export function CoverageWaiversSection() {
   const queryClient = useQueryClient()
-  const waivers = useQuery({
-    queryKey: queryKeys.coverageWaivers,
-    queryFn: ({ signal }) => listCoverageWaivers(signal),
+  const repositories = useQuery({
+    queryKey: queryKeys.repositories,
+    queryFn: ({ signal }) => listRepositories(signal),
   })
   const revoke = useMutation({
-    mutationFn: (id: string) => revokeCoverageWaiver(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.coverageWaivers }),
+    mutationFn: (repositoryId: string) => revokeCoverageWaiver(repositoryId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.repositories }),
   })
+
+  const waived = repositories.data?.repositories.filter((repository) => repository.coverageWaiver)
 
   return (
     <section className="panel space-y-5 p-5 sm:p-7">
@@ -32,11 +34,11 @@ export function CoverageWaiversSection() {
         </p>
       </div>
 
-      {waivers.isError && (
+      {repositories.isError && (
         <p className="field-error">
-          {waivers.error instanceof ApiRequestError
-            ? waivers.error.message
-            : 'Could not load what is remembered'}
+          {repositories.error instanceof ApiRequestError
+            ? repositories.error.message
+            : 'Could not load the repositories'}
         </p>
       )}
       {revoke.isError && (
@@ -45,42 +47,43 @@ export function CoverageWaiversSection() {
         </p>
       )}
 
-      {waivers.data?.waivers.length === 0 && (
+      {waived?.length === 0 && (
         <p className="text-sm text-muted">No repository has an accepted coverage gap.</p>
       )}
 
       <ul className="space-y-3">
-        {waivers.data?.waivers.map((waiver) => (
+        {waived?.map((repository) => (
           <li
-            key={waiver.id}
+            key={repository.id}
             className="flex flex-wrap items-start justify-between gap-3 border border-border p-3"
           >
             <div className="min-w-0">
-              <p className="mt-1 break-all font-mono text-xs text-muted">{waiver.repoUrl}</p>
+              <p className="break-all font-mono text-xs text-muted">{repository.repoUrl}</p>
               <p className="mt-1 text-xs text-muted">
-                {waiver.originTaskId ? (
+                {repository.coverageWaiver?.originTaskId ? (
                   <>
                     Accepted on{' '}
                     <Link
-                      href={`/tasks/${waiver.originTaskId}`}
+                      href={`/tasks/${repository.coverageWaiver.originTaskId}`}
                       className="text-cyan underline-offset-4 hover:underline"
                     >
-                      {waiver.originTitle ?? waiver.originTaskId.slice(0, 8)}
+                      {repository.coverageWaiver.originTitle ??
+                        repository.coverageWaiver.originTaskId.slice(0, 8)}
                     </Link>
                   </>
                 ) : (
                   'Accepted on a task that no longer exists'
                 )}{' '}
-                · {formatTimestamp(waiver.createdAt)}
+                · {formatTimestamp(repository.coverageWaiver?.acceptedAt ?? '')}
               </p>
             </div>
             <button
               type="button"
               className="button-secondary"
-              disabled={revoke.isPending && revoke.variables === waiver.id}
-              onClick={() => revoke.mutate(waiver.id)}
+              disabled={revoke.isPending && revoke.variables === repository.id}
+              onClick={() => revoke.mutate(repository.id)}
             >
-              {revoke.isPending && revoke.variables === waiver.id ? 'Revoking…' : 'Revoke'}
+              {revoke.isPending && revoke.variables === repository.id ? 'Revoking…' : 'Revoke'}
             </button>
           </li>
         ))}

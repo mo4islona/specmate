@@ -33,9 +33,9 @@ import {
   updateModelDefaults,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
-import { createTask, revokeCoverageWaiver, taskSpend } from '@specmate/orchestrator/store'
-import { GitError, type WorkspaceService } from '@specmate/workspace'
-import { and, asc, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
+import { createTask, revokeCoverageWaiverInForce, taskSpend } from '@specmate/orchestrator/store'
+import { GitError, mirrorKey, type WorkspaceService } from '@specmate/workspace'
+import { and, asc, count, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { streamSSE } from 'hono/streaming'
@@ -659,28 +659,66 @@ export function createApp({
       },
     )
 
-    /** REQ-1015: the repositories whose harness gap the owner has accepted, and the owner's only way to take one back. */
-    .get('/coverage-waivers', async (c) => {
-      const rows = await db
-        .select({
-          id: coverageWaivers.id,
-          repoUrl: coverageWaivers.repoUrl,
-          originTaskId: coverageWaivers.originTaskId,
-          originTitle: tasks.title,
-          createdAt: coverageWaivers.createdAt,
-        })
-        .from(coverageWaivers)
-        .leftJoin(tasks, eq(coverageWaivers.originTaskId, tasks.id))
-        .where(isNull(coverageWaivers.revokedAt))
-        .orderBy(desc(coverageWaivers.createdAt))
+    /**
+     * The repositories this system works with — derived from the tasks that
+     * name them, since a repository has no row of its own — each carrying the
+     * coverage waiver in force for it, if any (REQ-1015). `mirrorKey` is the
+     * identity: the same path-safe digest the workspace layer already names a
+     * repository's mirror by, so one repository is one id everywhere.
+     */
+    .get('/repositories', async (c) => {
+      const [repoRows, waiverRows] = await Promise.all([
+        db
+          .select({ repoUrl: tasks.repoUrl, taskCount: count(tasks.id) })
+          .from(tasks)
+          .groupBy(tasks.repoUrl)
+          .orderBy(desc(count(tasks.id))),
+        db
+          .select({
+            repoUrl: coverageWaivers.repoUrl,
+            originTaskId: coverageWaivers.originTaskId,
+            originTitle: tasks.title,
+            acceptedAt: coverageWaivers.createdAt,
+          })
+          .from(coverageWaivers)
+          .leftJoin(tasks, eq(coverageWaivers.originTaskId, tasks.id))
+          .where(isNull(coverageWaivers.revokedAt)),
+      ])
+      const waiverFor = new Map(waiverRows.map((row) => [row.repoUrl, row]))
 
-      return c.json({ waivers: rows })
+      const repositories = repoRows.map((row) => {
+        const waiver = waiverFor.get(row.repoUrl)
+
+        return {
+          id: mirrorKey(row.repoUrl),
+          repoUrl: row.repoUrl,
+          taskCount: row.taskCount,
+          coverageWaiver: waiver
+            ? {
+                originTaskId: waiver.originTaskId,
+                originTitle: waiver.originTitle,
+                acceptedAt: waiver.acceptedAt,
+              }
+            : null,
+        }
+      })
+
+      return c.json({ repositories })
     })
 
-    .delete('/coverage-waivers/:id', async (c) => {
-      const revoked = await revokeCoverageWaiver(db, c.req.param('id'))
+    /** REQ-1015: the owner's way to take an acceptance back. Idempotent per repository, not per record. */
+    .delete('/repositories/:id/coverage-waiver', async (c) => {
+      const id = c.req.param('id')
+      // One row per waived repository, so the whole set is a handful; the id is
+      // a digest, which no query can invert.
+      const inForce = await db
+        .select({ repoUrl: coverageWaivers.repoUrl })
+        .from(coverageWaivers)
+        .where(isNull(coverageWaivers.revokedAt))
+      const match = inForce.find((row) => mirrorKey(row.repoUrl) === id)
+      const revoked = match ? await revokeCoverageWaiverInForce(db, match.repoUrl) : null
       if (!revoked) {
-        throw new ApiError('not_found', 'coverage waiver was not found or is already revoked', {
+        throw new ApiError('not_found', 'that repository has no coverage waiver in force', {
           status: 404,
         })
       }
