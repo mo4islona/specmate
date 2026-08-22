@@ -1,6 +1,6 @@
 import {
   type Budgets,
-  type Caps,
+  Caps,
   type ConversationActionStatus,
   type ConversationActionTarget,
   type ConversationExpectedVersion,
@@ -53,6 +53,32 @@ const jsonb = customType<{ data: unknown; driverData: unknown }>({
     }
   },
 })
+
+/**
+ * `jsonb` whose read is a parse rather than a cast. A row written before a cap
+ * existed answers `undefined` for it, and every bound conditioned on that cap
+ * then fails open — `planDepth < undefined` is false, `slice(0, undefined)`
+ * keeps everything, a cap of `undefined` refuses every request. A migration's
+ * backfill only reaches the rows that existed when it ran; parsing on read
+ * fills the defaults once, for every reader and every future cap (AC-339).
+ */
+const parsedJsonb = <T>(schema: { parse: (value: unknown) => T }) =>
+  customType<{ data: T; driverData: unknown }>({
+    dataType: () => 'jsonb',
+    toDriver: (value) => value,
+    fromDriver: (value) => {
+      let raw = value
+      if (typeof raw === 'string') {
+        try {
+          raw = JSON.parse(raw)
+        } catch {
+          raw = undefined
+        }
+      }
+
+      return schema.parse(raw ?? {})
+    },
+  })
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -230,8 +256,7 @@ export const tasks = pgTable(
       .$type<Budgets>()
       .notNull()
       .default({ ...DEFAULT_BUDGETS }),
-    caps: jsonb()
-      .$type<Caps>()
+    caps: parsedJsonb(Caps)('caps')
       .notNull()
       .default({ ...DEFAULT_CAPS }),
     modelBindings: jsonb('model_bindings')
