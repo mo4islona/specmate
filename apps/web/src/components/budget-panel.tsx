@@ -39,22 +39,28 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
   const rows = budgetRows(budgets, spend)
 
   return (
-    <section className="panel p-4 sm:p-5" aria-label="Budget">
-      <p className="micro-label text-phosphor">Spend</p>
-      <h2 className="mt-2 text-lg font-semibold">Budget</h2>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+    <section aria-label="Budget">
+      <h2 className="micro-label text-muted">Spend</h2>
+      <dl className="mt-3 space-y-3">
         {rows.map((row) => {
           const near = row.ratio >= 0.8
 
           return (
-            <div
-              key={row.label}
-              className={`border p-3 ${near ? 'border-amber/45' : 'border-border'}`}
-            >
-              <dt className="font-mono text-xs text-muted">{row.label}</dt>
-              <dd className="mt-1 font-mono text-sm text-text">{row.display}</dd>
+            <div key={row.label}>
+              <div className="flex items-baseline justify-between gap-2">
+                <dt className="text-[0.72rem] text-muted">{row.label}</dt>
+                <dd className={`font-mono text-[0.7rem] ${near ? 'text-amber' : 'text-text'}`}>
+                  {row.display}
+                </dd>
+              </div>
+              <div className="mt-1.5 h-0.5 w-full bg-border">
+                <div
+                  className={`h-0.5 ${near ? 'bg-amber' : 'bg-phosphor/60'}`}
+                  style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
+                />
+              </div>
               {row.incomplete && (
-                <p className="mt-1 font-mono text-[0.68rem] text-amber">
+                <p className="mt-1.5 text-[0.62rem] leading-4 text-amber">
                   incomplete — some runs reported no cost
                 </p>
               )}
