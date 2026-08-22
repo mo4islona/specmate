@@ -5,14 +5,21 @@ runs: the pipeline creates work for itself and hands questions to the owner in p
 has enough information to act, and it forgets every answer the moment a task ends. The harness
 split is the sharpest instance, but it is an instance, not the whole thing.
 
-Part of this already landed: the planner's question policy (`roles/planner.md`, `9cadcd6`) now
-states when a question is worth asking, caps how many, and requires options. That is a prompt,
-and a prompt is the weakest place to enforce anything. Everything below needs the engine, and
-most of it needs the specs.
+Part of this first landed as a prompt: the planner's question policy (`roles/planner.md`,
+`9cadcd6`) states when a question is worth asking, caps how many, and requires options. A prompt
+is the weakest place to enforce anything, so the rest went into the engine and the specs — two
+changes, both drafted and implemented:
+
+- `openspec/changes/planner-decomposition` — §2, §6 and §7. Planning declares the shape of the
+  work; the engine bounds it.
+- `openspec/changes/decision-floors` — §3 and §4. A floor under question volume, and an accepted
+  coverage gap that outlives the task that accepted it.
+
+Each section below keeps the analysis that motivated the change and ends with what closed it.
 
 ## 1. The shape of the problem
 
-Three properties are missing, and every symptom below is one of them:
+Four properties were missing, and every symptom below is one of them:
 
 - **No cap on the work the pipeline creates for itself.** Loops, retries, redirects and budgets
   all have caps. Task creation does not.
@@ -46,6 +53,13 @@ gets its own fresh budget and nothing bounds the chain as a whole.
 
 Touches REQ-1401 through REQ-1404 in `openspec/specs/harness-coverage/spec.md`.
 
+**Closed by `planner-decomposition`.** The split creates what the planner proposed rather than
+what the engine wrote, and the recursion is closed by arithmetic, not by prose: a task records
+its `plan_depth`, `max_plan_depth` defaults to 1, and the option list at the gate is computed
+from that depth — a task at the cap is never offered a split, and the prompt says why. The chain
+is traceable through `origin_task_id`. A chain-wide budget is still absent, and is now at least
+computable; the change names it as a non-goal.
+
 ## 3. Decisions do not outlive the task that asked
 
 `harnessStatus` and its waiver are columns on `tasks`. A repository the owner has already
@@ -60,6 +74,13 @@ Open questions before this can be specified:
 - How does the owner see that a task inherited an answer rather than being asked, and how do they
   take it back?
 
+**Closed by `decision-floors`.** Keyed on the repository — the area lives in the probe's prose,
+and durable state keyed on prose is keyed on nothing checkable. It ends when a probe classifies
+that repository adequate, or when the owner revokes it in Settings; there is no wall-clock
+expiry. The inheritance is written as an already-resolved decision naming the task the
+acceptance came from, so it reaches the decision log every later stage reads and the task view,
+without ever appearing as something the owner must act on.
+
 ## 4. Questions have a policy but no floor
 
 The policy lives entirely in `roles/planner.md`. The engine accepts however many
@@ -70,6 +91,12 @@ before the prompt change moved questions to `kickoff_brief` alone.
 To decide: whether the engine caps non-blocking questions per stage, and whether question
 identity should be `(task, key)` rather than `(node, key)`. The second is a spec change, not a
 bug fix — REQ-1202 says node and key deliberately.
+
+**Closed by `decision-floors`.** Both, and REQ-1202 was modified rather than worked around: a
+non-blocking question is identified by the task and its key, an escalation still by its node,
+because two nodes escalating are two situations with two pieces of evidence. The cap
+(`max_questions_per_stage`, default 3) exempts blocking requests — each one is why a task parked
+— and what it refuses is named in the timeline.
 
 ## 5. Everywhere the pipeline stops for a human
 
@@ -84,7 +111,10 @@ Inventory, so the next change reasons about the whole surface rather than one ca
 | Coverage gap | probing stage | **nothing** |
 | Agent questions | any role's `decisions_needed` | **nothing** |
 
-The bounded rows are fine. The two unbounded ones are this note.
+The bounded rows are fine. The two unbounded ones are this note. Both are bounded now: the
+coverage gap by plan depth and prerequisite count, and by an acceptance that outlives its task;
+the questions by a per-stage cap and an identity that stops multiplying one question by the
+number of nodes that ask it.
 
 ## 6. The stage list is long, and stages overlap
 
@@ -112,6 +142,14 @@ planner states how big the work is, and the graph is identical either way, becau
 at creation from a per-type catalog (`instantiateDefinition`) and per-task variation is limited
 to caps, budgets and provider bindings.
 
+**Closed by `planner-decomposition`**, in part. The declared size now selects a pipeline profile:
+a validated subsequence of the base definition, appended as a new run-graph version the moment
+the size is known. `small` drops `kickoff_brief` and `spec_review` and keeps the spine, all three
+gates, and the review of the code that ships. The overlap that remains — the researcher writing
+the specs a scheduled `spec_writer` would write, `retro` in the catalog with no node — is
+untouched and named as a non-goal: it is a question about what the roles are for, not about how
+much process a task gets.
+
 ## 7. Decomposition belongs to the planner
 
 The harness split is the only place the system decides to turn work into more work, and it is a
@@ -138,7 +176,24 @@ Open questions before this can be specified:
 - What happens to the engine's three-way coverage offer once the planner decides this? It becomes
   a fallback for a rejected plan, or it goes away.
 
+**Closed by `planner-decomposition`.** The planner returns `plan: { size, prerequisites }` — a
+flat, unordered list one level deep, which cannot recurse by construction. It is a proposal, not
+an action: the owner still chooses at the kickoff gate, so a bad plan costs a click rather than a
+chain of runs. The engine's offer stayed, generalized — it is raised for a coverage gap, for a
+proposed plan, or for both — and the harness task it used to invent survives only as the fallback
+for a gap the plan said nothing about.
+
 ## 8. Status
 
-Draft. The next step is an OpenSpec change against `harness-coverage`, and possibly `decisions`,
-once the questions in §3, §4 and §7 have answers.
+Both changes are implemented and their specs validate; neither is archived, so the deltas are
+still readable next to the code that satisfies them. What this note started as — a class of
+defect — is now two changes and one remaining question worth watching in a real run: whether a
+planner asked to size its own work sizes it honestly. The two human gates before code are what
+catch it if not.
+
+Left deliberately open, each named as a non-goal in the change that touched it:
+
+- No chain-wide budget. Every task in a chain still resolves its own from settings.
+- No cap or budget scaling by declared size — the size selects the profile and nothing else.
+- No ordering or dependencies among a plan's prerequisites.
+- The role catalog's unscheduled roles (`spec_writer`, `retro`) and the researcher's double duty.
