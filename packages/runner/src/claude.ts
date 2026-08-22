@@ -320,12 +320,39 @@ export function readStageTelemetry(stdout: string): StageTelemetry | null {
 /** Recent CLIs report per-model usage keyed by the model that served the run. */
 function readModel(envelope: Record<string, unknown>): string | null {
   if (isRecord(envelope.modelUsage)) {
-    const [model] = Object.keys(envelope.modelUsage)
+    const model = servingModel(envelope.modelUsage)
     if (model) return model
   }
   if (typeof envelope.model === 'string' && envelope.model.length > 0) return envelope.model
 
   return null
+}
+
+/**
+ * The CLI bills its own auxiliary calls to a small model alongside the stage's
+ * own, so `modelUsage` routinely carries more than one entry and key order says
+ * nothing about which of them did the work. Rank by one field across every
+ * entry — never a cost against a token count — and the largest is the model the
+ * stage actually ran on.
+ */
+function servingModel(modelUsage: Record<string, unknown>): string | null {
+  const entries = Object.entries(modelUsage)
+  const reportsCost = entries.some(([, usage]) => isRecord(usage) && 'costUSD' in usage)
+  const field = reportsCost ? 'costUSD' : 'outputTokens'
+
+  let served: string | null = null
+  let largest = Number.NEGATIVE_INFINITY
+
+  for (const [model, usage] of entries) {
+    const reported = isRecord(usage) ? usage[field] : undefined
+    const share = typeof reported === 'number' ? reported : 0
+    if (share <= largest) continue
+
+    served = model
+    largest = share
+  }
+
+  return served
 }
 
 /**
