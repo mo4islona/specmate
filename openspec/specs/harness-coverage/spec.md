@@ -60,13 +60,17 @@ kickoff gate while the task's coverage is unknown.
 
 ### Requirement: REQ-1403 — The owner decides what to do about a gap
 
-A task whose coverage is short of adequate SHALL reach its kickoff gate carrying a decision
-offering the choice: build the harness first as a separate task this one waits on, proceed
-accepting that the result cannot be properly validated, or cancel. The choice SHALL be presented
-with the brief rather than parking the task before it, and its discussion SHALL let the owner
-clarify the evidence and consequences without selecting an option. Approving the gate without
-choosing SHALL count as proceeding, and either route SHALL record the acceptance durably on the
-task as a waiver — a later reader MUST NOT have to infer it from decision history.
+A task SHALL reach its kickoff gate carrying a decision offering the choice — do the proposed
+work first as separate tasks this one waits on, proceed as one task, or cancel — whenever its
+coverage is short of adequate, whenever its plan proposes prerequisite tasks, or both. The choice
+SHALL name what it would create: the tasks the plan proposed, or, when coverage is short and the
+plan proposed none, one task for the harness the probe found missing. Creating further tasks
+SHALL NOT be offered to a task at the configured depth cap, and the choice SHALL say so rather
+than present a shorter list without explanation. The choice SHALL be presented with the brief
+rather than parking the task before it, and its discussion SHALL let the owner clarify the
+evidence and consequences without selecting an option. Approving the gate without choosing SHALL
+count as proceeding, and where coverage was short either route SHALL record the acceptance
+durably on the task as a waiver — a later reader MUST NOT have to infer it from decision history.
 
 #### Scenario: AC-1407 — The choice arrives with the brief
 
@@ -85,36 +89,59 @@ task as a waiver — a later reader MUST NOT have to infer it from decision hist
 
 #### Scenario: AC-1410 — Adequate coverage raises nothing
 
-- **WHEN** a task classified as adequate reaches its gate
+- **WHEN** a task classified as adequate reaches its gate and its plan proposes no prerequisite
 - **THEN** no coverage decision SHALL exist for it
 
 #### Scenario: AC-1417 — Coverage choice is discussed without choosing
 
 - **WHEN** the owner asks follow-up questions in the coverage decision's discussion
-- **THEN** the choice SHALL remain open and no harness task or waiver SHALL be created until an option or gate outcome is explicit
+- **THEN** the choice SHALL remain open and no task or waiver SHALL be created until an option or gate outcome is explicit
 
-### Requirement: REQ-1404 — Building the harness first is one task waiting on another
+#### Scenario: AC-1418 — Adequate coverage, but the plan proposes work first
 
-Choosing to build the harness first SHALL create a separate task against the same repository
-whose request carries the probe's evidence and what the harness must cover, and SHALL make the
-original wait on it. The original SHALL judge its coverage again once released, so it is
-verified against the harness that now exists rather than the classification it was blocked
-under. A task MUST NOT be made to wait on itself.
+- **WHEN** a task classified as adequate reaches its gate with prerequisites in its plan
+- **THEN** the decision SHALL be open, naming the proposed tasks
+
+#### Scenario: AC-1419 — The split option at the depth cap
+
+- **WHEN** a task at the configured depth cap reaches its gate with a coverage gap
+- **THEN** its choice SHALL offer only proceeding and cancelling, and SHALL state that the depth cap is why
+
+### Requirement: REQ-1404 — Work that must land first is one task waiting on another
+
+Choosing to do the proposed work first SHALL create the tasks the plan proposed — or, when the
+plan proposed none and coverage is short of adequate, one harness task carrying the probe's
+evidence and what the harness must cover — each against the same repository, each recording the
+task whose plan created it and its depth in that chain, and SHALL make the original wait on all
+of them. No more than the configured number of tasks SHALL be created from one plan. The original
+SHALL judge its coverage again once released, so it is verified against the world its blockers
+left rather than the classification it was blocked under. A task MUST NOT be made to wait on
+itself.
 
 #### Scenario: AC-1411 — The split creates the dependency
 
-- **WHEN** the owner chooses to build the harness first
-- **THEN** a harness task SHALL exist against the same repository, carrying the probe's evidence, and the original SHALL be waiting on it
+- **WHEN** the owner chooses to do the proposed work first
+- **THEN** a task SHALL exist for each proposal against the same repository, and the original SHALL be waiting on all of them
 
 #### Scenario: AC-1412 — Released after the blocker lands
 
-- **WHEN** the harness task reaches its terminal successfully and the original is released
+- **WHEN** every task the original waits on reaches its terminal successfully and the original is released
 - **THEN** the original SHALL re-enter its pipeline from the start, and its coverage SHALL be classified again
 
 #### Scenario: AC-1413 — A task cannot block itself
 
 - **WHEN** a dependency would make a task wait on itself
 - **THEN** it SHALL be rejected and no dependency SHALL be recorded
+
+#### Scenario: AC-1420 — Splitting with nothing proposed
+
+- **WHEN** the owner chooses to split a task whose coverage is short of adequate and whose plan proposed no prerequisite
+- **THEN** exactly one harness task SHALL be created carrying the probe's evidence, and the original SHALL wait on it
+
+#### Scenario: AC-1421 — The created tasks carry their lineage
+
+- **WHEN** tasks are created from a plan
+- **THEN** each SHALL record the task whose plan created it and a depth one greater than that task's
 
 ### Requirement: REQ-1405 — An accepted risk stays visible to the end
 
@@ -137,3 +164,48 @@ silently cleared; only a later classification of the same task may supersede it.
 
 - **WHEN** the owner opens a task carrying a waiver
 - **THEN** the task view SHALL show its coverage state without the owner opening an artifact
+
+### Requirement: REQ-1406 — An accepted gap is accepted for the repository, not just the task
+
+Accepting a coverage gap SHALL record the acceptance against the task's repository, durably and
+outside the task. A later task against that repository whose coverage is short of adequate SHALL
+inherit the acceptance rather than raise the choice again: its coverage SHALL be waived, and the
+inheritance SHALL be recorded as an already-resolved decision naming the task the acceptance came
+from, so it is readable in the decision log every later stage receives and in the task's own view
+without appearing as something the owner must act on. An inherited acceptance MUST NOT suppress a
+choice the owner has not already made — a plan proposing prerequisite tasks SHALL still raise its
+own.
+
+An acceptance SHALL end when a probe classifies that repository's coverage as adequate, or when
+the owner revokes it. It MUST NOT expire on elapsed time. A revoked acceptance SHALL stay readable
+with the moment it ended.
+
+#### Scenario: AC-1422 — The second task does not ask again
+
+- **WHEN** a task's coverage is short of adequate and its repository carries an acceptance
+- **THEN** its coverage SHALL be waived without raising the choice, and no open decision SHALL exist for it
+
+#### Scenario: AC-1423 — The inheritance is visible
+
+- **WHEN** a task inherits an acceptance
+- **THEN** a resolved decision SHALL record it, naming the task the acceptance came from
+
+#### Scenario: AC-1424 — Inheritance does not settle a different question
+
+- **WHEN** a task inheriting an acceptance also carries a plan proposing prerequisite tasks
+- **THEN** the choice about those tasks SHALL still be raised
+
+#### Scenario: AC-1425 — The gap is closed
+
+- **WHEN** a probe classifies a repository carrying an acceptance as adequate
+- **THEN** the acceptance SHALL end, and the next task with a gap SHALL be asked again
+
+#### Scenario: AC-1426 — The owner takes it back
+
+- **WHEN** the owner revokes an acceptance
+- **THEN** it SHALL stop applying to later tasks and SHALL remain readable as revoked
+
+#### Scenario: AC-1427 — Accepting the same gap twice
+
+- **WHEN** a second task's owner accepts a gap in a repository that already carries one in force
+- **THEN** exactly one acceptance SHALL be in force for that repository
