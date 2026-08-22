@@ -32,10 +32,17 @@ const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
 
 function result(overrides: Partial<StageResult> & { role: StageResult['role'] }): StageExecution {
+  // AC-1317: a planning role's `ok` result must carry a plan, and the engine
+  // now fails the attempt when it does not. Defaulted here so a test about
+  // coverage need not restate it; one about the plan overrides it.
+  const declaresPlan = overrides.role === 'planner' && (overrides.status ?? 'ok') === 'ok'
+  const planned =
+    declaresPlan && !overrides.plan ? { plan: { size: 'medium' as const, prerequisites: [] } } : {}
+
   return {
     status: 'succeeded',
     attempts: [{ attempt: 0, ok: true, durationMs: 5 }],
-    result: StageResult.parse({ schema_version: 1, status: 'ok', ...overrides }),
+    result: StageResult.parse({ schema_version: 1, status: 'ok', ...overrides, ...planned }),
     telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
   }
 }
@@ -461,18 +468,27 @@ describeDb('harness-coverage', () => {
       const [decision] = await openDecisions(task.id)
       assert(decision)
 
-      await engine.answer({
-        taskId: task.id,
-        decisionId: decision.id,
-        actor: 'evgeny',
-        optionId: 'split',
-      })
+      // The option list is computed from the task's own depth, so `split` was
+      // never offered here. Accepting it anyway would close the card on an
+      // action the engine then declines to take, leaving the task past its gate
+      // with the gap neither accepted nor recorded.
+      await expect(
+        engine.answer({
+          taskId: task.id,
+          decisionId: decision.id,
+          actor: 'evgeny',
+          optionId: 'split',
+        }),
+      ).rejects.toThrow(CoverageDecisionRequiresOptionError)
 
       const after = await reload(db, task.id)
       expect(after.blockedBy).toEqual([])
       expect(after.status).toBe('human_kickoff_gate')
       const spawned = await db.select().from(tasks).where(eq(tasks.originTaskId, task.id))
       expect(spawned).toEqual([])
+
+      const [stillOpen] = await openDecisions(task.id)
+      expect(stillOpen?.id).toBe(decision.id)
     })
 
     test('a plan proposing more than the cap creates the cap and names the rest — AC-637', async () => {
@@ -634,6 +650,37 @@ describeDb('harness-coverage', () => {
       const waivers = await inForce(repoUrl)
       expect(waivers).toHaveLength(1)
       expect(waivers[0]).toMatchObject({ originTaskId: task.id })
+    })
+
+    test('proceeding on a card raised only by proposed work accepts no gap — REQ-1403', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: ADEQUATE,
+          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+        }),
+      )
+      await engine.tick()
+      await engine.idle()
+
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+      await engine.answer({
+        taskId: task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+
+      // The card was raised because the plan proposed work, not because
+      // coverage was short. "Proceed as one task" declines the split; there is
+      // no gap here for it to accept, and none for a later task to inherit.
+      expect(await inForce(repoUrl)).toEqual([])
+      expect((await reload(db, task.id)).harnessStatus).toBe('adequate')
     })
 
     test('the next task in that repository inherits it instead of asking — AC-1422, AC-1423', async () => {
@@ -813,7 +860,7 @@ describeDb('harness-coverage', () => {
       expect((await reload(db, dependent.id)).status).toBe('planning')
     })
 
-    test('a second live blocker survives the first one dying, and resolving the escalation still releases the dependent — REQ-615', async () => {
+    test('a dead blocker raises the escalation without abandoning the live ones — REQ-615', async () => {
       const { engine } = makeEngine()
       const { task: blocker1 } = await seed({ at: 'research' })
       const { task: blocker2 } = await seed({ status: 'human_final_gate' })
@@ -825,17 +872,22 @@ describeDb('harness-coverage', () => {
 
       await engine.cancel(blocker1.id, 'evgeny')
 
+      // Still blocked: blocker2 is live, and leaving `blocked` here would take
+      // the dependent out of the only query that ever clears `blockedBy`,
+      // stranding a list that names a task nothing can remove from it.
       const afterDeath = await reload(db, dependent.id)
-      expect(afterDeath.status).toBe('waiting_human')
+      expect(afterDeath.status).toBe('blocked')
       expect(afterDeath.blockedBy).toEqual([blocker2.id])
 
-      // blocker2 landing while the dependent is parked on the escalation must
-      // not crash or corrupt blockedBy — the dependent already left 'blocked'
-      // and has nothing left to react to blocker2's own completion with.
+      // The last live blocker landing clears the list, but the escalation the
+      // dead one raised is still open and blocking, so the dependent goes to
+      // the owner rather than into its pipeline.
       await engine.approve(blocker2.id, 'evgeny')
+      await engine.tick()
+      await engine.idle()
       const afterSurvivorLands = await reload(db, dependent.id)
       expect(afterSurvivorLands.status).toBe('waiting_human')
-      expect(afterSurvivorLands.blockedBy).toEqual([blocker2.id])
+      expect(afterSurvivorLands.blockedBy).toEqual([])
 
       const open = await openDecisions(dependent.id)
       const escalation = open.find((d) => d.key === `blocker-lost:${blocker1.id}`)

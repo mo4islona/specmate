@@ -1,4 +1,6 @@
 import {
+  BUDGET_DECISION_KEY,
+  BUDGET_DECISION_NODE_KEY,
   Budgets,
   Caps,
   ConversationSubjectConflictError,
@@ -46,7 +48,7 @@ import {
   type Task,
   tasks,
 } from '@specmate/db'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
   constructor(type: string) {
@@ -117,6 +119,21 @@ export async function createTask(
   db: Database,
   input: CreateTaskInput,
 ): Promise<{ task: Task; graph: RunGraphRow }> {
+  // One transaction: a task without its pinned graph is invisible to the loop
+  // and unrepairable, so the two rows exist together or not at all.
+  return db.transaction((tx) => createTaskInTx(tx, input))
+}
+
+/**
+ * The same create for a caller that already holds a transaction. The split
+ * creates its prerequisites and blocks their parent on them as one unit — a
+ * prerequisite that exists while nothing waits on it is work nobody asked for,
+ * and the decision that authorised it is already answered.
+ */
+export async function createTaskInTx(
+  db: DbClient,
+  input: CreateTaskInput,
+): Promise<{ task: Task; graph: RunGraphRow }> {
   const definition = PIPELINE_CATALOG[input.type as TaskType]
   if (!definition) throw new UnknownTaskTypeError(input.type)
 
@@ -125,49 +142,45 @@ export async function createTask(
     throw new UnknownNodeError(input.at, definition.id)
   }
 
-  // One transaction: a task without its pinned graph is invisible to the loop
-  // and unrepairable, so the two rows exist together or not at all.
-  return db.transaction(async (tx) => {
-    // Read inside the transaction: the resolved bindings this task stores must
-    // reflect the model-defaults row as of this create, not a stale snapshot.
-    const currentDefaults = await getModelDefaults(tx)
+  // Read inside the transaction: the resolved bindings this task stores must
+  // reflect the model-defaults row as of this create, not a stale snapshot.
+  const currentDefaults = await getModelDefaults(db)
 
-    const [task] = await tx
-      .insert(tasks)
-      .values({
-        slug: input.slug,
-        title: input.title,
-        description: input.description,
-        type: input.type as TaskType,
-        repoUrl: input.repoUrl,
-        baseBranch: input.baseBranch ?? 'main',
-        // `draft` is a reserved state the poll never dispatches, so a task
-        // created there waits forever with nothing to advance it. Creating is
-        // launching: the task starts at its pipeline's entry node.
-        status: input.at ?? dag.entry,
-        caps: Caps.parse(input.caps ?? {}),
-        budgets: Budgets.parse(input.budgets ?? {}),
-        modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),
-        originTaskId: input.originTaskId ?? null,
-        planDepth: input.planDepth ?? 0,
-      })
-      .returning()
-    if (!task) throw new Error(`task ${input.slug} could not be created`)
-
-    const [graph] = await tx
-      .insert(runGraphs)
-      .values({ taskId: task.id, version: 1, dag })
-      .returning()
-    if (!graph) throw new Error(`run graph for ${input.slug} could not be created`)
-
-    await emitEvent(tx, {
-      taskId: task.id,
-      type: 'task.created',
-      payload: { title: task.title },
+  const [task] = await db
+    .insert(tasks)
+    .values({
+      slug: input.slug,
+      title: input.title,
+      description: input.description,
+      type: input.type as TaskType,
+      repoUrl: input.repoUrl,
+      baseBranch: input.baseBranch ?? 'main',
+      // `draft` is a reserved state the poll never dispatches, so a task
+      // created there waits forever with nothing to advance it. Creating is
+      // launching: the task starts at its pipeline's entry node.
+      status: input.at ?? dag.entry,
+      caps: Caps.parse(input.caps ?? {}),
+      budgets: Budgets.parse(input.budgets ?? {}),
+      modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),
+      originTaskId: input.originTaskId ?? null,
+      planDepth: input.planDepth ?? 0,
     })
+    .returning()
+  if (!task) throw new Error(`task ${input.slug} could not be created`)
 
-    return { task, graph }
+  const [graph] = await db
+    .insert(runGraphs)
+    .values({ taskId: task.id, version: 1, dag })
+    .returning()
+  if (!graph) throw new Error(`run graph for ${input.slug} could not be created`)
+
+  await emitEvent(db, {
+    taskId: task.id,
+    type: 'task.created',
+    payload: { title: task.title },
   })
+
+  return { task, graph }
 }
 
 /**
@@ -473,22 +486,56 @@ export async function raiseDecision(
  * is about the work, so the task and the key identify it however many nodes
  * ask; everything else is about a node — two nodes escalating are two
  * situations with two pieces of evidence.
+ *
+ * Two things the (task, key) widening must not do. It must not reach across
+ * kinds: a non-blocking question that attached to an open escalation would
+ * rewrite it into a question and take the block off a parked task. And it must
+ * not reach into an engine identity: an agent question keyed `harness-coverage`
+ * would capture the coverage decision, which `isCoverageDecision` and both
+ * resolution paths then fail to find by (node, key), clearing the gate with the
+ * gap neither accepted nor recorded.
  */
 function findOpenDecision(db: DbClient, taskId: string, input: DecisionInsert) {
-  const isQuestion = !input.blocking && input.kind === 'question'
+  const engineOwned = ENGINE_DECISION_IDENTITIES.some(
+    (identity) => identity.nodeKey === input.nodeKey && identity.key === input.key,
+  )
+  const byTaskAndKey = !engineOwned && !input.blocking && input.kind === 'question'
 
-  return db
-    .select()
-    .from(decisions)
-    .where(
-      and(
-        eq(decisions.taskId, taskId),
-        ...(isQuestion ? [] : [eq(decisions.nodeKey, input.nodeKey)]),
-        eq(decisions.key, input.key),
-        eq(decisions.status, 'open'),
-      ),
-    )
-    .limit(1)
+  const scope = byTaskAndKey
+    ? [
+        // At its own node a re-ask attaches whatever it now calls itself: a
+        // corrected retry may change kind or blocking, and that is an update to
+        // one record, not a second one. Across nodes only another non-blocking
+        // question is the same question — attaching to an open escalation would
+        // rewrite it into a question and take the block off a parked task.
+        or(
+          eq(decisions.nodeKey, input.nodeKey),
+          and(eq(decisions.kind, 'question'), eq(decisions.blocking, false)),
+        ),
+        ...ENGINE_DECISION_IDENTITIES.filter((identity) => identity.key === input.key).map(
+          (identity) => ne(decisions.nodeKey, identity.nodeKey),
+        ),
+      ]
+    : [eq(decisions.nodeKey, input.nodeKey)]
+
+  return (
+    db
+      .select()
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.taskId, taskId),
+          ...scope,
+          eq(decisions.key, input.key),
+          eq(decisions.status, 'open'),
+        ),
+      )
+      // `decisions_open_node_key_idx` is unique per (task, node, key) while
+      // open, so the widened match can still see several rows. Oldest first:
+      // the record a re-ask should attach to is the one already being answered.
+      .orderBy(asc(decisions.createdAt), asc(decisions.id))
+      .limit(1)
+  )
 }
 
 /**
@@ -550,6 +597,16 @@ export const COVERAGE_DECISION_NODE_KEY: TaskState = 'human_kickoff_gate'
 export const COVERAGE_DECISION_KEY = 'harness-coverage'
 
 /**
+ * The identities the engine raises for itself. They are matched by (node, key)
+ * everywhere they are resolved, so nothing else may attach to one.
+ */
+const ENGINE_DECISION_IDENTITIES: readonly { readonly nodeKey: TaskState; readonly key: string }[] =
+  [
+    { nodeKey: COVERAGE_DECISION_NODE_KEY, key: COVERAGE_DECISION_KEY },
+    { nodeKey: BUDGET_DECISION_NODE_KEY, key: BUDGET_DECISION_KEY },
+  ]
+
+/**
  * The option set is computed, never filtered after the fact: a task at the depth
  * cap is offered no split at all, so the recursion is closed by the engine
  * rather than by a prompt anyone has to be trusted to obey (REQ-617).
@@ -598,12 +655,21 @@ export async function recordPlanOutcome(
   stageId: string,
   assessment: HarnessCoverageAssessment | null,
   plan: PlanShape | null,
+  runningPipelineId: string,
 ): Promise<void> {
+  // REQ-408: the column says what the task is running, so it is written only
+  // where the graph agrees. `kickoff_brief` repeats the size — and nothing
+  // forces it to repeat it faithfully — while the profile swap deliberately
+  // refuses to act that late; storing it anyway would leave `planSize` naming
+  // a profile the task is not on, which `replanTask` would then pin.
+  const sizeApplies =
+    plan !== null && definitionForSize(task.type, plan.size).id === runningPipelineId
+
   await db
     .update(tasks)
     .set({
       ...(assessment ? { harnessStatus: assessment.classification } : {}),
-      ...(plan ? { planSize: plan.size } : {}),
+      ...(sizeApplies && plan ? { planSize: plan.size } : {}),
       updatedAt: new Date(),
     })
     .where(eq(tasks.id, task.id))
@@ -615,6 +681,7 @@ export async function recordPlanOutcome(
       type: 'task.plan_recorded',
       payload: {
         size: plan.size,
+        applied: sizeApplies,
         prerequisites: plan.prerequisites.map((prerequisite) => prerequisite.key),
       },
     })
@@ -636,7 +703,9 @@ export async function recordPlanOutcome(
   // proposing tasks is a different question the owner has not answered yet.
   const choice = planChoiceFor(task, inherited ? null : assessment, plan)
   if (!needsPlanChoice(choice)) {
-    await dismissCoverageDecision(db, task.id, 'system', 'reclassified')
+    // An open card closed because the gap was inherited was not reclassified —
+    // the classification stands, someone else already accepted it.
+    await dismissCoverageDecision(db, task.id, 'system', inherited ? 'inherited' : 'reclassified')
 
     return
   }
@@ -676,6 +745,12 @@ async function inheritCoverageWaiver(
 
   // The second probing stage of the same task inherits the same acceptance;
   // one resolved record is the whole point, so a repeat writes nothing.
+  //
+  // Only a *resolved* record counts as that repeat. An open card is the
+  // owner's unanswered question about this same gap — letting it stand in for
+  // the record would skip both the inheritance decision and its event, and the
+  // caller would then close the owner's card as though something had been
+  // reclassified (AC-1423).
   const [existing] = await db
     .select({ id: decisions.id })
     .from(decisions)
@@ -684,6 +759,7 @@ async function inheritCoverageWaiver(
         eq(decisions.taskId, task.id),
         eq(decisions.nodeKey, COVERAGE_DECISION_NODE_KEY),
         eq(decisions.key, COVERAGE_DECISION_KEY),
+        ne(decisions.status, 'open'),
       ),
     )
     .limit(1)
