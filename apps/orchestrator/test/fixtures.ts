@@ -215,6 +215,8 @@ export async function seedTask(
     caps?: Partial<Caps>
     budgets?: Partial<Budgets>
     repoUrl?: string
+    originTaskId?: string
+    planDepth?: number
   } = {},
 ): Promise<SeededTask> {
   const slug = `loop-${crypto.randomUUID().slice(0, 8)}`
@@ -226,6 +228,8 @@ export async function seedTask(
     caps: options.caps,
     budgets: options.budgets,
     at: options.at,
+    originTaskId: options.originTaskId,
+    planDepth: options.planDepth,
   })
   if (options.status) {
     await db

@@ -5,16 +5,21 @@ import {
   computeSpend,
   type DecisionInsert,
   type DecisionOption,
+  definitionForSize,
   type HarnessCoverageAssessment,
   instantiateDefinition,
   isUniqueViolation,
   type ModelBindingsOverride,
+  needsPlanChoice,
   nodeAt,
   PIPELINE_CATALOG,
   type PinnedGraph,
+  type PipelineDefinition,
+  type PlanChoice,
+  type PlanShape,
   type RecordedRound,
   type RoundToRecord,
-  renderHarnessGapPrompt,
+  renderPlanChoicePrompt,
   resolveModelBindings,
   type Spend,
   type SpendAttempt,
@@ -87,6 +92,10 @@ export interface CreateTaskInput {
   readonly modelBindings?: ModelBindingsOverride
   /** Start at a named stage node instead of the pipeline's entry — skips the stages before it. */
   readonly at?: TaskState
+  /** The task whose plan created this one; absent for a task the owner launched (REQ-617). */
+  readonly originTaskId?: string
+  /** Depth in the chain that plan started. Zero unless created from a plan. */
+  readonly planDepth?: number
 }
 
 export interface RunGraphRow {
@@ -136,6 +145,8 @@ export async function createTask(
         caps: Caps.parse(input.caps ?? {}),
         budgets: Budgets.parse(input.budgets ?? {}),
         modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),
+        originTaskId: input.originTaskId ?? null,
+        planDepth: input.planDepth ?? 0,
       })
       .returning()
     if (!task) throw new Error(`task ${input.slug} could not be created`)
@@ -157,6 +168,34 @@ export async function createTask(
 }
 
 /**
+ * Appends the next version of a task's graph. Both callers — an explicit
+ * replan and the profile swap a declared size triggers — go through here, so
+ * the version read and its insert are never two different pieces of arithmetic.
+ * Must run inside a transaction already holding the task's advisory lock.
+ */
+export async function appendRunGraph(
+  tx: DbClient,
+  taskId: string,
+  definition: PipelineDefinition,
+): Promise<RunGraphRow> {
+  const [latest] = await tx
+    .select({ version: runGraphs.version })
+    .from(runGraphs)
+    .where(eq(runGraphs.taskId, taskId))
+    .orderBy(desc(runGraphs.version))
+    .limit(1)
+  const version = (latest?.version ?? 0) + 1
+
+  const [graph] = await tx
+    .insert(runGraphs)
+    .values({ taskId, version, dag: instantiateDefinition(definition) })
+    .returning()
+  if (!graph) throw new Error(`run graph v${version} could not be created`)
+
+  return graph
+}
+
+/**
  * Re-planning appends a version; the prior graph and its stage history stay
  * readable. The new version is instantiated from the current catalog — that is
  * the one sanctioned way a definition change reaches an existing task.
@@ -165,7 +204,11 @@ export async function replanTask(db: Database, taskId: string): Promise<RunGraph
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
   if (!task) throw new TaskNotFoundError(taskId)
 
-  const definition = PIPELINE_CATALOG[task.type]
+  // A task that already declared a size keeps the profile that size selects;
+  // a replan is a fresh copy of the definition, not a reset of the shape.
+  const definition = task.planSize
+    ? definitionForSize(task.type, task.planSize)
+    : PIPELINE_CATALOG[task.type]
   if (!definition) throw new UnknownTaskTypeError(task.type)
 
   // The read of the current version and the insert of the next one must not
@@ -175,23 +218,7 @@ export async function replanTask(db: Database, taskId: string): Promise<RunGraph
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${taskId}, 0))`)
 
-    const [latest] = await tx
-      .select({ version: runGraphs.version })
-      .from(runGraphs)
-      .where(eq(runGraphs.taskId, taskId))
-      .orderBy(desc(runGraphs.version))
-      .limit(1)
-    const [graph] = await tx
-      .insert(runGraphs)
-      .values({
-        taskId,
-        version: (latest?.version ?? 0) + 1,
-        dag: instantiateDefinition(definition),
-      })
-      .returning()
-    if (!graph) throw new Error(`run graph v${(latest?.version ?? 0) + 1} could not be created`)
-
-    return graph
+    return appendRunGraph(tx, taskId, definition)
   })
 }
 
@@ -511,42 +538,90 @@ async function attachToOpenDecision(
 export const COVERAGE_DECISION_NODE_KEY: TaskState = 'human_kickoff_gate'
 export const COVERAGE_DECISION_KEY = 'harness-coverage'
 
-export const COVERAGE_OPTIONS: readonly DecisionOption[] = [
-  { id: 'split', label: 'Build the harness first' },
-  { id: 'proceed', label: 'Proceed without it' },
-  { id: 'cancel', label: 'Cancel this task' },
-]
+/**
+ * The option set is computed, never filtered after the fact: a task at the depth
+ * cap is offered no split at all, so the recursion is closed by the engine
+ * rather than by a prompt anyone has to be trusted to obey (REQ-617).
+ */
+export function planChoiceOptions(choice: PlanChoice): DecisionOption[] {
+  const splitLabel = choice.creates.length > 0 ? 'Do that work first' : 'Build the harness first'
+  const proceedLabel = choice.creates.length > 0 ? 'Proceed as one task' : 'Proceed without it'
+
+  return [
+    ...(choice.splittable ? [{ id: 'split', label: splitLabel }] : []),
+    { id: 'proceed', label: proceedLabel },
+    { id: 'cancel', label: 'Cancel this task' },
+  ]
+}
+
+/** What the owner would be choosing between, given a task's plan, its coverage, and its caps. */
+export function planChoiceFor(
+  task: Task,
+  assessment: HarnessCoverageAssessment | null,
+  plan: PlanShape | null,
+): PlanChoice {
+  const proposed = plan?.prerequisites ?? []
+  const depthCap = task.caps.max_plan_depth
+  const splittable = task.planDepth < depthCap
+
+  // At the depth cap nothing may be created at all, so everything proposed is
+  // dropped — and still named. The alternative, dropping them silently, is the
+  // failure this whole change exists to remove.
+  const creates = splittable ? proposed.slice(0, task.caps.max_prerequisite_tasks) : []
+  const dropped = splittable ? proposed.slice(task.caps.max_prerequisite_tasks) : proposed
+  const dropReason = dropped.length === 0 ? null : splittable ? 'count' : 'depth'
+
+  return { assessment, creates, dropped, dropReason, splittable, depthCap }
+}
 
 /**
- * REQ-1401, REQ-1403: the durable half of what a probing stage's result carries — the
- * classification lands on the task, and a gap short of adequate gets (or keeps) an open
- * decision offering the three-way choice. Idempotent across repeated probing completions
- * (`planning` then `kickoff_brief`): `raiseDecision` attaches to the still-open record instead
- * of duplicating it.
+ * REQ-1401, REQ-1403, REQ-1306: the durable half of what a planning stage's result carries.
+ * The classification and the declared size land on the task, and either a coverage gap or a
+ * plan proposing work first gets (or keeps) the one open decision. Idempotent across repeated
+ * completions (`planning` then `kickoff_brief`): `raiseDecision` attaches to the still-open
+ * record instead of duplicating it, refreshing the prompt when the second pass changed it.
  */
-export async function recordHarnessCoverage(
+export async function recordPlanOutcome(
   db: DbClient,
-  taskId: string,
+  task: Task,
   stageId: string,
-  assessment: HarnessCoverageAssessment,
+  assessment: HarnessCoverageAssessment | null,
+  plan: PlanShape | null,
 ): Promise<void> {
   await db
     .update(tasks)
-    .set({ harnessStatus: assessment.classification, updatedAt: new Date() })
-    .where(eq(tasks.id, taskId))
+    .set({
+      ...(assessment ? { harnessStatus: assessment.classification } : {}),
+      ...(plan ? { planSize: plan.size } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(tasks.id, task.id))
 
-  if (assessment.classification === 'adequate') {
-    await dismissCoverageDecision(db, taskId, 'system', 'reclassified')
+  if (plan) {
+    await emitEvent(db, {
+      taskId: task.id,
+      stageId,
+      type: 'task.plan_recorded',
+      payload: {
+        size: plan.size,
+        prerequisites: plan.prerequisites.map((prerequisite) => prerequisite.key),
+      },
+    })
+  }
+
+  const choice = planChoiceFor(task, assessment, plan)
+  if (!needsPlanChoice(choice)) {
+    await dismissCoverageDecision(db, task.id, 'system', 'reclassified')
 
     return
   }
 
-  await raiseDecision(db, taskId, stageId, {
+  await raiseDecision(db, task.id, stageId, {
     nodeKey: COVERAGE_DECISION_NODE_KEY,
     key: COVERAGE_DECISION_KEY,
     kind: 'question',
-    promptMd: renderHarnessGapPrompt(assessment),
-    options: COVERAGE_OPTIONS,
+    promptMd: renderPlanChoicePrompt(choice),
+    options: planChoiceOptions(choice),
     blocking: false,
   })
 }
@@ -603,6 +678,23 @@ export async function latestHarnessCoverage(
     .limit(1)
 
   return row?.result?.harness_coverage ?? null
+}
+
+/**
+ * The plan behind the task's declared size, read back the same way and for the
+ * same reason: the prerequisites the owner is choosing about live in the
+ * planning stage's own result, so the decision card and the tasks it creates
+ * come from one source rather than from a prompt and a copy of it.
+ */
+export async function latestPlanShape(db: DbClient, taskId: string): Promise<PlanShape | null> {
+  const [row] = await db
+    .select({ result: stages.result })
+    .from(stages)
+    .where(and(eq(stages.taskId, taskId), sql`${stages.result} ->> 'plan' is not null`))
+    .orderBy(desc(stages.finishedAt))
+    .limit(1)
+
+  return row?.result?.plan ?? null
 }
 
 export interface EngineEvent {

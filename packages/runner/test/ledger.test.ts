@@ -13,6 +13,9 @@ const BASE: LedgerSnapshot = {
   status: 'research',
   harnessStatus: 'partial',
   harnessEvidence: null,
+  planSize: null,
+  planDepth: 0,
+  originTitle: null,
   caps: { ...DEFAULT_CAPS },
   rounds: [],
   interventions: [],
@@ -184,6 +187,33 @@ describe('ledger', () => {
 
     expect(ledger).toContain('- Harness coverage: unknown')
     expect(ledger).not.toContain('- Harness coverage: unknown —')
+  })
+
+  test('states the declared size and where the task sits in a chain', () => {
+    const ledger = renderLedger(makeConfig(), { ...BASE, planSize: 'small' })
+
+    expect(ledger).toContain('- Declared size: small')
+    expect(ledger).toContain(`- Chain depth: 0 of ${DEFAULT_CAPS.max_plan_depth}`)
+    expect(ledger).toContain('- Launched directly by the owner.')
+    expect(ledger).toContain(
+      `- A plan here may propose at most ${DEFAULT_CAPS.max_prerequisite_tasks} task(s) to land first.`,
+    )
+  })
+
+  test('says the size is undeclared before planning has run', () => {
+    expect(renderLedger(makeConfig(), BASE)).toContain('- Declared size: not yet declared')
+  })
+
+  test('tells a task at the depth limit to declare no prerequisites', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      planDepth: DEFAULT_CAPS.max_plan_depth,
+      originTitle: 'Fix the reorg bug in the ingester',
+    })
+
+    expect(ledger).toContain('- Proposed while planning: Fix the reorg bug in the ingester')
+    expect(ledger).toContain('declare no prerequisites')
+    expect(ledger).not.toContain('may propose at most')
   })
 
   test('renders identically across two calls carrying the same evidence', () => {

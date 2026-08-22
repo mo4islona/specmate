@@ -51,6 +51,15 @@ export const DEFAULT_CAPS = {
   max_kickoff_regenerations: 2,
   /** Same finding id twice in a row → escalate instead of looping. */
   repeated_finding_threshold: 2,
+  /**
+   * How deep a chain of tasks a plan may build. 1 means a task the owner
+   * launched may split; a task a split created may not. This is what closes
+   * the harness recursion — the option is never offered at the cap, so no
+   * prompt has to be trusted with it (REQ-617).
+   */
+  max_plan_depth: 1,
+  /** How many tasks one plan may create. Proposals past this are named to the owner, not dropped in silence. */
+  max_prerequisite_tasks: 2,
 } as const
 
 export const Caps = z.object({
@@ -66,6 +75,12 @@ export const Caps = z.object({
     .int()
     .positive()
     .default(DEFAULT_CAPS.repeated_finding_threshold),
+  max_plan_depth: z.number().int().nonnegative().default(DEFAULT_CAPS.max_plan_depth),
+  max_prerequisite_tasks: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(DEFAULT_CAPS.max_prerequisite_tasks),
 })
 export type Caps = z.infer<typeof Caps>
 

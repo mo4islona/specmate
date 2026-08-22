@@ -19,15 +19,18 @@ import {
   canTransition,
   type DecisionOption,
   decisionFromRequest,
+  definitionForSize,
   type EscalationInput,
   type ExecutionUsage,
   escalationForPark,
   type GateNode,
+  type HarnessCoverageAssessment,
   isRestartable,
   isTerminal,
   LOOP_CAPS,
   nodeAt,
   type PinnedGraph,
+  type PlanPrerequisite,
   type ProviderId,
   RESERVED_STATES,
   type RecordedRound,
@@ -36,8 +39,10 @@ import {
   renderDecisionLog,
   type Spend,
   type StageNode,
+  type StageResult,
   type StageTelemetry,
   spendAgainstBudget,
+  splitCreatesWork,
   stalledFindings,
   type TaskState,
   TERMINAL_STATES,
@@ -63,10 +68,10 @@ import type { ConversationExecution, StageExecution } from '@specmate/runner'
 import type { ConversationWorkspace, StageCommit, StageRef, Workspace } from '@specmate/workspace'
 import { and, asc, count, desc, eq, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
 import {
+  appendRunGraph,
   assertNotSelfDependency,
   COVERAGE_DECISION_KEY,
   COVERAGE_DECISION_NODE_KEY,
-  type CreateTaskInput,
   countRedirects,
   createTask,
   emitEvent,
@@ -75,14 +80,35 @@ import {
   latestGraph,
   latestGraphsFor,
   latestHarnessCoverage,
+  latestPlanShape,
+  planChoiceFor,
   type RunGraphRow,
   raiseDecision,
-  recordHarnessCoverage,
+  recordPlanOutcome,
   recordRound,
   roundsFor,
   TaskNotFoundError,
   taskSpend,
 } from './store.ts'
+
+/**
+ * REQ-1404: what splitting means when the plan proposed nothing and coverage
+ * is short — the engine's own harness task, kept as the fallback rather than
+ * as the rule.
+ */
+function harnessFallback(task: Task, coverage: HarnessCoverageAssessment | null): PlanPrerequisite {
+  const evidence = coverage?.evidence_md ?? 'No evidence was recorded.'
+
+  return {
+    key: 'harness',
+    title: `Harness: ${task.title}`,
+    why_md: [
+      `Build the test harness "${task.title}" needs before it can be properly validated.`,
+      '',
+      `Coverage gap found while planning that task: ${evidence}`,
+    ].join('\n'),
+  }
+}
 
 export class NotAtGateError extends Error {
   constructor(taskId: string, status: TaskState) {
@@ -1437,6 +1463,41 @@ export class Engine {
     await this.deps.workspaces.writeDecisionLog(workspace, renderDecisionLog(rows))
   }
 
+  /**
+   * REQ-408: the profile the declared size selects, appended as a new run
+   * graph version when it differs from the one the task is running. Appending
+   * rather than mutating is REQ-403's own rule, and it keeps the swap
+   * auditable: the previous version and its stages stay readable beside it.
+   *
+   * The declaring node must survive into the new shape. Both planner nodes
+   * declare a plan, so a `kickoff_brief` result asking for the compact profile
+   * — which has no `kickoff_brief` — would leave the task standing on a node
+   * its own graph no longer contains. The size is honoured at `planning`,
+   * where it is first declared, or not at all.
+   */
+  private async applyDeclaredProfile(
+    tx: DbClient,
+    task: Task,
+    graph: RunGraphRow,
+    node: StageNode,
+    result: StageResult,
+  ): Promise<RunGraphRow> {
+    if (result.status !== 'ok' || !result.plan) return graph
+
+    const definition = definitionForSize(task.type, result.plan.size)
+    if (definition.id === graph.dag.pipeline) return graph
+    if (!definition.nodes.some((candidate) => candidate.key === node.key)) return graph
+
+    const appended = await appendRunGraph(tx, task.id, definition)
+    await emitEvent(tx, {
+      taskId: task.id,
+      type: 'task.profile_changed',
+      payload: { from: graph.dag.pipeline, to: definition.id, size: result.plan.size },
+    })
+
+    return appended
+  }
+
   private async completeStage(
     task: Task,
     graph: RunGraphRow,
@@ -1482,10 +1543,17 @@ export class Engine {
         acceptedCommit = commit.committed ? commit.commit : null
       }
 
+      // REQ-408: the declared size is not known until planning has read the
+      // repository, so the graph pinned at creation is the wrong shape for a
+      // task the planner calls small. The swap lands before the forward edge
+      // is computed, so the stage advances along the graph the task will
+      // actually run rather than the one it was created with.
+      const runGraph = await this.applyDeclaredProfile(tx, liveTask, liveGraph, node, result)
+
       const reworkedAt = await lastReworkAt(tx, task.id)
       const rounds = await roundsFor(tx, task.id, reworkedAt)
       const decision = advance(
-        liveGraph.dag,
+        runGraph.dag,
         node.key,
         {
           status: result.status === 'needs_decision' ? 'needs_decision' : 'ok',
@@ -1535,16 +1603,18 @@ export class Engine {
         await raiseDecision(tx, task.id, row.id, decisionFromRequest(node.key, request))
       }
 
-      // REQ-1401: a probing role's classification lands on the task before it
-      // advances, whether that happens at `planning` or `kickoff_brief` —
-      // `stageDefect` already guarantees `harness_coverage` is present for any
-      // `ok` result reaching this point.
-      if (
-        ROLE_CONTRACTS[node.role].probesHarness &&
-        result.status === 'ok' &&
-        result.harness_coverage
-      ) {
-        await recordHarnessCoverage(tx, task.id, row.id, result.harness_coverage)
+      // REQ-1401, REQ-1306: a planning role's classification and declared plan
+      // land on the task before it advances, whether that happens at
+      // `planning` or `kickoff_brief` — `stageDefect` already guarantees both
+      // are present for any `ok` result reaching this point.
+      if (result.status === 'ok' && (result.harness_coverage || result.plan)) {
+        await recordPlanOutcome(
+          tx,
+          liveTask,
+          row.id,
+          result.harness_coverage ?? null,
+          result.plan ?? null,
+        )
       }
 
       if (decision.kind === 'park') {
@@ -1562,21 +1632,21 @@ export class Engine {
           }
         }
 
-        await this.applyTransition(tx, liveTask, liveGraph.dag, 'waiting_human', {
+        await this.applyTransition(tx, liveTask, runGraph.dag, 'waiting_human', {
           cause: decision.reason,
           resume: decision.resume,
           stageId: row.id,
         })
 
-        return { task: liveTask, graph: liveGraph, to: 'waiting_human' as TaskState }
+        return { task: liveTask, graph: runGraph, to: 'waiting_human' as TaskState }
       }
 
-      await this.applyTransition(tx, liveTask, liveGraph.dag, decision.to, {
+      await this.applyTransition(tx, liveTask, runGraph.dag, decision.to, {
         cause: decision.kind === 'loop' ? 'revise' : 'advance',
         stageId: row.id,
       })
 
-      return { task: liveTask, graph: liveGraph, to: decision.to }
+      return { task: liveTask, graph: runGraph, to: decision.to }
     })
     if (accepted) await this.releaseIfTerminal(accepted.task, accepted.graph.dag, accepted.to)
   }
@@ -2908,7 +2978,7 @@ export class Engine {
         await this.withTaskLock(task.id, (tx) => this.waiveHarnessStatus(tx, task.id))
         break
       case 'split':
-        await this.splitHarnessTask(task, actor)
+        await this.createPlannedPrerequisites(task, actor)
         break
       case 'cancel':
         await this.cancel(task.id, actor)
@@ -2936,46 +3006,58 @@ export class Engine {
   }
 
   /**
-   * REQ-1404: a full task of its own — same repository and base branch, its
-   * own kickoff brief — rather than skipping straight to research; the owner
-   * reviews it like any other task. `releaseIfTerminal` is where the original
-   * resumes once this one lands.
+   * REQ-1404: the tasks the plan proposed become full tasks of their own —
+   * same repository and base branch, each with its own kickoff brief — rather
+   * than skipping straight to research; the owner reviews them like any other
+   * task. `releaseIfTerminal` is where the original resumes once they land.
+   *
+   * The engine no longer writes what the work is. It creates what planning
+   * proposed, and falls back to a harness task derived from the probe's
+   * evidence only when the plan proposed nothing and coverage is short.
    */
-  private async splitHarnessTask(task: Task, actor: string): Promise<void> {
+  private async createPlannedPrerequisites(task: Task, actor: string): Promise<void> {
     const coverage = await latestHarnessCoverage(this.deps.db, task.id)
-    const evidence = coverage?.evidence_md ?? 'No evidence was recorded.'
+    const plan = await latestPlanShape(this.deps.db, task.id)
+    const choice = planChoiceFor(task, coverage, plan)
+    // The option is computed from the same choice the prompt was rendered
+    // from, so a task at the depth cap cannot be split by an answer that
+    // names an option it was never offered.
+    if (!splitCreatesWork(choice)) return
 
-    const input: CreateTaskInput = {
-      slug: `${task.slug}-harness-${crypto.randomUUID().slice(0, 8)}`,
-      title: `Harness: ${task.title}`,
-      description: [
-        `Build the test harness "${task.title}" needs before it can be properly validated.`,
-        '',
-        `Coverage gap found while planning that task: ${evidence}`,
-      ].join('\n'),
-      type: 'feature',
-      repoUrl: task.repoUrl,
-      baseBranch: task.baseBranch,
+    const proposals = choice.creates.length > 0 ? choice.creates : [harnessFallback(task, coverage)]
+
+    const created: string[] = []
+    for (const proposal of proposals) {
+      const { task: prerequisite } = await createTask(this.deps.db, {
+        slug: `${task.slug}-${proposal.key}-${crypto.randomUUID().slice(0, 8)}`,
+        title: proposal.title,
+        description: `${proposal.why_md}\n\nProposed while planning "${task.title}".`,
+        type: 'feature',
+        repoUrl: task.repoUrl,
+        baseBranch: task.baseBranch,
+        originTaskId: task.id,
+        planDepth: task.planDepth + 1,
+      })
+      created.push(prerequisite.id)
     }
-    const { task: harnessTask } = await createTask(this.deps.db, input)
 
     await this.withTaskLock(task.id, async (tx) => {
       const { task: liveTask, graph } = await this.taskWithGraph(task.id, tx)
-      // AC-1413: harnessTask.id is always a fresh crypto.randomUUID() minted
-      // by createTask above, so this can never actually fire on this call
+      // AC-1413: every id here is a fresh crypto.randomUUID() minted by
+      // createTask above, so this can never actually fire on this call
       // path — kept as the AC's literal guard against the day a general
       // "depend on an existing task" entry point reuses this plumbing with
       // a caller-supplied blocker id instead of always minting a new one.
-      assertNotSelfDependency(liveTask.id, harnessTask.id)
+      for (const blocker of created) assertNotSelfDependency(liveTask.id, blocker)
 
       await tx
         .update(tasks)
-        .set({ blockedBy: [harnessTask.id], updatedAt: new Date() })
+        .set({ blockedBy: created, updatedAt: new Date() })
         .where(eq(tasks.id, liveTask.id))
       await this.applyTransition(tx, liveTask, graph.dag, 'blocked', {
         cause: 'harness_split',
         actor,
-        payload: { blockedBy: harnessTask.id },
+        payload: { blockedBy: created },
       })
     })
   }
