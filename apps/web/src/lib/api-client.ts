@@ -140,8 +140,8 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
-type StandingDecisionsResponse = InferResponseType<
-  (typeof apiClient.api.v1)['standing-decisions']['$get'],
+type CoverageWaiversResponse = InferResponseType<
+  (typeof apiClient.api.v1)['coverage-waivers']['$get'],
   200
 >
 type ModelDefaultsResponse = InferResponseType<
@@ -174,7 +174,7 @@ export type RestartStageInput = RestartStageRequest['json']
 export type DecisionItem = DecisionsResponse['decisions'][number]
 export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
-export type StandingDecision = StandingDecisionsResponse['decisions'][number]
+export type CoverageWaiver = CoverageWaiversResponse['waivers'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
@@ -184,20 +184,18 @@ export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   return readJson<TasksResponse>(response)
 }
 
-export async function listStandingDecisions(
-  signal?: AbortSignal,
-): Promise<StandingDecisionsResponse> {
-  const response = await apiClient.api.v1['standing-decisions'].$get(undefined, {
+export async function listCoverageWaivers(signal?: AbortSignal): Promise<CoverageWaiversResponse> {
+  const response = await apiClient.api.v1['coverage-waivers'].$get(undefined, {
     init: { signal },
   })
 
-  return readJson<StandingDecisionsResponse>(response)
+  return readJson<CoverageWaiversResponse>(response)
 }
 
-export async function revokeStandingDecision(id: string): Promise<void> {
-  const response = await apiClient.api.v1['standing-decisions'][':id'].$delete({ param: { id } })
+export async function revokeCoverageWaiver(id: string): Promise<void> {
+  const response = await apiClient.api.v1['coverage-waivers'][':id'].$delete({ param: { id } })
 
-  await readJson<{ decision: StandingDecision }>(response)
+  await readJson<{ waiver: CoverageWaiver }>(response)
 }
 
 export async function listAttention(signal?: AbortSignal): Promise<AttentionResponse> {
