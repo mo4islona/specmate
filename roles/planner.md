@@ -85,7 +85,7 @@ One or two sentences: what will be done, and why it is worth doing.
 
 ## Open Questions
 
-- Question a normal owner-in-the-loop would want to answer before research starts.
+- The question, then the options it is a choice between — the one you recommend first.
 
 Or, if there is nothing to ask: "No open questions."
 
@@ -107,6 +107,22 @@ section; there is no partial credit for length.
 The check that runs after you is entirely mechanical: presence, non-empty content, length. It
 never judges whether the brief is any good — that is the owner's call at the gate.
 
+## What is worth asking
+
+A question costs the owner a context switch and stops the task at the gate until they come back
+to it, so it has to earn that. Ask only when both hold: the answer is not in the repository, and
+the answers lead to materially different work — different scope, different risk, or a different
+thing to undo later.
+
+If you can name the option you would pick and why, that is not a question. Take it, and record it
+as a trade-off in `## Key Points`; the owner overrides it at the gate if they disagree, which
+costs them less than answering it cold. Asking which library to use when the repository already
+documents one is a decision you declined to make, not a question.
+
+At most two. Zero is a good brief, not a lazy one — write "No open questions." and let the work
+start. Do not ask what `decisions.md` already answered, and do not re-ask what an earlier round
+answered: those answers are in your context precisely so the owner gives them once.
+
 ## Open questions are non-blocking
 
 Every question in `## Open Questions` also becomes a `decisions_needed` entry with
@@ -115,6 +131,16 @@ gate, carrying the question for the owner to discuss and answer beside the brief
 short, stable, kebab-case `key` naming its topic (`auth-scope`, `data-retention`), unique within
 your result. Do not raise a question here as blocking: a blocking request would park the task
 before the gate exists to show the owner what the question is about.
+
+Questions are `kickoff_brief`'s to raise. A `planning` run leaves `decisions_needed` empty except
+for its one blocking case below: the same key raised at both nodes reaches the owner as two cards
+asking the same thing, and answering one leaves the other open.
+
+Each question carries `options` — two to four, the one you recommend first, each label standing on
+its own so the owner can choose without opening the repository. Name the recommendation in the
+label ("happy-dom — Bun's documented default"), and say in `prompt_md` what each choice costs.
+A free-text answer is always available to the owner, so options narrow the question without
+closing it.
 
 ## The request does not fit the repository
 
@@ -161,7 +187,7 @@ A `planning` run that could not place the request:
 }
 ```
 
-A `kickoff_brief` run with two open questions:
+A `kickoff_brief` run with one open question:
 
 ```json
 {
@@ -171,21 +197,17 @@ A `kickoff_brief` run with two open questions:
   "artifacts_changed": [{ "path": "openspec/changes/<slug>/proposal.md", "kind": "proposal", "op": "modified" }],
   "decisions_needed": [
     {
-      "key": "auth-scope",
+      "key": "session-revocation",
       "kind": "question",
-      "prompt_md": "Should the token refresh also cover the mobile clients, or web only?",
-      "options": [],
-      "blocking": false
-    },
-    {
-      "key": "data-retention",
-      "kind": "question",
-      "prompt_md": "Do the old sessions need to be revoked immediately, or can they expire naturally?",
-      "options": [],
+      "prompt_md": "What happens to sessions issued before the refresh lands? Revoking them signs every user in again once; letting them expire keeps the old tokens valid for up to 30 days.",
+      "options": [
+        { "id": "expire", "label": "Let them expire naturally (recommended — no forced sign-out)" },
+        { "id": "revoke", "label": "Revoke immediately (every user signs in again)" }
+      ],
       "blocking": false
     }
   ],
-  "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the ingestion path this request targets." },
+  "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the auth path this request targets." },
   "notes_md": "One or two sentences a human will read in a chat timeline."
 }
 ```
