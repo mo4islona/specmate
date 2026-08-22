@@ -42,9 +42,10 @@ SHALL distinguish an owner-interrupted attempt from a failed attempt.
 Each task SHALL carry a unique slug, a human title, the request it was launched with in the
 owner's own words, a type of `feature` or `bugfix`, a target repository and base branch, its
 current status, the resolved caps, budgets, and per-role model and reasoning-effort bindings it
-runs under, the identifiers of tasks blocking it, its harness classification, and — once its
-workspace has been provisioned — its pinned execution environment. Two tasks MUST NOT share a
-slug.
+runs under, the identifiers of tasks blocking it, the task whose plan created it and its depth in
+that chain, the size its planning declared once one exists, its harness classification, and —
+once its workspace has been provisioned — its pinned execution environment. Two tasks MUST NOT
+share a slug.
 
 #### Scenario: AC-304 — Duplicate slug
 
@@ -80,6 +81,11 @@ slug.
 
 - **WHEN** the model-defaults setting is changed after a task was created
 - **THEN** the existing task SHALL still report the model and reasoning-effort bindings it was created with
+
+#### Scenario: AC-339 — A task that predates the plan fields
+
+- **WHEN** a task created before planning declared sizes is read
+- **THEN** it SHALL report no declared size, no origin, and depth zero, and its stored caps SHALL carry every cap the current system bounds it by
 
 ### Requirement: REQ-304 — Stage attempts are idempotent
 
@@ -289,3 +295,27 @@ already-resolved bindings.
 
 - **WHEN** the store is queried for model defaults immediately after first install, before any owner edit
 - **THEN** every agent role SHALL have a concrete default model and a concrete default reasoning effort, none absent
+
+### Requirement: REQ-315 — An accepted coverage gap is durable per repository and revocable
+
+The system SHALL durably record the owner's acceptance of a repository's coverage gap outside the
+task that accepted it, carrying the repository it applies to, the task whose resolution accepted
+it, and the moment it was revoked if it has been. At most one acceptance SHALL be in force per
+repository, enforced by the database rather than by the code that writes it. Revoking SHALL mark
+the record rather than remove it, and a revoked record SHALL stay readable. Deleting the task that
+accepted it MUST NOT delete the record.
+
+#### Scenario: AC-340 — A second acceptance for one repository
+
+- **WHEN** an acceptance is written for a repository that already has one in force
+- **THEN** the database SHALL leave exactly one in force for that repository
+
+#### Scenario: AC-341 — Revoked, not erased
+
+- **WHEN** an acceptance is revoked
+- **THEN** it SHALL remain readable with the moment it was revoked, and SHALL no longer count as in force
+
+#### Scenario: AC-342 — The accepting task is deleted
+
+- **WHEN** the task whose resolution accepted it is deleted
+- **THEN** the acceptance SHALL survive, no longer naming a task
