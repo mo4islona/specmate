@@ -20,6 +20,8 @@ Three properties are missing, and every symptom below is one of them:
   The next task against the same repository asks again, from zero.
 - **No stated line between what an agent decides and what the owner decides.** Roles are told
   what they may write, never what they may settle. The default therefore drifts toward asking.
+- **No one decides how much process a task needs.** The pipeline is a fixed walk, the same
+  twelve nodes for a one-line fix and a subsystem rewrite, and no role is asked to size it.
 
 ## 2. Harness split recursion
 
@@ -84,7 +86,59 @@ Inventory, so the next change reasons about the whole surface rather than one ca
 
 The bounded rows are fine. The two unbounded ones are this note.
 
-## 6. Status
+## 6. The stage list is long, and stages overlap
+
+`FEATURE_BUGFIX_PIPELINE` (`packages/core/src/pipeline.ts`) is twelve nodes, eight of them agent
+stages, and every task walks all of them. Part of that list is one job cut in two:
+
+- `planning` and `kickoff_brief` are both the planner, both write `proposal.md`, and both have
+  that file checked for the same required parts afterwards. Only `Current state` in the ledger
+  tells the prompt which half it is running.
+- `research` then writes `proposal.md` a third time, on top of `design.md` and `specs/`.
+- `spec_review` and `code_review` are the same role, the same prompt and the same contract at two
+  points in the walk.
+- `spec_writer` and `retro` sit in `ROLE_CONTRACTS` with no node scheduling them at all — the
+  researcher writes the specs, the implementer writes `tasks.md`.
+
+Repetition is not automatically waste: `planning` reads the repository and `kickoff_brief`
+deliberately does not, and the two review nodes look at different artifacts. But the split is
+asserted by a prompt, not by the graph — nothing stops `kickoff_brief` re-reading the repository,
+and nothing distinguishes the two reviewer nodes except where they sit. A stage that costs a
+provider call and a round of owner attention should be there because this task needs it.
+
+Nothing sizes the walk either. The brief ends with `## Size` — small, medium or large, with the
+iterations that size expects — and no code reads it; `size` appears nowhere in the engine. The
+planner states how big the work is, and the graph is identical either way, because it is pinned
+at creation from a per-type catalog (`instantiateDefinition`) and per-task variation is limited
+to caps, budgets and provider bindings.
+
+## 7. Decomposition belongs to the planner
+
+The harness split is the only place the system decides to turn work into more work, and it is a
+switch on an option id (`applyCoverageChoice`) firing after the brief is already written. The
+planner is the one role that reads the repository before a plan exists. It is the role that could
+say "this is three tasks, in this order" or "this is one task and the harness is half a day of
+it" — and today it has no way to say either. It returns a classification; the engine turns that
+into a task.
+
+Put the decomposition in the plan and the recursion in §2 stops being possible: a harness task is
+then a task the planner proposed, inside a plan that already knows the harness is being built,
+rather than a copy of the parent arriving at the same three-way offer with the same honest
+classification. §2 and this section are the same defect seen from both ends — the engine decides
+how work is broken up, and the only role holding the evidence for that decision is not asked.
+
+Open questions before this can be specified:
+
+- What does the planner return? A list of tasks with dependencies, a split/don't-split flag with
+  a reason, or a size the engine maps onto a shape?
+- What bounds it — this is §1's missing cap, now with a second caller: tasks per plan, and depth
+  per chain.
+- May the walk itself vary with declared size — small skips stages, large keeps all of them — or
+  does size only ever move caps and budgets?
+- What happens to the engine's three-way coverage offer once the planner decides this? It becomes
+  a fallback for a rejected plan, or it goes away.
+
+## 8. Status
 
 Draft. The next step is an OpenSpec change against `harness-coverage`, and possibly `decisions`,
-once the questions in §3 and §4 have answers.
+once the questions in §3, §4 and §7 have answers.
