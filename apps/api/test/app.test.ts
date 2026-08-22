@@ -13,6 +13,7 @@ import {
   conversationActions,
   conversationMessages,
   conversations,
+  coverageWaivers,
   createDb,
   type Database,
   decisions,
@@ -21,7 +22,6 @@ import {
   getModelDefaults,
   runGraphs,
   stages,
-  standingDecisions,
   tasks,
   updateModelDefaults,
 } from '@specmate/db'
@@ -482,8 +482,8 @@ describeDb('api', () => {
     expect(await response.json()).toMatchObject({ code: 'validation' })
   })
 
-  describe('standing decisions — REQ-1015', () => {
-    interface StandingDecisionJson {
+  describe('coverage waivers — REQ-1015', () => {
+    interface CoverageWaiverJson {
       id: string
       repoUrl: string
       key: string
@@ -491,37 +491,34 @@ describeDb('api', () => {
       originTitle: string | null
     }
 
-    const repoUrl = `https://example.invalid/standing-${crypto.randomUUID().slice(0, 8)}.git`
+    const repoUrl = `https://example.invalid/waiver-${crypto.randomUUID().slice(0, 8)}.git`
 
     afterAll(async () => {
-      await db.delete(standingDecisions).where(eq(standingDecisions.repoUrl, repoUrl))
+      await db.delete(coverageWaivers).where(eq(coverageWaivers.repoUrl, repoUrl))
     })
 
     test('lists what is in force with the task it came from, and revokes one — AC-1043, AC-1044', async () => {
-      const [standing] = await db
-        .insert(standingDecisions)
-        .values({ repoUrl, key: 'harness-coverage', value: { waived: true } })
-        .returning()
-      expect(standing).toBeTruthy()
+      const [waiver] = await db.insert(coverageWaivers).values({ repoUrl }).returning()
+      expect(waiver).toBeTruthy()
 
-      const listed = await app.request('/api/v1/standing-decisions', { headers: auth })
+      const listed = await app.request('/api/v1/coverage-waivers', { headers: auth })
       expect(listed.status).toBe(200)
-      const body = (await listed.json()) as { decisions: StandingDecisionJson[] }
-      expect(body.decisions.some((row) => row.repoUrl === repoUrl)).toBe(true)
+      const body = (await listed.json()) as { waivers: CoverageWaiverJson[] }
+      expect(body.waivers.some((row) => row.repoUrl === repoUrl)).toBe(true)
 
-      const revoked = await app.request(`/api/v1/standing-decisions/${standing?.id}`, {
+      const revoked = await app.request(`/api/v1/coverage-waivers/${waiver?.id}`, {
         method: 'DELETE',
         headers: auth,
       })
       expect(revoked.status).toBe(200)
 
-      const after = await app.request('/api/v1/standing-decisions', { headers: auth })
-      const afterBody = (await after.json()) as { decisions: StandingDecisionJson[] }
-      expect(afterBody.decisions.some((row) => row.repoUrl === repoUrl)).toBe(false)
+      const after = await app.request('/api/v1/coverage-waivers', { headers: auth })
+      const afterBody = (await after.json()) as { waivers: CoverageWaiverJson[] }
+      expect(afterBody.waivers.some((row) => row.repoUrl === repoUrl)).toBe(false)
     })
 
     test('revoking what is not there is a structured not-found — AC-1045', async () => {
-      const response = await app.request(`/api/v1/standing-decisions/${crypto.randomUUID()}`, {
+      const response = await app.request(`/api/v1/coverage-waivers/${crypto.randomUUID()}`, {
         method: 'DELETE',
         headers: auth,
       })

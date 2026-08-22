@@ -17,6 +17,7 @@ import {
   artifacts,
   conversationActions,
   conversations,
+  coverageWaivers,
   createConversationStore,
   type Database,
   decisions,
@@ -27,13 +28,12 @@ import {
   runGraphs,
   type Stage,
   stages,
-  standingDecisions,
   type Task,
   tasks,
   updateModelDefaults,
 } from '@specmate/db'
 import type { Engine } from '@specmate/orchestrator/engine'
-import { createTask, revokeStandingDecision, taskSpend } from '@specmate/orchestrator/store'
+import { createTask, revokeCoverageWaiver, taskSpend } from '@specmate/orchestrator/store'
 import { GitError, type WorkspaceService } from '@specmate/workspace'
 import { and, asc, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -659,39 +659,33 @@ export function createApp({
       },
     )
 
-    /**
-     * REQ-1015: decisions that stand after the task that made them ends. Today
-     * there is one key — an accepted coverage gap — and this is the owner's
-     * only way to take one back.
-     */
-    .get('/standing-decisions', async (c) => {
+    /** REQ-1015: the repositories whose harness gap the owner has accepted, and the owner's only way to take one back. */
+    .get('/coverage-waivers', async (c) => {
       const rows = await db
         .select({
-          id: standingDecisions.id,
-          repoUrl: standingDecisions.repoUrl,
-          key: standingDecisions.key,
-          value: standingDecisions.value,
-          originTaskId: standingDecisions.originTaskId,
+          id: coverageWaivers.id,
+          repoUrl: coverageWaivers.repoUrl,
+          originTaskId: coverageWaivers.originTaskId,
           originTitle: tasks.title,
-          createdAt: standingDecisions.createdAt,
+          createdAt: coverageWaivers.createdAt,
         })
-        .from(standingDecisions)
-        .leftJoin(tasks, eq(standingDecisions.originTaskId, tasks.id))
-        .where(isNull(standingDecisions.revokedAt))
-        .orderBy(desc(standingDecisions.createdAt))
+        .from(coverageWaivers)
+        .leftJoin(tasks, eq(coverageWaivers.originTaskId, tasks.id))
+        .where(isNull(coverageWaivers.revokedAt))
+        .orderBy(desc(coverageWaivers.createdAt))
 
-      return c.json({ decisions: rows })
+      return c.json({ waivers: rows })
     })
 
-    .delete('/standing-decisions/:id', async (c) => {
-      const revoked = await revokeStandingDecision(db, c.req.param('id'))
+    .delete('/coverage-waivers/:id', async (c) => {
+      const revoked = await revokeCoverageWaiver(db, c.req.param('id'))
       if (!revoked) {
-        throw new ApiError('not_found', 'standing decision was not found or is already revoked', {
+        throw new ApiError('not_found', 'coverage waiver was not found or is already revoked', {
           status: 404,
         })
       }
 
-      return c.json({ decision: revoked })
+      return c.json({ waiver: revoked })
     })
 
     .get('/tasks', async (c) => {

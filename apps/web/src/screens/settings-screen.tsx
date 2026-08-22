@@ -6,9 +6,9 @@ import {
   type ReasoningEffort,
 } from '@specmate/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CoverageWaiversSection } from '../components/coverage-waivers-section.tsx'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
-import { StandingDecisionsSection } from '../components/standing-decisions-section.tsx'
 import { ApiRequestError, getModelDefaults, updateModelDefaults } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 
@@ -110,7 +110,7 @@ export function SettingsScreen() {
         </dl>
       </section>
 
-      <StandingDecisionsSection />
+      <CoverageWaiversSection />
     </div>
   )
 }

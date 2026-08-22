@@ -5,11 +5,11 @@ import {
   conversationActions,
   conversationMessages,
   conversations,
+  coverageWaivers,
   createDb,
   type Database,
   decisions,
   runGraphs,
-  standingDecisions,
   tasks,
 } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
@@ -73,10 +73,10 @@ describeDb('harness-coverage', () => {
 
   afterEach(async () => {
     for (const engine of engines.splice(0)) await engine.idle()
-    // A standing decision outlives the task that made it by design, so the
+    // A coverage waiver outlives the task that accepted it by design, so the
     // suite clears its own rather than leaving them behind.
     if (repos.length > 0) {
-      await db.delete(standingDecisions).where(inArray(standingDecisions.repoUrl, repos.splice(0)))
+      await db.delete(coverageWaivers).where(inArray(coverageWaivers.repoUrl, repos.splice(0)))
     }
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
   })
@@ -601,8 +601,8 @@ describeDb('harness-coverage', () => {
     async function inForce(repoUrl: string) {
       return db
         .select()
-        .from(standingDecisions)
-        .where(and(eq(standingDecisions.repoUrl, repoUrl), isNull(standingDecisions.revokedAt)))
+        .from(coverageWaivers)
+        .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
     }
 
     /** Runs one planning stage against a task and returns it reloaded. */
@@ -618,7 +618,7 @@ describeDb('harness-coverage', () => {
       return { engine, task: await reload(db, task.id) }
     }
 
-    test('proceeding records the acceptance as a standing decision — REQ-1406', async () => {
+    test('proceeding records the acceptance as a repository waiver — REQ-1406', async () => {
       const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
       const { engine, task } = await planned(repoUrl, MISSING)
       const [decision] = await openDecisions(task.id)
@@ -631,9 +631,9 @@ describeDb('harness-coverage', () => {
         optionId: 'proceed',
       })
 
-      const standing = await inForce(repoUrl)
-      expect(standing).toHaveLength(1)
-      expect(standing[0]).toMatchObject({ key: 'harness-coverage', originTaskId: task.id })
+      const waivers = await inForce(repoUrl)
+      expect(waivers).toHaveLength(1)
+      expect(waivers[0]).toMatchObject({ originTaskId: task.id })
     })
 
     test('the next task in that repository inherits it instead of asking — AC-1422, AC-1423', async () => {
