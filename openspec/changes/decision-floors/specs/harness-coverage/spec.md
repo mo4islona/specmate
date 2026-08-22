@@ -42,5 +42,5 @@ with the moment it ended.
 
 #### Scenario: AC-1427 — Accepting the same gap twice
 
-- **WHEN** a second task's owner accepts a gap in a repository that already carries a live acceptance
-- **THEN** exactly one live acceptance SHALL exist for that repository
+- **WHEN** a second task's owner accepts a gap in a repository that already carries one in force
+- **THEN** exactly one acceptance SHALL be in force for that repository
