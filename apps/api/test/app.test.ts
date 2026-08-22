@@ -482,13 +482,12 @@ describeDb('api', () => {
     expect(await response.json()).toMatchObject({ code: 'validation' })
   })
 
-  describe('coverage waivers — REQ-1015', () => {
-    interface CoverageWaiverJson {
+  describe('repositories and their coverage waivers — REQ-1015', () => {
+    interface RepositoryJson {
       id: string
       repoUrl: string
-      key: string
-      originTaskId: string | null
-      originTitle: string | null
+      taskCount: number
+      coverageWaiver: { originTaskId: string | null; originTitle: string | null } | null
     }
 
     const repoUrl = `https://example.invalid/waiver-${crypto.randomUUID().slice(0, 8)}.git`
@@ -497,31 +496,43 @@ describeDb('api', () => {
       await db.delete(coverageWaivers).where(eq(coverageWaivers.repoUrl, repoUrl))
     })
 
-    test('lists what is in force with the task it came from, and revokes one — AC-1043, AC-1044', async () => {
-      const [waiver] = await db.insert(coverageWaivers).values({ repoUrl }).returning()
-      expect(waiver).toBeTruthy()
+    test('lists repositories with the waiver in force, and revokes one — AC-1043, AC-1044', async () => {
+      const created = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ title: 'Waived repository fixture', type: 'feature', repoUrl }),
+      })
+      expect(created.status).toBe(201)
+      const { task } = (await created.json()) as { task: { id: string } }
+      createdTaskIds.push(task.id)
 
-      const listed = await app.request('/api/v1/coverage-waivers', { headers: auth })
+      await db.insert(coverageWaivers).values({ repoUrl, originTaskId: task.id })
+
+      const listed = await app.request('/api/v1/repositories', { headers: auth })
       expect(listed.status).toBe(200)
-      const body = (await listed.json()) as { waivers: CoverageWaiverJson[] }
-      expect(body.waivers.some((row) => row.repoUrl === repoUrl)).toBe(true)
+      const body = (await listed.json()) as { repositories: RepositoryJson[] }
+      const repository = body.repositories.find((row) => row.repoUrl === repoUrl)
+      expect(repository?.coverageWaiver).toMatchObject({ originTaskId: task.id })
+      assert(repository)
 
-      const revoked = await app.request(`/api/v1/coverage-waivers/${waiver?.id}`, {
+      const revoked = await app.request(`/api/v1/repositories/${repository.id}/coverage-waiver`, {
         method: 'DELETE',
         headers: auth,
       })
       expect(revoked.status).toBe(200)
 
-      const after = await app.request('/api/v1/coverage-waivers', { headers: auth })
-      const afterBody = (await after.json()) as { waivers: CoverageWaiverJson[] }
-      expect(afterBody.waivers.some((row) => row.repoUrl === repoUrl)).toBe(false)
+      const after = await app.request('/api/v1/repositories', { headers: auth })
+      const afterBody = (await after.json()) as { repositories: RepositoryJson[] }
+      expect(afterBody.repositories.find((row) => row.repoUrl === repoUrl)?.coverageWaiver).toBe(
+        null,
+      )
     })
 
-    test('revoking what is not there is a structured not-found — AC-1045', async () => {
-      const response = await app.request(`/api/v1/coverage-waivers/${crypto.randomUUID()}`, {
-        method: 'DELETE',
-        headers: auth,
-      })
+    test('revoking what a repository does not have is a structured not-found — AC-1045', async () => {
+      const response = await app.request(
+        `/api/v1/repositories/${crypto.randomUUID()}/coverage-waiver`,
+        { method: 'DELETE', headers: auth },
+      )
 
       expect(response.status).toBe(404)
       expect(await response.json()).toMatchObject({ code: 'not_found' })
