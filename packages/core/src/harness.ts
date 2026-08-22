@@ -23,6 +23,16 @@ export function needsCoverageWarning(status: HarnessStatus): boolean {
   return status !== 'adequate'
 }
 
+/**
+ * The durable statuses that represent a gap there is something to accept. Not
+ * the negation of `needsCoverageWarning`: `unknown` means no probe has spoken
+ * yet, and `waived` means the acceptance already happened — neither is a gap a
+ * fresh acceptance may be recorded against.
+ */
+export function isCoverageGap(status: HarnessStatus): boolean {
+  return status === 'partial' || status === 'missing'
+}
+
 /** The Key Points bullet label `checkBrief` looks for and `roles/planner.md` writes. */
 export const HARNESS_GAP_LABEL = 'Harness gap'
 

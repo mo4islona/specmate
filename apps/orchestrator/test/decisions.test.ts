@@ -48,7 +48,13 @@ function result(overrides: Partial<StageResult> & { role: StageResult['role'] })
     result: StageResult.parse({
       schema_version: 1,
       status: 'ok',
-      ...(needsCoverage ? { harness_coverage: FIXTURE_HARNESS_COVERAGE } : {}),
+      // A planning role's ok result must carry both (AC-1317); an override still wins.
+      ...(needsCoverage
+        ? {
+            harness_coverage: FIXTURE_HARNESS_COVERAGE,
+            plan: { size: 'medium' as const, prerequisites: [] },
+          }
+        : {}),
       ...overrides,
     }),
     telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
@@ -770,6 +776,36 @@ describeDb('kickoff brief questions', () => {
       .from(events)
       .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.refused')))
     expect(refused?.payload).toMatchObject({ cap: 2, keys: ['rollout', 'metrics'] })
+  })
+
+  test('a non-blocking request of another kind is capped too — AC-1229', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 1 } })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'planner',
+        status: 'ok',
+        decisions_needed: [
+          { key: 'scope', kind: 'approval', prompt_md: 'Sign off?', options: [], blocking: false },
+          { key: 'rollout', kind: 'approval', prompt_md: 'Staged?', options: [], blocking: false },
+          { key: 'metrics', kind: 'rework', prompt_md: 'Which?', options: [], blocking: false },
+        ],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    // `kind` is a field the agent writes: a floor it can step over by calling a
+    // question an approval is not a floor.
+    const open = await openDecisions(task.id)
+    expect(open.map((d) => d.key)).toEqual(['scope'])
+
+    const [refused] = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.refused')))
+    expect(refused?.payload).toMatchObject({ cap: 1, keys: ['rollout', 'metrics'] })
   })
 
   test('a blocking request is never refused by the question cap — AC-1226', async () => {

@@ -25,6 +25,7 @@ import {
   escalationForPark,
   type GateNode,
   type HarnessCoverageAssessment,
+  isCoverageGap,
   isRestartable,
   isTerminal,
   LOOP_CAPS,
@@ -74,7 +75,7 @@ import {
   COVERAGE_DECISION_KEY,
   COVERAGE_DECISION_NODE_KEY,
   countRedirects,
-  createTask,
+  createTaskInTx,
   emitEvent,
   lastRestartAt,
   lastReworkAt,
@@ -1485,6 +1486,10 @@ export class Engine {
     result: StageResult,
   ): Promise<RunGraphRow> {
     if (result.status !== 'ok' || !result.plan) return graph
+    // Only a role whose contract declares a plan may reshape the run graph:
+    // `plan` is optional on every result, so without this any role could swap
+    // the profile mid-run and drop the stages the task was created with.
+    if (!ROLE_CONTRACTS[node.role].declaresPlan) return graph
 
     const definition = definitionForSize(task.type, result.plan.size)
     if (definition.id === graph.dag.pipeline) return graph
@@ -1625,15 +1630,24 @@ export class Engine {
 
       // REQ-1401, REQ-1306: a planning role's classification and declared plan
       // land on the task before it advances, whether that happens at
-      // `planning` or `kickoff_brief` — `stageDefect` already guarantees both
-      // are present for any `ok` result reaching this point.
-      if (result.status === 'ok' && (result.harness_coverage || result.plan)) {
+      // `planning` or `kickoff_brief` — `stageDefect` guarantees both are
+      // present for any `ok` result reaching this point.
+      //
+      // Read through the role's contract, not off the result: both fields are
+      // optional on every role's schema, so a result that merely carries them
+      // must not be allowed to rewrite coverage or revoke a repository-wide
+      // acceptance from a role that never probed anything.
+      const contract = ROLE_CONTRACTS[node.role]
+      const declaredCoverage = contract.probesHarness ? (result.harness_coverage ?? null) : null
+      const declaredPlan = contract.declaresPlan ? (result.plan ?? null) : null
+      if (result.status === 'ok' && (declaredCoverage || declaredPlan)) {
         await recordPlanOutcome(
           tx,
           liveTask,
           row.id,
-          result.harness_coverage ?? null,
-          result.plan ?? null,
+          declaredCoverage,
+          declaredPlan,
+          runGraph.dag.pipeline,
         )
       }
 
@@ -2785,9 +2799,19 @@ export class Engine {
       if (!offered) throw new BudgetDecisionRequiresOptionError(options.decisionId)
     }
 
+    // REQ-1403: the coverage decision resolves only through an option it
+    // actually offered. Its option list is computed from the task's own depth
+    // and caps — a task at `max_plan_depth` is never offered `split` — so
+    // accepting one anyway would close the card on an action the engine then
+    // declines to take, leaving the task past its gate with a coverage gap
+    // nobody accepted and no waiver recorded.
+    if (this.isCoverageDecision(decision) && options.optionId) {
+      const offered = decision.options.some((option) => option.id === options.optionId)
+      if (!offered) throw new CoverageDecisionRequiresOptionError(options.decisionId)
+    }
+
     // REQ-1504, AC-1510: a raise must be validated and applied *before* the
-    // decision is marked answered — unlike the coverage decision's options,
-    // which are all valid once chosen, a too-small raise is refused with the
+    // decision is marked answered — a too-small raise is refused with the
     // decision left open, so validation cannot happen after resolution.
     // `isBudgetDecision` is checked first so an option id that merely looks
     // like a raise cannot hijack an unrelated decision.
@@ -3024,23 +3048,36 @@ export class Engine {
    * routes go through here, so neither can record one without the other.
    */
   private async waiveHarnessStatus(tx: DbClient, taskId: string): Promise<void> {
-    const [waived] = await tx
+    const [current] = await tx
+      .select({ id: tasks.id, repoUrl: tasks.repoUrl, harnessStatus: tasks.harnessStatus })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1)
+    if (!current) return
+
+    // REQ-1403 conditions the acceptance on coverage actually being short. The
+    // same card is raised when the plan only proposes prerequisites, and
+    // "proceed as one task" accepts nothing there — recording a waiver would
+    // hand every later task in this repository an acceptance for a gap no
+    // probe ever reported, and leave this task claiming a warning it has no
+    // evidence for.
+    if (!isCoverageGap(current.harnessStatus)) return
+
+    await tx
       .update(tasks)
       .set({ harnessStatus: 'waived', updatedAt: new Date() })
       .where(eq(tasks.id, taskId))
-      .returning({ id: tasks.id, repoUrl: tasks.repoUrl })
-    if (!waived) return
 
     const waiver = await recordCoverageWaiver(tx, {
-      repoUrl: waived.repoUrl,
-      originTaskId: waived.id,
+      repoUrl: current.repoUrl,
+      originTaskId: current.id,
     })
     if (!waiver) return
 
     await emitEvent(tx, {
       taskId,
       type: 'coverage_waiver.recorded',
-      payload: { waiverId: waiver.id, repoUrl: waived.repoUrl },
+      payload: { waiverId: waiver.id, repoUrl: current.repoUrl },
     })
   }
 
@@ -3065,23 +3102,29 @@ export class Engine {
 
     const proposals = choice.creates.length > 0 ? choice.creates : [harnessFallback(task, coverage)]
 
-    const created: string[] = []
-    for (const proposal of proposals) {
-      const { task: prerequisite } = await createTask(this.deps.db, {
-        slug: `${task.slug}-${proposal.key}-${crypto.randomUUID().slice(0, 8)}`,
-        title: proposal.title,
-        description: `${proposal.why_md}\n\nProposed while planning "${task.title}".`,
-        type: 'feature',
-        repoUrl: task.repoUrl,
-        baseBranch: task.baseBranch,
-        originTaskId: task.id,
-        planDepth: task.planDepth + 1,
-      })
-      created.push(prerequisite.id)
-    }
-
+    // Creating the prerequisites and blocking the parent on them is one
+    // transaction. The decision that authorised this split is already
+    // answered, so a failure partway through has no second attempt: tasks
+    // created outside the parent's block would run against the repository
+    // with nothing waiting for them, and the owner could not ask again.
     await this.withTaskLock(task.id, async (tx) => {
       const { task: liveTask, graph } = await this.taskWithGraph(task.id, tx)
+
+      const created: string[] = []
+      for (const proposal of proposals) {
+        const { task: prerequisite } = await createTaskInTx(tx, {
+          slug: `${task.slug}-${proposal.key}-${crypto.randomUUID().slice(0, 8)}`,
+          title: proposal.title,
+          description: `${proposal.why_md}\n\nProposed while planning "${task.title}".`,
+          type: 'feature',
+          repoUrl: task.repoUrl,
+          baseBranch: task.baseBranch,
+          originTaskId: task.id,
+          planDepth: task.planDepth + 1,
+        })
+        created.push(prerequisite.id)
+      }
+
       // AC-1413: every id here is a fresh crypto.randomUUID() minted by
       // createTask above, so this can never actually fire on this call
       // path — kept as the AC's literal guard against the day a general
@@ -3344,17 +3387,40 @@ export class Engine {
    * blockers still open just shrink the list.
    */
   private async releaseDependentTask(dependent: Task, clearedBlockerId: string): Promise<void> {
-    const remaining = dependent.blockedBy.filter((id) => id !== clearedBlockerId)
-
     await this.withTaskLock(dependent.id, async (tx) => {
       const { task: liveTask, graph } = await this.taskWithGraph(dependent.id, tx)
       if (liveTask.status !== 'blocked') return
+
+      // Read the list inside the lock. A plan may create several
+      // prerequisites, and two of them reaching a terminal state in one tick
+      // each dispatch their own release; a list computed from the pre-lock
+      // snapshot would write back the other's blocker as still outstanding
+      // and strand the dependent in `blocked` with nothing left to release it.
+      const remaining = liveTask.blockedBy.filter((id) => id !== clearedBlockerId)
 
       await tx
         .update(tasks)
         .set({ blockedBy: remaining, updatedAt: new Date() })
         .where(eq(tasks.id, liveTask.id))
       if (remaining.length > 0) return
+
+      // A blocker that died earlier left a blocking escalation behind. The
+      // last live one clearing does not answer it, so the task goes to the
+      // owner rather than into its pipeline — resolving it resumes at the
+      // same entry this would have transitioned to.
+      const openDecisions = await tx
+        .select()
+        .from(decisions)
+        .where(and(eq(decisions.taskId, liveTask.id), eq(decisions.status, 'open')))
+      if (blockingOpen(openDecisions)) {
+        await this.applyTransition(tx, liveTask, graph.dag, 'waiting_human', {
+          cause: 'blocker_lost',
+          resume: graph.dag.entry,
+          payload: { clearedBlocker: clearedBlockerId },
+        })
+
+        return
+      }
 
       await this.applyTransition(tx, liveTask, graph.dag, graph.dag.entry, {
         cause: 'harness_released',
@@ -3383,10 +3449,18 @@ export class Engine {
         nodeKey: 'blocked',
         key: `blocker-lost:${deadBlockerId}`,
         kind: 'escalation',
-        promptMd: `The harness task this was waiting on (${deadBlockerId}) was cancelled or failed before it could complete. This task cannot be released automatically.`,
+        promptMd: `A task this one was waiting on (${deadBlockerId}) was cancelled or failed before it could complete. This task cannot be released automatically.`,
         options: [],
         blocking: true,
       })
+
+      // Other prerequisites may still be in flight, and this task is still
+      // genuinely waiting on them: leaving `blocked` here would take it out of
+      // the only query that ever clears `blockedBy`, so the list would keep
+      // naming a blocker nothing can remove. The escalation is already open
+      // and visible; the release path parks on it once the last one lands.
+      if (remaining.length > 0) return
+
       await this.applyTransition(tx, liveTask, graph.dag, 'waiting_human', {
         cause: 'blocker_lost',
         resume: graph.dag.entry,
@@ -3484,6 +3558,20 @@ function stageDefect(node: StageNode, execution: StageExecution): StageDefectRec
     return {
       reason: 'missing_harness_coverage',
       detail: `role ${node.role} returned no harness coverage assessment for stage ${node.key}`,
+    }
+  }
+
+  // AC-1317: same reason as the coverage check above — the size is what
+  // selects the profile, so a planning role that declares none must fail the
+  // attempt rather than run the full pipeline with no size on record.
+  if (
+    ROLE_CONTRACTS[node.role].declaresPlan &&
+    execution.result?.status === 'ok' &&
+    !execution.result.plan
+  ) {
+    return {
+      reason: 'missing_plan',
+      detail: `role ${node.role} returned no plan for stage ${node.key}`,
     }
   }
 
