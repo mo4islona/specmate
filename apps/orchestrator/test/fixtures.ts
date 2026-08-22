@@ -224,7 +224,10 @@ export async function seedTask(
     slug,
     title: `Fixture ${slug}`,
     type: 'feature',
-    repoUrl: options.repoUrl ?? 'file:///dev/null',
+    // A repository of its own per fixture: durable, repository-scoped records
+    // (an accepted coverage gap) would otherwise leak from one test into the
+    // next. A test that needs two tasks in one repository names it.
+    repoUrl: options.repoUrl ?? `file:///dev/null/${slug}`,
     caps: options.caps,
     budgets: options.budgets,
     at: options.at,

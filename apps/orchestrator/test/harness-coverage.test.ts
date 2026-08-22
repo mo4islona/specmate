@@ -8,11 +8,12 @@ import {
   createDb,
   type Database,
   decisions,
+  repoPolicies,
   runGraphs,
   tasks,
 } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { CoverageDecisionRequiresOptionError, Engine, type EngineSettings } from '../src/engine.ts'
 import { assertNotSelfDependency, SelfDependencyError } from '../src/store.ts'
 import { fakeDispatcher, fakeWorkspaces, reload, seedTask } from './fixtures.ts'
@@ -63,6 +64,7 @@ const FIXTURE_PREREQUISITE = {
 describeDb('harness-coverage', () => {
   let db: Database
   const created: string[] = []
+  const repos: string[] = []
   const engines: Engine[] = []
 
   beforeAll(() => {
@@ -71,6 +73,11 @@ describeDb('harness-coverage', () => {
 
   afterEach(async () => {
     for (const engine of engines.splice(0)) await engine.idle()
+    // Repository policies outlive the task that created them by design, so
+    // the suite clears its own rather than leaving them behind.
+    if (repos.length > 0) {
+      await db.delete(repoPolicies).where(inArray(repoPolicies.repoUrl, repos.splice(0)))
+    }
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
   })
 
@@ -104,6 +111,7 @@ describeDb('harness-coverage', () => {
   async function seed(options: Parameters<typeof seedTask>[1] = {}) {
     const seeded = await seedTask(db, options)
     created.push(seeded.task.id)
+    repos.push(seeded.task.repoUrl)
 
     return seeded
   }
@@ -586,6 +594,140 @@ describeDb('harness-coverage', () => {
         .from(runGraphs)
         .where(eq(runGraphs.taskId, harnessTaskId))
       expect(pinnedGraph).toBeTruthy()
+    })
+  })
+
+  describe('an accepted gap outlives its task', () => {
+    async function livePolicies(repoUrl: string) {
+      return db
+        .select()
+        .from(repoPolicies)
+        .where(and(eq(repoPolicies.repoUrl, repoUrl), isNull(repoPolicies.revokedAt)))
+    }
+
+    /** Runs one planning stage against a task and returns it reloaded. */
+    async function planned(repoUrl: string, coverage: typeof MISSING | typeof ADEQUATE) {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      stagesDispatcher.plan(() =>
+        result({ role: 'planner', status: 'ok', harness_coverage: coverage }),
+      )
+      await engine.tick()
+      await engine.idle()
+
+      return { engine, task: await reload(db, task.id) }
+    }
+
+    test('proceeding records the acceptance against the repository — REQ-1406', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      const { engine, task } = await planned(repoUrl, MISSING)
+      const [decision] = await openDecisions(task.id)
+      assert(decision)
+
+      await engine.answer({
+        taskId: task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+
+      const policies = await livePolicies(repoUrl)
+      expect(policies).toHaveLength(1)
+      expect(policies[0]).toMatchObject({ key: 'harness-coverage', originTaskId: task.id })
+    })
+
+    test('the next task in that repository inherits it instead of asking — AC-1422, AC-1423', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      const first = await planned(repoUrl, MISSING)
+      const [decision] = await openDecisions(first.task.id)
+      assert(decision)
+      await first.engine.answer({
+        taskId: first.task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+
+      const second = await planned(repoUrl, MISSING)
+
+      expect(second.task.harnessStatus).toBe('waived')
+      expect(second.task.status).toBe('human_kickoff_gate')
+      expect(await openDecisions(second.task.id)).toEqual([])
+
+      const [inherited] = await db
+        .select()
+        .from(decisions)
+        .where(eq(decisions.taskId, second.task.id))
+      expect(inherited).toMatchObject({ key: 'harness-coverage', status: 'answered' })
+      expect(inherited?.answerMd).toContain(first.task.title)
+    })
+
+    test('an inherited waiver still raises the choice a plan proposes — AC-1424', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      const first = await planned(repoUrl, MISSING)
+      const [decision] = await openDecisions(first.task.id)
+      assert(decision)
+      await first.engine.answer({
+        taskId: first.task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      stagesDispatcher.plan(() =>
+        result({
+          role: 'planner',
+          status: 'ok',
+          harness_coverage: MISSING,
+          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+        }),
+      )
+      await engine.tick()
+      await engine.idle()
+
+      expect((await reload(db, task.id)).harnessStatus).toBe('waived')
+      const [open] = await openDecisions(task.id)
+      assert(open)
+      expect(open.promptMd).toContain(HARNESS_PREREQUISITE.title)
+      expect(open.promptMd).not.toContain('cannot be properly validated')
+    })
+
+    test('an adequate classification ends the acceptance — AC-1425', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      const first = await planned(repoUrl, MISSING)
+      const [decision] = await openDecisions(first.task.id)
+      assert(decision)
+      await first.engine.answer({
+        taskId: first.task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+      expect(await livePolicies(repoUrl)).toHaveLength(1)
+
+      await planned(repoUrl, ADEQUATE)
+
+      expect(await livePolicies(repoUrl)).toEqual([])
+    })
+
+    test('accepting a second time leaves exactly one live record — AC-1427', async () => {
+      const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
+      for (let round = 0; round < 2; round += 1) {
+        const { engine, task } = await planned(repoUrl, MISSING)
+        const open = await openDecisions(task.id)
+        if (open[0]) {
+          await engine.answer({
+            taskId: task.id,
+            decisionId: open[0].id,
+            actor: 'evgeny',
+            optionId: 'proceed',
+          })
+        }
+      }
+
+      expect(await livePolicies(repoUrl)).toHaveLength(1)
     })
   })
 

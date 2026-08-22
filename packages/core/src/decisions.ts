@@ -39,6 +39,41 @@ export function decisionFromRequest(nodeKey: TaskState, request: DecisionRequest
   }
 }
 
+export interface PartitionedRequests {
+  readonly recorded: readonly DecisionRequest[]
+  /** Non-blocking questions past the cap: refused, and named in the event log rather than dropped in silence. */
+  readonly refused: readonly DecisionRequest[]
+}
+
+/**
+ * REQ-1208: the floor under how many questions one stage may raise. Blocking
+ * requests always pass — dropping one would leave a parked task with nothing
+ * open against it (REQ-1201) — and questions pass in the order the stage
+ * returned them, so what survives is what the stage thought to say first.
+ */
+export function partitionRequests(
+  requests: readonly DecisionRequest[],
+  cap: number,
+): PartitionedRequests {
+  const recorded: DecisionRequest[] = []
+  const refused: DecisionRequest[] = []
+  let questions = 0
+
+  for (const request of requests) {
+    const capped = !request.blocking && request.kind === 'question'
+    if (!capped) {
+      recorded.push(request)
+      continue
+    }
+
+    questions += 1
+    if (questions <= cap) recorded.push(request)
+    else refused.push(request)
+  }
+
+  return { recorded, refused }
+}
+
 /** One finding id that stayed on the loop's trailing rounds long enough to stall it. */
 export interface StalledFinding {
   readonly id: string

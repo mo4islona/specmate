@@ -140,6 +140,10 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
+type RepoPoliciesResponse = InferResponseType<
+  (typeof apiClient.api.v1)['repo-policies']['$get'],
+  200
+>
 type ModelDefaultsResponse = InferResponseType<
   (typeof apiClient.api.v1.settings)['model-defaults']['$get'],
   200
@@ -170,6 +174,7 @@ export type RestartStageInput = RestartStageRequest['json']
 export type DecisionItem = DecisionsResponse['decisions'][number]
 export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
+export type RepoPolicy = RepoPoliciesResponse['policies'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
@@ -177,6 +182,18 @@ export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   const response = await apiClient.api.v1.tasks.$get(undefined, { init: { signal } })
 
   return readJson<TasksResponse>(response)
+}
+
+export async function listRepoPolicies(signal?: AbortSignal): Promise<RepoPoliciesResponse> {
+  const response = await apiClient.api.v1['repo-policies'].$get(undefined, { init: { signal } })
+
+  return readJson<RepoPoliciesResponse>(response)
+}
+
+export async function revokeRepoPolicy(id: string): Promise<void> {
+  const response = await apiClient.api.v1['repo-policies'][':id'].$delete({ param: { id } })
+
+  await readJson<{ policy: RepoPolicy }>(response)
 }
 
 export async function listAttention(signal?: AbortSignal): Promise<AttentionResponse> {

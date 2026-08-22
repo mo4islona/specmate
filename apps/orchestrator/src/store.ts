@@ -19,6 +19,7 @@ import {
   type PlanShape,
   type RecordedRound,
   type RoundToRecord,
+  renderInheritedWaiverPrompt,
   renderPlanChoicePrompt,
   resolveModelBindings,
   type Spend,
@@ -37,13 +38,15 @@ import {
   events,
   getModelDefaults,
   iterations,
+  type RepoPolicy,
+  repoPolicies,
   runGraphs,
   type StageUsage,
   stages,
   type Task,
   tasks,
 } from '@specmate/db'
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
   constructor(type: string) {
@@ -465,14 +468,22 @@ export async function raiseDecision(
   return { decision: created, created: true }
 }
 
+/**
+ * REQ-1202: what makes two requests the same request. A non-blocking question
+ * is about the work, so the task and the key identify it however many nodes
+ * ask; everything else is about a node — two nodes escalating are two
+ * situations with two pieces of evidence.
+ */
 function findOpenDecision(db: DbClient, taskId: string, input: DecisionInsert) {
+  const isQuestion = !input.blocking && input.kind === 'question'
+
   return db
     .select()
     .from(decisions)
     .where(
       and(
         eq(decisions.taskId, taskId),
-        eq(decisions.nodeKey, input.nodeKey),
+        ...(isQuestion ? [] : [eq(decisions.nodeKey, input.nodeKey)]),
         eq(decisions.key, input.key),
         eq(decisions.status, 'open'),
       ),
@@ -609,7 +620,21 @@ export async function recordPlanOutcome(
     })
   }
 
-  const choice = planChoiceFor(task, assessment, plan)
+  // REQ-1406: an acceptance is spent once the gap it accepted is gone, so an
+  // adequate classification ends it rather than leaving it to shadow a
+  // repository that has since grown a harness.
+  if (assessment?.classification === 'adequate') {
+    await revokeLivePolicy(db, task.repoUrl, COVERAGE_POLICY_KEY)
+  }
+
+  const inherited =
+    assessment && assessment.classification !== 'adequate'
+      ? await inheritCoverageWaiver(db, task, stageId, assessment)
+      : false
+
+  // An inherited acceptance settles the coverage half and nothing else: a plan
+  // proposing tasks is a different question the owner has not answered yet.
+  const choice = planChoiceFor(task, inherited ? null : assessment, plan)
   if (!needsPlanChoice(choice)) {
     await dismissCoverageDecision(db, task.id, 'system', 'reclassified')
 
@@ -624,6 +649,78 @@ export async function recordPlanOutcome(
     options: planChoiceOptions(choice),
     blocking: false,
   })
+}
+
+/**
+ * REQ-1406: a gap the owner already accepted for this repository is not asked
+ * about again. The inheritance is written as an already-resolved decision at
+ * the identity the choice would have used, so it reaches the decision log
+ * every later stage reads (REQ-1205) and the task's own view, while never
+ * showing up as something the owner must act on.
+ *
+ * Returns whether an acceptance was in force.
+ */
+async function inheritCoverageWaiver(
+  db: DbClient,
+  task: Task,
+  stageId: string,
+  assessment: HarnessCoverageAssessment,
+): Promise<boolean> {
+  const policy = await livePolicy(db, task.repoUrl, COVERAGE_POLICY_KEY)
+  if (!policy) return false
+
+  await db
+    .update(tasks)
+    .set({ harnessStatus: 'waived', updatedAt: new Date() })
+    .where(eq(tasks.id, task.id))
+
+  // The second probing stage of the same task inherits the same acceptance;
+  // one resolved record is the whole point, so a repeat writes nothing.
+  const [existing] = await db
+    .select({ id: decisions.id })
+    .from(decisions)
+    .where(
+      and(
+        eq(decisions.taskId, task.id),
+        eq(decisions.nodeKey, COVERAGE_DECISION_NODE_KEY),
+        eq(decisions.key, COVERAGE_DECISION_KEY),
+      ),
+    )
+    .limit(1)
+  if (existing) return true
+
+  const origin = policy.originTaskId
+    ? await db
+        .select({ title: tasks.title })
+        .from(tasks)
+        .where(eq(tasks.id, policy.originTaskId))
+        .limit(1)
+    : []
+  const from = origin[0]?.title ?? 'an earlier task'
+
+  await db.insert(decisions).values({
+    taskId: task.id,
+    stageId,
+    nodeKey: COVERAGE_DECISION_NODE_KEY,
+    key: COVERAGE_DECISION_KEY,
+    kind: 'question',
+    promptMd: renderInheritedWaiverPrompt(assessment, from),
+    options: [],
+    blocking: false,
+    status: 'answered',
+    answeredBy: 'system',
+    answerMd: `Inherited: this repository's coverage gap was accepted on "${from}".`,
+    answeredAt: new Date(),
+  })
+
+  await emitEvent(db, {
+    taskId: task.id,
+    stageId,
+    type: 'decision.inherited',
+    payload: { key: COVERAGE_POLICY_KEY, policyId: policy.id, originTaskId: policy.originTaskId },
+  })
+
+  return true
 }
 
 /** Resolves the open coverage decision, if any, without touching any other open decision. */
@@ -659,6 +756,85 @@ export async function dismissCoverageDecision(
       cause,
     },
   })
+}
+
+/** The one repository-scoped answer this system records today (REQ-1406). */
+export const COVERAGE_POLICY_KEY = 'harness-coverage'
+
+/** The live record for a repository and key, or null when nothing is in force. */
+export async function livePolicy(
+  db: DbClient,
+  repoUrl: string,
+  key: string,
+): Promise<RepoPolicy | null> {
+  const [policy] = await db
+    .select()
+    .from(repoPolicies)
+    .where(
+      and(
+        eq(repoPolicies.repoUrl, repoUrl),
+        eq(repoPolicies.key, key),
+        isNull(repoPolicies.revokedAt),
+      ),
+    )
+    .limit(1)
+
+  return policy ?? null
+}
+
+/**
+ * AC-1427: the partial unique index is what makes "one live record" true, so
+ * a second acceptance defers to the one already in force rather than racing
+ * it. The first acceptance is the one that names the task it came from.
+ */
+export async function recordPolicy(
+  db: DbClient,
+  input: { repoUrl: string; key: string; value?: Record<string, unknown>; originTaskId?: string },
+): Promise<RepoPolicy | null> {
+  const [policy] = await db
+    .insert(repoPolicies)
+    .values({
+      repoUrl: input.repoUrl,
+      key: input.key,
+      value: input.value ?? {},
+      originTaskId: input.originTaskId ?? null,
+    })
+    .onConflictDoNothing()
+    .returning()
+
+  return policy ?? null
+}
+
+/** Revoking marks the record; what was accepted and when it ended both stay readable. */
+export async function revokePolicy(db: DbClient, id: string): Promise<RepoPolicy | null> {
+  const [revoked] = await db
+    .update(repoPolicies)
+    .set({ revokedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(repoPolicies.id, id), isNull(repoPolicies.revokedAt)))
+    .returning()
+
+  return revoked ?? null
+}
+
+/** Revokes whatever is live for a repository and key; a no-op when nothing is. */
+export async function revokeLivePolicy(
+  db: DbClient,
+  repoUrl: string,
+  key: string,
+): Promise<RepoPolicy | null> {
+  const [revoked] = await db
+    .update(repoPolicies)
+    .set({ revokedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(repoPolicies.repoUrl, repoUrl),
+        eq(repoPolicies.key, key),
+        isNull(repoPolicies.revokedAt),
+      ),
+    )
+    .returning()
+
+  return revoked ?? null
 }
 
 /**
