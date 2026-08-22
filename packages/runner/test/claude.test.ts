@@ -227,6 +227,34 @@ describe('telemetry parsing', () => {
     })
   })
 
+  test('the model that served the run is the one that did the work, not the first key', () => {
+    const envelope = {
+      type: 'result',
+      total_cost_usd: 1.5052,
+      usage: { input_tokens: 40, output_tokens: 17_401 },
+      // The CLI's own auxiliary calls bill to a small model, and land first here.
+      modelUsage: {
+        'claude-haiku-4-5-20251001': { costUSD: 0.0037, inputTokens: 3637, outputTokens: 13 },
+        'claude-opus-5': { costUSD: 1.5015, inputTokens: 40, outputTokens: 17_401 },
+      },
+    }
+
+    expect(readStageTelemetry(JSON.stringify(envelope))?.model).toBe('claude-opus-5')
+  })
+
+  test('a per-model envelope without costs ranks on output tokens', () => {
+    const envelope = {
+      type: 'result',
+      usage: { input_tokens: 40, output_tokens: 900 },
+      modelUsage: {
+        'claude-haiku-4-5-20251001': { outputTokens: 12 },
+        'claude-opus-5': { outputTokens: 900 },
+      },
+    }
+
+    expect(readStageTelemetry(JSON.stringify(envelope))?.model).toBe('claude-opus-5')
+  })
+
   test('an unreadable envelope reads as absent, never as zero', () => {
     expect(readStageTelemetry('not json at all')).toBeNull()
     expect(readStageTelemetry(JSON.stringify({ type: 'result' }))).toEqual({
