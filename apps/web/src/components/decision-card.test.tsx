@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
 import type { DecisionItem } from '../lib/api-client.ts'
 import { DecisionCard } from './decision-card.tsx'
 

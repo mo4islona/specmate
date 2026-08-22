@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
 import { KickoffBrief } from './kickoff-brief.tsx'
 
 const BRIEF = `## What and Why

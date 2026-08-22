@@ -66,7 +66,9 @@ jobs:
           git diff --exit-code -- packages/db/drizzle \
             || { echo "::error::schema changed without a generated migration — run 'bun run db:generate'"; exit 1; }
       - name: Unit tests
-        run: bun test
+        # Two runners: `bun test` for everything headless, vitest for apps/web,
+        # whose components are tested against a DOM. `bun run test` runs both.
+        run: bun run test
 
   build:
     name: docker images

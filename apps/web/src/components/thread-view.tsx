@@ -3,13 +3,9 @@ import { formatClock } from '../lib/format.ts'
 import {
   eventDetail,
   eventTitle,
-  formatDuration,
-  formatTokens,
   nodeLabel,
   payloadValue,
   stageActivityLabel,
-  stageDuration,
-  stageTokens,
   type ThreadChapter,
   type ThreadEntry,
 } from '../lib/task-thread.ts'
@@ -144,18 +140,14 @@ function ChapterBlock({
           }`}
           aria-hidden="true"
         />
+        {/* Name only: how long the stage took, what it spent and what it committed
+            are facts about the node, and the pipeline already states them there. */}
         <span
-          className={`shrink-0 text-[0.82rem] font-medium ${open ? 'text-text' : 'text-muted group-hover:text-text'}`}
+          className={`shrink-0 text-[0.78rem] ${open ? 'text-text' : 'text-muted group-hover:text-text'}`}
         >
           {chapterTitle(chapter)}
         </span>
         <span className="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
-        <span className="shrink-0 font-mono text-[0.62rem] text-muted">
-          {chapterStats(chapter)}
-        </span>
-        {stage?.acceptedCommit && open && (
-          <CommitRef sha={stage.acceptedCommit} repoUrl={repoUrl} className="shrink-0" />
-        )}
       </button>
 
       {open && (
@@ -186,25 +178,6 @@ function chapterTitle(chapter: ThreadChapter): string {
   if (!chapter.stage || chapter.runs < 2) return label
 
   return `${label} · run ${chapter.stage.attempt + 1}`
-}
-
-function chapterStats(chapter: ThreadChapter): string {
-  const { stage } = chapter
-  if (!stage) {
-    return chapter.entries.length === 1 ? '1 entry' : `${chapter.entries.length} entries`
-  }
-
-  const duration = stageDuration(stage)
-  const tokens = stageTokens(stage)
-  const cost = stage.telemetry?.costUsd ?? null
-
-  return [
-    duration === null ? null : formatDuration(duration),
-    tokens === null ? null : `${formatTokens(tokens)} tok`,
-    cost === null ? null : `$${cost.toFixed(2)}`,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(' · ')
 }
 
 function trimActivity(entries: readonly ThreadEntry[]): {
@@ -266,21 +239,21 @@ function ThreadEntryItem({
 
   const decision = decisionsById.get(payloadValue(event, 'decisionId') ?? '')
   if (decision) {
-    // An open decision is answered from the top of the screen, and its outcome
-    // lands on this same card once it resolves — so history keeps the card and
-    // the live copy stays where the owner is already acting.
-    if (event.type === 'decision.raised' && decision.status !== 'open') {
-      return (
-        <DecisionCard
-          decision={decision}
-          parkedOnThis={false}
-          onAnswerOption={() => undefined}
-          onAnswerText={() => undefined}
-          onDismiss={() => undefined}
-        />
-      )
-    }
+    // A decision is one thing on the screen, never two: while open it lives
+    // where the owner answers it, and it only enters the history once resolved.
+    if (decision.status === 'open') return null
     if (event.type !== 'decision.raised') return null
+
+    return (
+      <DecisionCard
+        decision={decision}
+        parkedOnThis={false}
+        compact
+        onAnswerOption={() => undefined}
+        onAnswerText={() => undefined}
+        onDismiss={() => undefined}
+      />
+    )
   }
 
   const detail = eventDetail(event, decisionsById)

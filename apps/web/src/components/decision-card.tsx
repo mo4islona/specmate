@@ -24,6 +24,8 @@ export interface DecisionCardProps {
   readonly onDiscuss?: () => void
   readonly busy?: boolean
   readonly error?: string
+  /** History rendering: the question and its outcome, clamped, with nothing to act on. */
+  readonly compact?: boolean
 }
 
 /**
@@ -46,6 +48,7 @@ export function DecisionCard({
   onDiscuss,
   busy = false,
   error,
+  compact = false,
 }: DecisionCardProps) {
   const [text, setText] = useState('')
   const [raiseValues, setRaiseValues] = useState<Record<string, string>>({})
@@ -89,7 +92,7 @@ export function DecisionCard({
         )}
       </div>
 
-      <div className="artifact-document mt-2 text-sm">
+      <div className={`artifact-document mt-2 text-sm ${compact ? 'line-clamp-3' : ''}`}>
         <ArtifactMarkdown content={decision.promptMd} />
       </div>
 
@@ -183,7 +186,9 @@ export function DecisionCard({
       )}
 
       {!isOpen && (
-        <p className="mt-3 border-t border-border pt-2 text-sm leading-6 text-muted">
+        <p
+          className={`mt-3 border-t border-border pt-2 text-sm leading-6 text-muted ${compact ? 'line-clamp-2' : ''}`}
+        >
           <span className="micro-label mr-2 text-muted">
             {decision.status === 'dismissed' ? 'Dismissed' : 'Answered'} by{' '}
             {decision.answeredBy ?? 'unknown'}

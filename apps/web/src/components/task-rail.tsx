@@ -13,6 +13,8 @@ interface TaskRailProps {
   readonly selectedKey: string | null
   readonly onSelect: (key: string) => void
   readonly artifacts: readonly ArtifactSummary[]
+  readonly openArtifactId: string | null
+  readonly onOpenArtifact: (artifactId: string) => void
   readonly budgets: TaskDetail['task']['budgets']
   readonly spend: TaskDetail['spend']
 }
@@ -27,6 +29,8 @@ export function TaskRail({
   selectedKey,
   onSelect,
   artifacts,
+  openArtifactId,
+  onOpenArtifact,
   budgets,
   spend,
 }: TaskRailProps) {
@@ -61,15 +65,19 @@ export function TaskRail({
           <ul className="mt-2">
             {shown.map((artifact) => (
               <li key={artifact.id}>
-                <Link
-                  href={`/tasks/${taskId}/artifacts/${artifact.id}`}
-                  className="flex items-baseline justify-between gap-2 py-1 text-muted transition-colors hover:text-text"
+                <button
+                  type="button"
+                  onClick={() => onOpenArtifact(artifact.id)}
+                  aria-pressed={openArtifactId === artifact.id}
+                  className={`flex w-full items-baseline justify-between gap-2 py-1 text-left transition-colors ${
+                    openArtifactId === artifact.id ? 'text-phosphor' : 'text-muted hover:text-text'
+                  }`}
                 >
                   <span className="min-w-0 truncate text-[0.78rem]">
                     {artifact.path.split('/').at(-1)}
                   </span>
                   <span className="shrink-0 font-mono text-[0.6rem]">{artifact.kind}</span>
-                </Link>
+                </button>
               </li>
             ))}
           </ul>
