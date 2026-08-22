@@ -10,6 +10,14 @@ export function formatAge(value: string | Date): string {
   return `${Math.floor(elapsedHours / 24)}d`
 }
 
+/** Time only: inside a thread the day is carried by the chapter, not by every line. */
+export function formatClock(value: string | Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 export function formatTimestamp(value: string | Date): string {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
