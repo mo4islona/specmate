@@ -10,6 +10,7 @@ function stage(overrides: Partial<Stage> = {}): Stage {
     id: 'stage-1',
     taskId: 'task-1',
     graphId: 'graph-1',
+    graphVersion: 1,
     nodeKey: 'research',
     role: 'researcher',
     provider: 'claude-code',

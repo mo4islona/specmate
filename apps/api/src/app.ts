@@ -763,19 +763,27 @@ export function createApp({
       // Every version's stages, not just the newest graph's: a task whose
       // declared size swapped its profile ran its earlier stages under the
       // previous version, and those stay part of its history (AC-419).
+      //
+      // Ordered by graph version first: attempts are numbered per version, so
+      // `(nodeKey, attempt)` repeats across a re-plan and would otherwise leave
+      // which of two identical-looking rows is current up to the query plan.
       const taskStages = graph
         ? await db
-            .select()
+            .select({ stage: stages, graphVersion: runGraphs.version })
             .from(stages)
+            .innerJoin(runGraphs, eq(stages.graphId, runGraphs.id))
             .where(eq(stages.taskId, task.id))
-            .orderBy(asc(stages.nodeKey), asc(stages.attempt))
+            .orderBy(asc(runGraphs.version), asc(stages.nodeKey), asc(stages.attempt))
         : []
       const spend = await spendPromise
 
       return c.json({
         task,
         graph: graph ?? null,
-        stages: taskStages.map(serializeStage),
+        stages: taskStages.map((row) => ({
+          ...serializeStage(row.stage),
+          graphVersion: row.graphVersion,
+        })),
         spend,
       })
     })

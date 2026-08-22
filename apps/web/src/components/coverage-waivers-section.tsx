@@ -47,6 +47,8 @@ export function CoverageWaiversSection() {
         </p>
       )}
 
+      {repositories.isPending && <p className="text-sm text-muted">Loading repositories…</p>}
+
       {waived?.length === 0 && (
         <p className="text-sm text-muted">No repository has an accepted coverage gap.</p>
       )}
