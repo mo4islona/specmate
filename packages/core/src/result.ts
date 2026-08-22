@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { CONVERSATION_ACTION_KINDS } from './conversations.ts'
 import { HarnessCoverageAssessment } from './harness.ts'
+import { duplicatePrerequisiteKeys, PlanShape } from './plan.ts'
 import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
 import { TaskState } from './state.ts'
 
@@ -74,6 +75,8 @@ export const StageResult = z.object({
   findings: z.array(ReviewFinding).default([]),
   /** Required from a probing stage (planner): the classification `advance()` never derives from prose. */
   harness_coverage: HarnessCoverageAssessment.optional(),
+  /** Required from a planning stage (planner): the size that selects the profile, and what must land first. */
+  plan: PlanShape.optional(),
   /** Short human-facing note rendered in the chat timeline. */
   notes_md: z.string().default(''),
   usage: z
@@ -134,6 +137,9 @@ export function parseStageResult(raw: string): ParsedResult {
   const harnessCoverageError = checkHarnessCoveragePresent(parsed.data)
   if (harnessCoverageError) return { ok: false, error: harnessCoverageError, raw }
 
+  const planError = checkPlanPresent(parsed.data)
+  if (planError) return { ok: false, error: planError, raw }
+
   const decisionsError = checkDecisionsPresent(parsed.data)
   if (decisionsError) return { ok: false, error: decisionsError, raw }
 
@@ -165,6 +171,24 @@ export function checkHarnessCoveragePresent(result: StageResult): string | null 
   if (result.harness_coverage) return null
 
   return `${result.role} must return a harness coverage assessment`
+}
+
+/**
+ * REQ-1306: the size and the prerequisites are data, never prose the system
+ * reads back out of the brief. Gated on `status === 'ok'` for the same reason
+ * the coverage check is: planning's one blocking case asks instead of planning.
+ */
+export function checkPlanPresent(result: StageResult): string | null {
+  if (!ROLE_CONTRACTS[result.role].declaresPlan) return null
+  if (result.status !== 'ok') return null
+  if (!result.plan) return `${result.role} must return a plan`
+
+  const duplicates = duplicatePrerequisiteKeys(result.plan)
+  if (duplicates.length > 0) {
+    return `${result.role} returned duplicate prerequisite key(s): ${duplicates.join(', ')}`
+  }
+
+  return null
 }
 
 /**

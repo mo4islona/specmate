@@ -1,3 +1,4 @@
+import type { PlanSize } from './plan.ts'
 import type { ReviewFinding, ReviewVerdict } from './result.ts'
 import {
   PIPELINE_ROLES,
@@ -305,6 +306,143 @@ export const PIPELINE_CATALOG: Readonly<Record<TaskType, PipelineDefinition>> = 
     bugfix: FEATURE_BUGFIX_PIPELINE,
   },
 )
+
+// ─── profiles ─────────────────────────────────────────────────────────────────
+
+/**
+ * How much process a task gets. `full` is the base definition; every other
+ * profile is a validated reduction of it (REQ-407). The planner's declared
+ * size picks one — the engine bounds the choice, it does not make it.
+ */
+export const PIPELINE_PROFILES = ['full', 'compact'] as const
+export type PipelineProfile = (typeof PIPELINE_PROFILES)[number]
+
+export const PROFILE_FOR_SIZE: Readonly<Record<PlanSize, PipelineProfile>> = {
+  small: 'compact',
+  medium: 'full',
+  large: 'full',
+}
+
+/**
+ * `kickoff_brief` is the planner running a second time over the file it just
+ * wrote — and planning's own output is already checked against every part the
+ * brief requires. `spec_review` is a cross-provider review of a spec that, at
+ * this size, is a handful of scenarios. Both human gates around them survive.
+ */
+const COMPACT_DROPS: readonly TaskState[] = ['kickoff_brief', 'spec_review']
+
+/** Derived from the base rather than written out, so the subsequence property cannot drift. */
+export const FEATURE_BUGFIX_COMPACT: PipelineDefinition = {
+  ...FEATURE_BUGFIX_PIPELINE,
+  id: 'feature-bugfix-compact',
+  nodes: FEATURE_BUGFIX_PIPELINE.nodes.filter((node) => !COMPACT_DROPS.includes(node.key)),
+}
+
+/**
+ * A reduction keeps a subsequence of its base's nodes, unchanged and in order,
+ * and may not strand an edge. Structural defects are `validateDefinition`'s
+ * job; this reports what only a reduction can get wrong, so the message says
+ * "dropped by this profile" rather than "not contained".
+ */
+export function validateReduction(
+  base: PipelineDefinition,
+  reduction: PipelineDefinition,
+): string[] {
+  const defects: string[] = []
+  const at = (element: string, problem: string) => {
+    defects.push(`${reduction.id}: ${element}: ${problem}`)
+  }
+
+  if (reduction.terminal !== base.terminal) {
+    at(`terminal ${reduction.terminal}`, `differs from ${base.id}'s terminal ${base.terminal}`)
+  }
+
+  const kept = new Set(reduction.nodes.map((node) => node.key))
+  const dropped = base.nodes.filter((node) => !kept.has(node.key)).map((node) => node.key)
+
+  let cursor = 0
+  for (const node of reduction.nodes) {
+    const found = base.nodes.findIndex((candidate, i) => i >= cursor && candidate.key === node.key)
+    if (found === -1) {
+      at(`node ${node.key}`, `is not a node of ${base.id} at or after this position`)
+      continue
+    }
+
+    if (JSON.stringify(base.nodes[found]) !== JSON.stringify(node)) {
+      at(`node ${node.key}`, `differs from ${base.id}'s node of the same key`)
+    }
+    cursor = found + 1
+  }
+
+  const strands = (target: TaskState) => dropped.includes(target)
+  for (const node of reduction.nodes) {
+    if (node.kind === 'stage') {
+      if (node.loopEdge && strands(node.loopEdge.target)) {
+        at(`loop edge ${node.key} → ${node.loopEdge.target}`, 'targets a node this profile drops')
+      }
+      continue
+    }
+    if (node.kind === 'action') continue
+
+    if (strands(node.approve)) {
+      at(`gate ${node.key}`, `approve targets "${node.approve}", which this profile drops`)
+    }
+    if (node.redirect && strands(node.redirect.target)) {
+      at(`gate ${node.key}`, `redirect targets "${node.redirect.target}", which this profile drops`)
+    }
+    for (const target of node.rework ?? []) {
+      if (strands(target)) {
+        at(`gate ${node.key}`, `rework targets "${target}", which this profile drops`)
+      }
+    }
+  }
+
+  return defects
+}
+
+/**
+ * Every profile is validated as a definition, and every reduction against its
+ * base — at module import, so a profile that breaks its own graph is a failed
+ * deploy rather than a task stuck between two nodes.
+ */
+export function loadPipelineProfiles<K extends string>(
+  catalog: Readonly<Record<K, Readonly<Record<PipelineProfile, PipelineDefinition>>>>,
+): Readonly<Record<K, Readonly<Record<PipelineProfile, PipelineDefinition>>>> {
+  const defects: string[] = []
+  for (const profiles of Object.values<Readonly<Record<PipelineProfile, PipelineDefinition>>>(
+    catalog,
+  )) {
+    for (const profile of PIPELINE_PROFILES) {
+      const definition = profiles[profile]
+      const structural = validateDefinition(definition)
+      defects.push(...structural)
+      // A definition that is already broken structurally would report the same
+      // stranded edge twice; the reduction check only speaks once it is sound.
+      if (structural.length === 0 && profile !== 'full') {
+        defects.push(...validateReduction(profiles.full, definition))
+      }
+    }
+  }
+  if (defects.length > 0) throw new PipelineDefinitionError(defects)
+
+  return Object.freeze({ ...catalog })
+}
+
+export const PIPELINE_PROFILE_CATALOG: Readonly<
+  Record<TaskType, Readonly<Record<PipelineProfile, PipelineDefinition>>>
+> = loadPipelineProfiles({
+  feature: { full: FEATURE_BUGFIX_PIPELINE, compact: FEATURE_BUGFIX_COMPACT },
+  bugfix: { full: FEATURE_BUGFIX_PIPELINE, compact: FEATURE_BUGFIX_COMPACT },
+})
+
+export function definitionFor(type: TaskType, profile: PipelineProfile): PipelineDefinition {
+  return PIPELINE_PROFILE_CATALOG[type][profile]
+}
+
+/** The definition a declared size selects — what the engine compares a task's pinned graph against. */
+export function definitionForSize(type: TaskType, size: PlanSize): PipelineDefinition {
+  return definitionFor(type, PROFILE_FOR_SIZE[size])
+}
 
 // ─── instantiation ────────────────────────────────────────────────────────────
 

@@ -4,6 +4,9 @@ import {
   bindStageProvider,
   Caps,
   canTransition,
+  definitionFor,
+  definitionForSize,
+  FEATURE_BUGFIX_COMPACT,
   FEATURE_BUGFIX_PIPELINE,
   forwardTarget,
   graphTransitions,
@@ -11,6 +14,7 @@ import {
   instantiateDefinition,
   isRestartable,
   loadPipelineCatalog,
+  loadPipelineProfiles,
   PIPELINE_CATALOG,
   type PinnedGraph,
   type PipelineDefinition,
@@ -20,6 +24,7 @@ import {
   TASK_STATES,
   type TaskState,
   validateDefinition,
+  validateReduction,
 } from '../src/index.ts'
 
 const caps = Caps.parse({})
@@ -681,5 +686,109 @@ describe('advance', () => {
     expect(() => advance(graph, 'human_spec_gate', { status: 'ok' }, [], caps)).toThrow(
       /not a stage node/,
     )
+  })
+})
+
+describe('pipeline profiles', () => {
+  const compact = instantiateDefinition(FEATURE_BUGFIX_COMPACT)
+
+  test('the declared size selects the profile', () => {
+    expect(definitionForSize('feature', 'small')).toBe(FEATURE_BUGFIX_COMPACT)
+    expect(definitionForSize('feature', 'medium')).toBe(FEATURE_BUGFIX_PIPELINE)
+    expect(definitionForSize('bugfix', 'large')).toBe(FEATURE_BUGFIX_PIPELINE)
+    expect(definitionFor('feature', 'full')).toBe(FEATURE_BUGFIX_PIPELINE)
+  })
+
+  test('the compact profile drops the second planner pass and the spec review', () => {
+    const keys = FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key)
+    expect(keys).not.toContain('kickoff_brief')
+    expect(keys).not.toContain('spec_review')
+  })
+
+  test('the compact profile keeps the spine, every human gate, and the code review', () => {
+    const keys = FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key)
+    for (const key of [
+      'planning',
+      'research',
+      'implement',
+      'verify',
+      'code_review',
+      'summarize',
+      'publish',
+      ...HUMAN_GATES,
+    ]) {
+      expect(keys).toContain(key)
+    }
+    expect(FEATURE_BUGFIX_COMPACT.terminal).toBe(FEATURE_BUGFIX_PIPELINE.terminal)
+  })
+
+  test('planning walks straight to the kickoff gate under the compact profile', () => {
+    expect(forwardTarget(compact, 'planning')).toBe('human_kickoff_gate')
+    expect(forwardTarget(graph, 'planning')).toBe('kickoff_brief')
+  })
+
+  test('the compact profile reaches archive through all three gates', () => {
+    let state: TaskState = compact.entry
+    const walked: TaskState[] = [state]
+    for (let step = 0; step < 20 && state !== compact.terminal; step += 1) {
+      const node = compact.nodes.find((candidate) => candidate.key === state)
+      state = node?.kind === 'gate' ? node.approve : forwardTarget(compact, state)
+      expect(canTransition(compact, walked[walked.length - 1] as TaskState, state)).toBe(true)
+      walked.push(state)
+    }
+
+    expect(state).toBe(compact.terminal)
+    for (const gate of HUMAN_GATES) expect(walked).toContain(gate)
+  })
+
+  test('a reduction stranding a gate target is refused, naming the profile', () => {
+    const stranded: PipelineDefinition = {
+      ...FEATURE_BUGFIX_PIPELINE,
+      id: 'stranded',
+      nodes: FEATURE_BUGFIX_PIPELINE.nodes.filter((node) => node.key !== 'research'),
+    }
+
+    expect(validateReduction(FEATURE_BUGFIX_PIPELINE, stranded).join('\n')).toMatch(
+      /stranded.*research.*drops/s,
+    )
+  })
+
+  test('a reduction that reorders its base is refused', () => {
+    const [first, second, ...rest] = FEATURE_BUGFIX_PIPELINE.nodes
+    const reordered: PipelineDefinition = {
+      ...FEATURE_BUGFIX_PIPELINE,
+      id: 'reordered',
+      nodes: [second as StageNode, first as StageNode, ...rest],
+    }
+
+    expect(validateReduction(FEATURE_BUGFIX_PIPELINE, reordered).join('\n')).toContain(
+      'is not a node of feature-bugfix at or after this position',
+    )
+  })
+
+  test('a reduction whose kept node was edited is refused', () => {
+    const edited: PipelineDefinition = {
+      ...FEATURE_BUGFIX_PIPELINE,
+      id: 'edited',
+      nodes: FEATURE_BUGFIX_PIPELINE.nodes.map((node) =>
+        node.key === 'research' ? { ...node, role: 'summarizer' as const } : node,
+      ),
+    }
+
+    expect(validateReduction(FEATURE_BUGFIX_PIPELINE, edited).join('\n')).toContain(
+      "differs from feature-bugfix's node of the same key",
+    )
+  })
+
+  test('loading a broken profile catalog throws naming the defect', () => {
+    const broken: PipelineDefinition = {
+      ...FEATURE_BUGFIX_PIPELINE,
+      id: 'broken',
+      nodes: FEATURE_BUGFIX_PIPELINE.nodes.filter((node) => node.key !== 'implement'),
+    }
+
+    expect(() =>
+      loadPipelineProfiles({ feature: { full: FEATURE_BUGFIX_PIPELINE, compact: broken } }),
+    ).toThrow(/broken.*implement/s)
   })
 })

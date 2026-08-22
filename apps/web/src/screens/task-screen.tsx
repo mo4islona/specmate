@@ -7,8 +7,10 @@ import { DecisionCard } from '../components/decision-card.tsx'
 import { HarnessBadge } from '../components/harness-badge.tsx'
 import { KickoffBrief } from '../components/kickoff-brief.tsx'
 import { ModelBindingsPanel } from '../components/model-bindings-panel.tsx'
+import { PlanBadge } from '../components/plan-badge.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
+import { TaskLineage } from '../components/task-lineage.tsx'
 import { TelemetryChart } from '../components/telemetry-chart.tsx'
 import { mergeTimelineEvents, useTaskStream } from '../hooks/use-task-stream.ts'
 import {
@@ -27,6 +29,7 @@ import {
   listConversations,
   listDecisions,
   listEvents,
+  listTasks,
   postConversationMessage,
   postFeedback,
   type ReworkInput,
@@ -236,6 +239,12 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const decisions = useQuery({
     queryKey: queryKeys.decisions(taskId),
     queryFn: () => listDecisions(taskId),
+  })
+  // Shared with the navigation's own list under the same key: the lineage
+  // needs titles for a handful of ids, not a fetch per id.
+  const tasks = useQuery({
+    queryKey: queryKeys.tasks,
+    queryFn: ({ signal }) => listTasks(signal),
   })
   // The brief is read at the kickoff gate only — fetching it elsewhere would
   // be a document no gate is asking the owner to act on.
@@ -525,6 +534,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             <div className="flex flex-wrap items-center gap-3">
               <StatusChip status={detail.data.task.status} />
               <HarnessBadge status={detail.data.task.harnessStatus} />
+              <PlanBadge size={detail.data.task.planSize} />
               <span className="font-mono text-xs text-muted">{detail.data.task.slug}</span>
             </div>
             <h1 className="mt-3 break-words text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -533,6 +543,11 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             <p className="mt-3 break-all font-mono text-xs leading-6 text-muted">
               {detail.data.task.repoUrl} · {detail.data.task.baseBranch}
             </p>
+            <TaskLineage
+              originTaskId={detail.data.task.originTaskId}
+              blockedBy={detail.data.task.blockedBy}
+              tasks={tasks.data?.tasks}
+            />
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href={`/tasks/${taskId}/artifacts`} className="button-secondary">

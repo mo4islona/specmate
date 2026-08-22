@@ -3,10 +3,11 @@ import {
   ConversationResult,
   checkDecisionsPresent,
   checkHarnessCoveragePresent,
+  checkPlanPresent,
   checkReviseHasFindings,
   parseStageResult,
 } from '../src/result.ts'
-import { ARTIFACT_KINDS, pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
+import { AGENT_ROLES, ARTIFACT_KINDS, pickReviewProvider, ROLE_CONTRACTS } from '../src/roles.ts'
 
 const minimal = {
   schema_version: 1,
@@ -95,17 +96,53 @@ describe('RESULT.json contract', () => {
     expect(parsed.error).toContain('harness coverage')
   })
 
-  test('accepts a planner result carrying its coverage assessment', () => {
+  test('accepts a planner result carrying its coverage assessment and plan', () => {
     const parsed = parseStageResult(
       JSON.stringify({
         ...minimal,
         role: 'planner',
         harness_coverage: { classification: 'missing', evidence_md: 'No tests touch this path.' },
+        plan: { size: 'small' },
       }),
     )
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     expect(parsed.value.harness_coverage?.classification).toBe('missing')
+    expect(parsed.value.plan?.size).toBe('small')
+    expect(parsed.value.plan?.prerequisites).toEqual([])
+  })
+
+  test('rejects a plan-less ok result from the planner, naming the role', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'planner',
+        harness_coverage: { classification: 'adequate', evidence_md: 'An e2e suite covers it.' },
+      }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('planner')
+    expect(parsed.error).toContain('plan')
+  })
+
+  test('rejects two prerequisites sharing one key', () => {
+    const prerequisite = {
+      key: 'ingestion-harness',
+      title: 'Harness',
+      why_md: 'Nothing covers it.',
+    }
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'planner',
+        harness_coverage: { classification: 'missing', evidence_md: 'No tests touch this path.' },
+        plan: { size: 'large', prerequisites: [prerequisite, prerequisite] },
+      }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('ingestion-harness')
   })
 
   test('accepts a coverage-less planner result for the request-does-not-fit case', () => {
@@ -162,6 +199,43 @@ describe('checkHarnessCoveragePresent', () => {
   test('ignores a probing role that has not reached ok status', () => {
     expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'needs_decision' })).toBeNull()
     expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'failed' })).toBeNull()
+  })
+})
+
+describe('checkPlanPresent', () => {
+  const plannerOk = {
+    schema_version: 1 as const,
+    role: 'planner' as const,
+    status: 'ok' as const,
+    artifacts_changed: [],
+    decisions_needed: [],
+    findings: [],
+    notes_md: '',
+    usage: {},
+  }
+
+  test('exactly the planner declares a plan', () => {
+    const declaring = AGENT_ROLES.filter((role) => ROLE_CONTRACTS[role].declaresPlan)
+    expect(declaring).toEqual(['planner'])
+  })
+
+  test('rejects a planning role missing its plan', () => {
+    expect(checkPlanPresent(plannerOk)).toContain('planner')
+  })
+
+  test('accepts a planning role carrying one', () => {
+    expect(
+      checkPlanPresent({ ...plannerOk, plan: { size: 'medium', prerequisites: [] } }),
+    ).toBeNull()
+  })
+
+  test('ignores a role that declares no plan', () => {
+    expect(checkPlanPresent({ ...plannerOk, role: 'researcher' })).toBeNull()
+  })
+
+  test('ignores a planning role that has not reached ok status', () => {
+    expect(checkPlanPresent({ ...plannerOk, status: 'needs_decision' })).toBeNull()
+    expect(checkPlanPresent({ ...plannerOk, status: 'failed' })).toBeNull()
   })
 })
 
