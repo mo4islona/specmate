@@ -503,6 +503,33 @@ export const pullRequests = pgTable(
   (t) => [uniqueIndex('pull_requests_url_idx').on(t.url)],
 )
 
+/**
+ * An answer whose scope is a repository rather than a task (REQ-315). Today
+ * there is exactly one key — an accepted coverage gap — and `key` is what lets
+ * a second durable answer join without a second table.
+ *
+ * Revoking sets `revokedAt` rather than deleting: what the owner accepted, and
+ * when they took it back, both stay readable. The partial unique index is what
+ * keeps "at most one live record" a database guarantee rather than a promise
+ * from the code that writes it.
+ */
+export const repoPolicies = pgTable(
+  'repo_policies',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    repoUrl: text('repo_url').notNull(),
+    key: text().notNull(),
+    value: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    /** The task whose resolution created it; nulled rather than cascaded, so the record outlives it. */
+    originTaskId: uuid('origin_task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('repo_policies_live_idx').on(t.repoUrl, t.key).where(sql`${t.revokedAt} is null`),
+  ],
+)
+
 // ─── self-learning signal ─────────────────────────────────────────────────────
 
 export const feedback = pgTable(
@@ -556,4 +583,5 @@ export type ConversationMessage = typeof conversationMessages.$inferSelect
 export type ConversationAction = typeof conversationActions.$inferSelect
 export type Stage = typeof stages.$inferSelect
 export type Decision = typeof decisions.$inferSelect
+export type RepoPolicy = typeof repoPolicies.$inferSelect
 export type SpecEvent = typeof events.$inferSelect

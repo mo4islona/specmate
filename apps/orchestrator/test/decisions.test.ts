@@ -744,6 +744,95 @@ describeDb('kickoff brief questions', () => {
     expect(open.every((d) => d.blocking === false && d.nodeKey === 'kickoff_brief')).toBe(true)
   })
 
+  test('questions past the cap are refused, and the event names them — REQ-1208, AC-1225', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 2 } })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'planner',
+        status: 'ok',
+        decisions_needed: [
+          ...BRIEF_QUESTIONS,
+          { key: 'rollout', kind: 'question', prompt_md: 'Staged?', options: [], blocking: false },
+          { key: 'metrics', kind: 'question', prompt_md: 'Which?', options: [], blocking: false },
+        ],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    const open = await openDecisions(task.id)
+    expect(open.map((d) => d.key).sort()).toEqual(['auth-scope', 'data-retention'])
+
+    const [refused] = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'decision.refused')))
+    expect(refused?.payload).toMatchObject({ cap: 2, keys: ['rollout', 'metrics'] })
+  })
+
+  test('a blocking request is never refused by the question cap — AC-1226', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 1 } })
+    stagesDispatcher.plan(() =>
+      result({
+        role: 'planner',
+        status: 'needs_decision',
+        decisions_needed: [
+          ...BRIEF_QUESTIONS,
+          {
+            key: 'unplaceable',
+            kind: 'question',
+            prompt_md: 'Where does this belong?',
+            options: [],
+            blocking: true,
+          },
+        ],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    const open = await openDecisions(task.id)
+    expect(open.map((d) => d.key).sort()).toEqual(['auth-scope', 'unplaceable'])
+    expect((await reload(db, task.id)).status).toBe('waiting_human')
+  })
+
+  test('one question asked at two nodes is one decision — REQ-1202, AC-1228', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan((dispatch) =>
+      result({
+        role: 'planner',
+        status: 'ok',
+        decisions_needed: [
+          {
+            key: 'auth-scope',
+            kind: 'question',
+            prompt_md: `Mobile too? (asked at ${dispatch.node.key})`,
+            options: [],
+            blocking: false,
+          },
+        ],
+      }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const open = await openDecisions(task.id)
+    expect(open).toHaveLength(1)
+    expect(open[0]?.nodeKey).toBe('planning')
+    expect(open[0]?.promptMd).toContain('asked at kickoff_brief')
+  })
+
   test('approving the gate resolves every question the brief raised: an answer stands, the rest are dismissed as declined — AC-1310, AC-1311', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'kickoff_brief' })

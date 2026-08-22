@@ -32,6 +32,7 @@ import {
   type PinnedGraph,
   type PlanPrerequisite,
   type ProviderId,
+  partitionRequests,
   RESERVED_STATES,
   type RecordedRound,
   ROLE_CONTRACTS,
@@ -72,6 +73,7 @@ import {
   assertNotSelfDependency,
   COVERAGE_DECISION_KEY,
   COVERAGE_DECISION_NODE_KEY,
+  COVERAGE_POLICY_KEY,
   countRedirects,
   createTask,
   emitEvent,
@@ -85,6 +87,7 @@ import {
   type RunGraphRow,
   raiseDecision,
   recordPlanOutcome,
+  recordPolicy,
   recordRound,
   roundsFor,
   TaskNotFoundError,
@@ -1599,8 +1602,26 @@ export class Engine {
 
       // Every decision requested this run becomes a durable record, whatever
       // the outcome — a non-blocking one is recorded without parking anything.
-      for (const request of result.decisions_needed) {
+      // REQ-1208: questions past the cap are refused, and named, rather than
+      // silently truncated into a list that reads as a short one.
+      const requests = partitionRequests(
+        result.decisions_needed,
+        liveTask.caps.max_questions_per_stage,
+      )
+      for (const request of requests.recorded) {
         await raiseDecision(tx, task.id, row.id, decisionFromRequest(node.key, request))
+      }
+      if (requests.refused.length > 0) {
+        await emitEvent(tx, {
+          taskId: task.id,
+          stageId: row.id,
+          type: 'decision.refused',
+          payload: {
+            node: node.key,
+            cap: liveTask.caps.max_questions_per_stage,
+            keys: requests.refused.map((request) => request.key),
+          },
+        })
       }
 
       // REQ-1401, REQ-1306: a planning role's classification and declared plan
@@ -2997,12 +3018,33 @@ export class Engine {
     return refreshed ?? task
   }
 
-  /** REQ-1403: the write shared by both ways the coverage decision resolves as "proceed". */
+  /**
+   * REQ-1403: the write shared by both ways the coverage decision resolves as
+   * "proceed". REQ-1406: the acceptance is also recorded against the
+   * repository, so the next task inherits it instead of asking again. Both
+   * routes go through here, so neither can record one without the other.
+   */
   private async waiveHarnessStatus(tx: DbClient, taskId: string): Promise<void> {
-    await tx
+    const [waived] = await tx
       .update(tasks)
       .set({ harnessStatus: 'waived', updatedAt: new Date() })
       .where(eq(tasks.id, taskId))
+      .returning({ id: tasks.id, repoUrl: tasks.repoUrl })
+    if (!waived) return
+
+    const policy = await recordPolicy(tx, {
+      repoUrl: waived.repoUrl,
+      key: COVERAGE_POLICY_KEY,
+      value: { waived: true },
+      originTaskId: waived.id,
+    })
+    if (!policy) return
+
+    await emitEvent(tx, {
+      taskId,
+      type: 'policy.recorded',
+      payload: { key: COVERAGE_POLICY_KEY, policyId: policy.id, repoUrl: waived.repoUrl },
+    })
   }
 
   /**

@@ -125,3 +125,23 @@ export function renderPlanChoicePrompt(choice: PlanChoice): string {
 
   return lines.join('\n')
 }
+
+/**
+ * What an inherited acceptance says. It is written already resolved, so this
+ * is a record of what was applied rather than a question — it states the gap,
+ * where the acceptance came from, and how to take it back.
+ */
+export function renderInheritedWaiverPrompt(
+  assessment: HarnessCoverageAssessment,
+  originTitle: string,
+): string {
+  return [
+    `Harness coverage for the area this task touches is **${assessment.classification}**.`,
+    '',
+    assessment.evidence_md.trim(),
+    '',
+    `This repository's coverage gap was already accepted while running "${originTitle}", so this task inherits that acceptance instead of asking again.`,
+    '',
+    'Revoke it in Settings to be asked about the next task in this repository.',
+  ].join('\n')
+}

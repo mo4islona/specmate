@@ -214,6 +214,39 @@ describeDb('task store', () => {
       expect(second.decision).toEqual(first.decision)
     })
 
+    test('two nodes escalating under one key stay two decisions — REQ-1202, AC-1207', async () => {
+      const { task } = await make()
+      const escalation = { ...request, kind: 'escalation' as const, blocking: true }
+
+      const first = await raiseDecision(db, task.id, null, escalation)
+      const second = await raiseDecision(db, task.id, null, {
+        ...escalation,
+        nodeKey: 'implement' as const,
+      })
+
+      expect(second.created).toBe(true)
+      expect(second.decision.id).not.toBe(first.decision.id)
+      expect(second.decision.nodeKey).toBe('implement')
+    })
+
+    test('two nodes asking one non-blocking question stay one decision — REQ-1202, AC-1228', async () => {
+      const { task } = await make()
+      const question = { ...request, blocking: false }
+
+      const first = await raiseDecision(db, task.id, null, question)
+      const second = await raiseDecision(db, task.id, null, {
+        ...question,
+        nodeKey: 'implement' as const,
+        promptMd: 'Asked again, later in the walk',
+      })
+
+      expect(second.created).toBe(false)
+      expect(second.decision.id).toBe(first.decision.id)
+      // The record keeps the node that first raised it; only what is asked changes.
+      expect(second.decision.nodeKey).toBe('research')
+      expect(second.decision.promptMd).toBe('Asked again, later in the walk')
+    })
+
     test('asking again after an answer opens a fresh decision, leaving the old one readable', async () => {
       const { task } = await make()
 
