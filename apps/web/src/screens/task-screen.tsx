@@ -65,12 +65,31 @@ export const EVENT_TITLES: Record<string, string> = {
   'decision.raised': 'Decision raised',
   'decision.answered': 'Decision answered',
   'decision.dismissed': 'Decision dismissed',
+  'decision.refused': 'Questions refused',
+  'decision.inherited': 'Coverage gap inherited',
+  'task.plan_recorded': 'Plan recorded',
+  'task.profile_changed': 'Pipeline profile changed',
+  'coverage_waiver.recorded': 'Coverage gap accepted',
 }
 
 function payloadValue(event: TimelineEvent, key: string): string | null {
   const value = event.payload[key]
 
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/** Payload lists are what several events carry that matters most — the refused keys above all. */
+function payloadList(event: TimelineEvent, key: string): string[] {
+  const value = event.payload[key]
+  if (!Array.isArray(value)) return []
+
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+}
+
+function payloadNumber(event: TimelineEvent, key: string): number | null {
+  const value = event.payload[key]
+
+  return typeof value === 'number' ? value : null
 }
 
 /** Human-facing verb per known tool name; an unrecognized tool falls back to its own name. */
@@ -145,6 +164,56 @@ export function eventDetail(
     const by = actor ? ` by ${actor}` : ''
 
     return decision?.answerMd ? `${verb}${by}: ${decision.answerMd}` : `${verb}${by}.`
+  }
+
+  // REQ-1208: a refused question is only refused out loud if its key is here.
+  // The generic fallback below reads arrays as absent, which would render the
+  // cap as an unexplained line and lose exactly what it was meant to name.
+  if (event.type === 'decision.refused') {
+    const keys = payloadList(event, 'keys')
+    const cap = payloadNumber(event, 'cap')
+    const limit = cap === null ? '' : ` (cap ${cap} per stage)`
+
+    return keys.length > 0
+      ? `Not asked${limit}: ${keys.join(', ')}`
+      : `Questions past the cap were refused${limit}.`
+  }
+
+  if (event.type === 'task.plan_recorded') {
+    const size = payloadValue(event, 'size') ?? 'unknown'
+    const prerequisites = payloadList(event, 'prerequisites')
+    const applied =
+      event.payload.applied === false ? ' — profile already pinned, size not applied' : ''
+    const proposes =
+      prerequisites.length > 0 ? `; proposes ${prerequisites.join(', ')}` : '; no prerequisites'
+
+    return `Planning declared size ${size}${proposes}${applied}.`
+  }
+
+  if (event.type === 'task.profile_changed') {
+    const from = payloadValue(event, 'from') ?? 'the pinned profile'
+    const to = payloadValue(event, 'to') ?? 'a new profile'
+    const size = payloadValue(event, 'size')
+
+    return size
+      ? `Declared size ${size} switched the pipeline from ${from} to ${to}.`
+      : `Pipeline switched from ${from} to ${to}.`
+  }
+
+  if (event.type === 'coverage_waiver.recorded') {
+    const repoUrl = payloadValue(event, 'repoUrl')
+
+    return repoUrl
+      ? `The coverage gap was accepted for ${repoUrl}. Later tasks against it inherit this until a probe finds it adequate, or it is revoked in Settings.`
+      : 'The coverage gap was accepted for this repository.'
+  }
+
+  if (event.type === 'decision.inherited') {
+    const originTaskId = payloadValue(event, 'originTaskId')
+
+    return originTaskId
+      ? `This repository's coverage gap was already accepted on task ${originTaskId.slice(0, 8)}; the task was not asked again.`
+      : "This repository's coverage gap was already accepted; the task was not asked again."
   }
 
   return (
