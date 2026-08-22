@@ -50,19 +50,19 @@ to enforce anything.
   longer multiplies one question by the number of nodes that ask it.
 - `harness-coverage`: the waiver becomes a repository-scoped record a later task inherits, with
   the inheritance visible and reversible.
-- `persistence`: a durable, revocable record scoped to a repository rather than a task.
-- `task-surface`: those records are readable and revocable over REST.
+- `persistence`: the accepted coverage gap becomes a durable, revocable record scoped to a repository rather than a task.
+- `task-surface`: those waivers are readable and revocable over REST.
 - `operator-ui`: the Settings screen lists them and can revoke one.
 
 ## Impact
 
 - `packages/core/src/state.ts`: `max_questions_per_stage` in `Caps`.
 - `packages/core/src/decisions.ts`: the identity rule the store matches on.
-- `packages/db/src/schema.ts` + migration: a `standing_decisions` table — a decision that stays in
-  force after the task that made it ends; one in force per (repository, key).
-- `apps/orchestrator/src/store.ts`: the question cap and its event; the standing-decision read in
-  `recordPlanOutcome`, the write on a waiver, and the revocation an adequate classification
-  performs.
+- `packages/db/src/schema.ts` + migration: a `coverage_waivers` table — the repositories whose
+  harness gap the owner has accepted; at most one in force each.
+- `apps/orchestrator/src/store.ts`: the question cap and its event; the waiver read in
+  `recordPlanOutcome`, the write when one is accepted, and the revocation an adequate
+  classification performs.
 - `apps/api/src/app.ts`: list and revoke endpoints.
 - `apps/web`: a Settings section listing accepted coverage waivers, with a revoke control.
 
@@ -72,10 +72,11 @@ to enforce anything.
   the area the probe judged. The area lives in the probe's prose evidence, and keying durable
   state on prose is keying it on nothing checkable. A later adequate classification anywhere in
   the repository ends the acceptance, which errs toward asking again.
-- **No memory of any other answer.** Only the coverage waiver becomes repository-scoped. Whether a
-  brief's open questions should carry across tasks is a real question with no evidence behind it
-  yet; the table this change adds is general, and a second key can join it when a second answer
-  earns one.
+- **No memory of any other answer.** Only the coverage waiver becomes repository-scoped, and the
+  table holds exactly that — no `key`/`value` pair standing in for durable answers that do not
+  exist. Whether a brief's open questions should carry across tasks is a real question with no
+  evidence behind it yet; when a second durable answer earns its place it will have its own
+  fields, and can have its own table.
 - **No expiry.** Neither wall-clock nor task-count. An acceptance ends when the world it described
   changes or when the owner ends it, and nothing else.
 - **No cap on blocking decisions.** A stage that raises three blocking questions has parked the

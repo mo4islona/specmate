@@ -73,7 +73,6 @@ import {
   assertNotSelfDependency,
   COVERAGE_DECISION_KEY,
   COVERAGE_DECISION_NODE_KEY,
-  COVERAGE_WAIVER_KEY,
   countRedirects,
   createTask,
   emitEvent,
@@ -86,9 +85,9 @@ import {
   planChoiceFor,
   type RunGraphRow,
   raiseDecision,
+  recordCoverageWaiver,
   recordPlanOutcome,
   recordRound,
-  recordStandingDecision,
   roundsFor,
   TaskNotFoundError,
   taskSpend,
@@ -3032,22 +3031,16 @@ export class Engine {
       .returning({ id: tasks.id, repoUrl: tasks.repoUrl })
     if (!waived) return
 
-    const standing = await recordStandingDecision(tx, {
+    const waiver = await recordCoverageWaiver(tx, {
       repoUrl: waived.repoUrl,
-      key: COVERAGE_WAIVER_KEY,
-      value: { waived: true },
       originTaskId: waived.id,
     })
-    if (!standing) return
+    if (!waiver) return
 
     await emitEvent(tx, {
       taskId,
-      type: 'standing_decision.recorded',
-      payload: {
-        key: COVERAGE_WAIVER_KEY,
-        standingDecisionId: standing.id,
-        repoUrl: waived.repoUrl,
-      },
+      type: 'coverage_waiver.recorded',
+      payload: { waiverId: waiver.id, repoUrl: waived.repoUrl },
     })
   }
 

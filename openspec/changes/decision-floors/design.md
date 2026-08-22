@@ -63,22 +63,25 @@ the same key on the same task, whatever node raised it; everything else keeps th
 prompt of the attached record is refreshed exactly as it already is when a retry changes it, so
 the second node's phrasing is not lost under the first's.
 
-### A standing decision, not a repository column
+### A coverage waiver keyed by repository, and nothing more general
 
-The acceptance goes in its own table keyed by `(repo_url, key)` rather than on a `repositories`
-table, because there is no such table: a repository is a URL on a task row. A table keyed by URL
-is the smallest thing that can hold a durable answer, and it generalises — `key` names which
-answer, and today there is exactly one.
+The acceptance goes in its own table keyed by `repo_url` rather than on a `repositories` table,
+because there is no such table: a repository is a URL on a task row.
 
-It is called a **standing decision**: a decision that stays in force after the task that made it
-ends. The name is deliberate. `decisions` is already the system's word for "a thing the owner
-resolved", the inheritance mechanism literally writes one, and the only property that
-distinguishes these is that they do not end with their task. An earlier draft called them
-repository *policies*, which said neither what they are nor who made them.
+`waiver` is the word REQ-1403 and REQ-1405 already use for the task-level version of this —
+"either route SHALL record the acceptance durably on the task as a waiver" — so `coverage_waivers`
+is the same thing with a wider scope, not a new concept. Two earlier drafts named it for its
+mechanics instead (a repository *policy*, then a *standing decision*); both described the shape of
+the record and neither said what it holds.
 
-At most one in force per `(repo_url, key)`, enforced by a partial unique index on the
-non-revoked rows. Revoking sets `revoked_at` rather than deleting: what the owner accepted, and
-when they took it back, stays readable.
+It carries no `key`/`value` pair. A generic table would be able to hold a second kind of durable
+answer, but there is no second kind, the one value would be a boolean dressed as a document, and
+a route called `/standing-decisions` cannot tell a reader what it is about. When a second durable
+answer appears it will have its own fields and can have its own table.
+
+At most one in force per repository, enforced by a partial unique index on the non-revoked rows.
+Revoking sets `revoked_at` rather than deleting: what the owner accepted, and when they took it
+back, stays readable.
 
 ### Inheritance is a resolved decision, not a new kind of thing
 
@@ -116,9 +119,9 @@ situation the owner already accepted, and re-raising on it is precisely the loop
 
 ## Migration Plan
 
-One additive migration: the `standing_decisions` table and its partial unique index. Nothing to
+One additive migration: the `coverage_waivers` table and its partial unique index. Nothing to
 backfill — an existing task's `harnessStatus = 'waived'` stays exactly what it was, a fact about
-that task. It does not retroactively become a standing decision: the owner accepted it for that
+that task. It does not retroactively become a repository waiver: the owner accepted it for that
 task, under that task's evidence, and inventing a repository-wide acceptance out of it would be
 the system deciding something the owner never said.
 

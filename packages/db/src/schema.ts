@@ -504,32 +504,29 @@ export const pullRequests = pgTable(
 )
 
 /**
- * A decision that stands after the task that made it ends: its scope is a
- * repository, not a task (REQ-315). Today there is exactly one key — an
- * accepted coverage gap — and `key` is what lets a second durable answer join
- * without a second table.
+ * The owner's acceptance of a repository's harness gap, kept where the next
+ * task against that repository can find it (REQ-315). The task-level waiver
+ * (`tasks.harnessStatus = 'waived'`) says this task proceeded without adequate
+ * coverage; this says the repository has been accepted as under-covered, so
+ * the next task inherits the answer instead of asking for it again.
  *
  * Revoking sets `revokedAt` rather than deleting: what the owner accepted, and
  * when they took it back, both stay readable. The partial unique index is what
- * keeps "at most one in force" a database guarantee rather than a promise from
- * the code that writes it.
+ * keeps "at most one in force per repository" a database guarantee rather than
+ * a promise from the code that writes it.
  */
-export const standingDecisions = pgTable(
-  'standing_decisions',
+export const coverageWaivers = pgTable(
+  'coverage_waivers',
   {
     id: uuid().primaryKey().defaultRandom(),
     repoUrl: text('repo_url').notNull(),
-    key: text().notNull(),
-    value: jsonb().$type<Record<string, unknown>>().notNull().default({}),
-    /** The task whose resolution made it; nulled rather than cascaded, so the record outlives it. */
+    /** The task whose resolution accepted it; nulled rather than cascaded, so the waiver outlives it. */
     originTaskId: uuid('origin_task_id').references(() => tasks.id, { onDelete: 'set null' }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('standing_decisions_in_force_idx')
-      .on(t.repoUrl, t.key)
-      .where(sql`${t.revokedAt} is null`),
+    uniqueIndex('coverage_waivers_in_force_idx').on(t.repoUrl).where(sql`${t.revokedAt} is null`),
   ],
 )
 
@@ -586,5 +583,5 @@ export type ConversationMessage = typeof conversationMessages.$inferSelect
 export type ConversationAction = typeof conversationActions.$inferSelect
 export type Stage = typeof stages.$inferSelect
 export type Decision = typeof decisions.$inferSelect
-export type StandingDecision = typeof standingDecisions.$inferSelect
+export type CoverageWaiver = typeof coverageWaivers.$inferSelect
 export type SpecEvent = typeof events.$inferSelect

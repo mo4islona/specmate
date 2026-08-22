@@ -29,8 +29,10 @@ import {
 } from '@specmate/core'
 import {
   type Conversation,
+  type CoverageWaiver,
   conversationMessages,
   conversations,
+  coverageWaivers,
   type Database,
   type DbClient,
   type Decision,
@@ -40,9 +42,7 @@ import {
   iterations,
   runGraphs,
   type StageUsage,
-  type StandingDecision,
   stages,
-  standingDecisions,
   type Task,
   tasks,
 } from '@specmate/db'
@@ -624,7 +624,7 @@ export async function recordPlanOutcome(
   // adequate classification ends it rather than leaving it to shadow a
   // repository that has since grown a harness.
   if (assessment?.classification === 'adequate') {
-    await revokeStandingDecisionInForce(db, task.repoUrl, COVERAGE_WAIVER_KEY)
+    await revokeCoverageWaiverInForce(db, task.repoUrl)
   }
 
   const inherited =
@@ -666,8 +666,8 @@ async function inheritCoverageWaiver(
   stageId: string,
   assessment: HarnessCoverageAssessment,
 ): Promise<boolean> {
-  const standing = await decisionInForce(db, task.repoUrl, COVERAGE_WAIVER_KEY)
-  if (!standing) return false
+  const waiver = await coverageWaiverInForce(db, task.repoUrl)
+  if (!waiver) return false
 
   await db
     .update(tasks)
@@ -689,11 +689,11 @@ async function inheritCoverageWaiver(
     .limit(1)
   if (existing) return true
 
-  const origin = standing.originTaskId
+  const origin = waiver.originTaskId
     ? await db
         .select({ title: tasks.title })
         .from(tasks)
-        .where(eq(tasks.id, standing.originTaskId))
+        .where(eq(tasks.id, waiver.originTaskId))
         .limit(1)
     : []
   const from = origin[0]?.title ?? 'an earlier task'
@@ -717,11 +717,7 @@ async function inheritCoverageWaiver(
     taskId: task.id,
     stageId,
     type: 'decision.inherited',
-    payload: {
-      key: COVERAGE_WAIVER_KEY,
-      standingDecisionId: standing.id,
-      originTaskId: standing.originTaskId,
-    },
+    payload: { waiverId: waiver.id, originTaskId: waiver.originTaskId },
   })
 
   return true
@@ -762,83 +758,64 @@ export async function dismissCoverageDecision(
   })
 }
 
-/** The one repository-scoped answer this system records today (REQ-1406). */
-export const COVERAGE_WAIVER_KEY = 'harness-coverage'
-
-/** The live record for a repository and key, or null when nothing is in force. */
-export async function decisionInForce(
+/**
+ * REQ-1406: the acceptance in force for a repository, or null when the owner
+ * has not accepted its gap (or has taken the acceptance back).
+ */
+export async function coverageWaiverInForce(
   db: DbClient,
   repoUrl: string,
-  key: string,
-): Promise<StandingDecision | null> {
-  const [standing] = await db
+): Promise<CoverageWaiver | null> {
+  const [waiver] = await db
     .select()
-    .from(standingDecisions)
-    .where(
-      and(
-        eq(standingDecisions.repoUrl, repoUrl),
-        eq(standingDecisions.key, key),
-        isNull(standingDecisions.revokedAt),
-      ),
-    )
+    .from(coverageWaivers)
+    .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
     .limit(1)
 
-  return standing ?? null
+  return waiver ?? null
 }
 
 /**
- * AC-1427: the partial unique index is what makes "one live record" true, so
- * a second acceptance defers to the one already in force rather than racing
- * it. The first acceptance is the one that names the task it came from.
+ * AC-1427: the partial unique index is what makes "one in force" true, so a
+ * second acceptance defers to the one already there rather than racing it.
+ * The first acceptance is the one that names the task it came from.
  */
-export async function recordStandingDecision(
+export async function recordCoverageWaiver(
   db: DbClient,
-  input: { repoUrl: string; key: string; value?: Record<string, unknown>; originTaskId?: string },
-): Promise<StandingDecision | null> {
-  const [standing] = await db
-    .insert(standingDecisions)
-    .values({
-      repoUrl: input.repoUrl,
-      key: input.key,
-      value: input.value ?? {},
-      originTaskId: input.originTaskId ?? null,
-    })
+  input: { repoUrl: string; originTaskId?: string },
+): Promise<CoverageWaiver | null> {
+  const [waiver] = await db
+    .insert(coverageWaivers)
+    .values({ repoUrl: input.repoUrl, originTaskId: input.originTaskId ?? null })
     .onConflictDoNothing()
     .returning()
 
-  return standing ?? null
+  return waiver ?? null
 }
 
-/** Revoking marks the record; what was accepted and when it ended both stay readable. */
-export async function revokeStandingDecision(
+/** Revoking marks the waiver; what was accepted and when it ended both stay readable. */
+export async function revokeCoverageWaiver(
   db: DbClient,
   id: string,
-): Promise<StandingDecision | null> {
+): Promise<CoverageWaiver | null> {
   const [revoked] = await db
-    .update(standingDecisions)
+    .update(coverageWaivers)
     .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(standingDecisions.id, id), isNull(standingDecisions.revokedAt)))
+    .where(and(eq(coverageWaivers.id, id), isNull(coverageWaivers.revokedAt)))
     .returning()
 
   return revoked ?? null
 }
 
-/** Revokes whatever is live for a repository and key; a no-op when nothing is. */
-export async function revokeStandingDecisionInForce(
+/** Revokes whatever a repository has in force; a no-op when it has nothing. */
+export async function revokeCoverageWaiverInForce(
   db: DbClient,
   repoUrl: string,
-  key: string,
-): Promise<StandingDecision | null> {
+): Promise<CoverageWaiver | null> {
   const [revoked] = await db
-    .update(standingDecisions)
+    .update(coverageWaivers)
     .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(standingDecisions.repoUrl, repoUrl),
-        eq(standingDecisions.key, key),
-        isNull(standingDecisions.revokedAt),
-      ),
-    )
+    .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
     .returning()
 
   return revoked ?? null

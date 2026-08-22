@@ -1,5 +1,5 @@
 {
-  "id": "9e33ea0c-0b12-41e2-9929-b9105cc0a8d6",
+  "id": "fd636d88-ff6a-44b9-91af-f49b3eb1f133",
   "prevId": "57f8a3c0-0642-40da-8e3a-eb37d3aaa5b9",
   "version": "7",
   "dialect": "postgresql",
@@ -678,6 +678,89 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.coverage_waivers": {
+      "name": "coverage_waivers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "repo_url": {
+          "name": "repo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin_task_id": {
+          "name": "origin_task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "coverage_waivers_in_force_idx": {
+          "name": "coverage_waivers_in_force_idx",
+          "columns": [
+            {
+              "expression": "repo_url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"coverage_waivers\".\"revoked_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "coverage_waivers_origin_task_id_tasks_id_fk": {
+          "name": "coverage_waivers_origin_task_id_tasks_id_fk",
+          "tableFrom": "coverage_waivers",
+          "tableTo": "tasks",
+          "columnsFrom": [
+            "origin_task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1773,108 +1856,6 @@
           "tableTo": "conversation_actions",
           "columnsFrom": [
             "interruption_action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.standing_decisions": {
-      "name": "standing_decisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "repo_url": {
-          "name": "repo_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "origin_task_id": {
-          "name": "origin_task_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "standing_decisions_in_force_idx": {
-          "name": "standing_decisions_in_force_idx",
-          "columns": [
-            {
-              "expression": "repo_url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"standing_decisions\".\"revoked_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "standing_decisions_origin_task_id_tasks_id_fk": {
-          "name": "standing_decisions_origin_task_id_tasks_id_fk",
-          "tableFrom": "standing_decisions",
-          "tableTo": "tasks",
-          "columnsFrom": [
-            "origin_task_id"
           ],
           "columnsTo": [
             "id"
