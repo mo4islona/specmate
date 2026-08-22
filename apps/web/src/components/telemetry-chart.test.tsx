@@ -127,7 +127,7 @@ describe('task telemetry chart', () => {
       />,
     )
 
-    expect(rendered).toContain('Task telemetry')
+    expect(rendered).toContain('Budget trace by attempt')
     expect(rendered).toContain('Conversation / attempt 1')
     expect(rendered).toContain('Conversation / attempt 2')
     expect(rendered).toContain('$0.0000')

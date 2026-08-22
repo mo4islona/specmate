@@ -191,12 +191,9 @@ export function TelemetryChart({
   const absentCostCount = recorded.filter((attempt) => attempt.costUsd === null).length
 
   return (
-    <section className="panel p-4 sm:p-5">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <p className="micro-label text-cyan">Task telemetry</p>
-          <h2 className="mt-2 text-lg font-semibold">Budget trace by attempt</h2>
-        </div>
+    <section className="border-t border-border p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="micro-label text-muted">Budget trace by attempt</p>
         <p className="font-mono text-xs text-muted">
           ${recordedCost.toFixed(4)} recorded
           {absentCostCount > 0 ? ` · ${absentCostCount} cost absent` : ''}
