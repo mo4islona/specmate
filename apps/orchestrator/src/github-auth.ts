@@ -166,7 +166,10 @@ export async function githubLogin(options: {
 
   const fetcher = options.fetch ?? fetch
   const device = await requestDeviceCode(fetcher, options.clientId)
-  options.log(`Open ${device.verification_uri} and enter code ${device.user_code}`)
+  const validFor = Math.round(device.expires_in / 60)
+  options.log(
+    `Open ${device.verification_uri} and enter code ${device.user_code} — valid for ${validFor} minutes`,
+  )
   const token = await pollDeviceToken(fetcher, options.clientId, device)
   await saveGitHubAuth(options.db, authFromTokenResponse(token))
   options.log('GitHub authorization stored')

@@ -29,6 +29,12 @@ Not a CI/CD system — CI stays where it already is. Not multi-user — one owne
 provider credentials. Nothing merges to a protected branch on its own; a human always
 approves before that happens.
 
+And not a service you run for other people. SpecMate authenticates to Claude with your own
+subscription seat, which is what makes a self-hosted agent team affordable in the first place.
+That seat is personal: use it for your own orchestrator, not to run SpecMate on someone else's
+behalf and not to resell access to Claude. If you want it for something commercial, bill per
+token with an API key instead — [`docs/install.md`](docs/install.md) covers the switch.
+
 ## Status
 
 Under active development. Phase 1 is in progress: task intake, the orchestrator loop, and
@@ -37,15 +43,11 @@ See [`docs/plan.md`](docs/plan.md) for the full architecture and roadmap, and
 [`openspec/changes/`](openspec/changes/) for what's currently being built — SpecMate is
 developed through OpenSpec from day one.
 
-## Quick start
+## Running it
 
-```bash
-cp .env.example .env          # set POSTGRES_PASSWORD, and SPECMATE_PASSWORD for production
-docker compose up -d --build  # postgres → migrate → api, orchestrator, web
-```
-
-The web client is on `http://127.0.0.1:5173`, the API on `http://127.0.0.1:4000`. Every port
-binds to loopback: the service is meant to be reached over a tailnet, not the open internet.
+`./install.sh` sets up a fresh box and tells you what it needs as it goes. It's resumable:
+run it again and it re-checks each step and continues from wherever it stopped. See
+[`docs/install.md`](docs/install.md) for what the steps are and how to fix one that goes red.
 
 ## Layout
 
@@ -62,6 +64,8 @@ packages/
 roles/           the role prompts, read by the orchestrator when it assembles a prompt
 runner/          the runner image: a provider CLI and nothing of SpecMate
 openspec/        the changes this repo is built from
+install.sh       first-run installer; every step is a check plus a fix
+docs/install.md  what the installer sets up, and how to fix a step that goes red
 docs/plan.md     the full architecture and roadmap
 ```
 

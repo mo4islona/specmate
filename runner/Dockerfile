@@ -27,6 +27,12 @@ RUN test -n "$CLAUDE_CODE_VERSION" \
 RUN test -n "$MISE_VERSION" \
   || (echo "build arg MISE_VERSION is required (pin mise)" >&2 && exit 1)
 
+# Editing the pins in .env changes nothing until something rebuilds this image.
+# Recording them here is what lets a caller tell the two apart without starting
+# a container.
+LABEL com.specmate.claude-code-version="${CLAUDE_CODE_VERSION}" \
+  com.specmate.mise-version="${MISE_VERSION}"
+
 # The language runtimes themselves come from the repository through mise.
 # These packages are the common baseline needed to fetch them and build native
 # dependencies without adding repository-specific system libraries.

@@ -8,6 +8,8 @@ dist/
 # runtime state
 workspaces/
 .data/
+# host facts written by install.sh — the docker group id differs per machine
+docker-compose.override.yml
 
 # tooling
 .DS_Store
