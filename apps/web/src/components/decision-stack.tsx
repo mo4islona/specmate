@@ -11,6 +11,8 @@ type CardHandlers = Pick<
 interface DecisionStackProps {
   readonly decisions: readonly DecisionItem[]
   readonly label: string
+  /** Passed through: the expanded card's answer is typed in the console, not in the card. */
+  readonly answerInConsole?: boolean
   readonly parked: boolean
   readonly busy: (decisionId: string) => boolean
   readonly error: (decisionId: string) => string | undefined
@@ -25,6 +27,7 @@ interface DecisionStackProps {
 export function DecisionStack({
   decisions,
   label,
+  answerInConsole = false,
   parked,
   busy,
   error,
@@ -44,6 +47,7 @@ export function DecisionStack({
               key={decision.id}
               decision={decision}
               parkedOnThis={decision.blocking && parked}
+              answerInConsole={answerInConsole}
               busy={busy(decision.id)}
               error={error(decision.id)}
               {...handlers(decision)}

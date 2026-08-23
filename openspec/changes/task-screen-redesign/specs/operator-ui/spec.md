@@ -7,11 +7,14 @@
 
 ### Requirement: REQ-919 — The task's thread is what people said
 
-The task view's thread SHALL carry only what a person said or was asked of them: questions
-raised for the owner, the owner's answers and comments, the guide's replies, and the outcome of
-each gate. Stage lifecycle, tool activity, accepted commits, durations, token use, and cost MUST
-NOT appear in the thread — they belong to the pipeline node that produced them, and are read
-there (REQ-914). Every entry SHALL name who wrote it and when. A question the owner has already
+The task view's thread SHALL carry only what a person said, what was asked of them, and the
+outcomes addressed to them: questions raised for the owner, the owner's answers and comments, the
+guide's replies, the outcome of each gate, and a run whose failure is still the last word at its
+node. A failure a later attempt recovered from MUST NOT appear — it is the machine's own record,
+not a thing the owner was told. Stage lifecycle, tool activity, accepted commits, durations, token
+use, and cost MUST NOT appear in the thread either: they belong to the pipeline node that produced
+them, and are read there (REQ-914). A line the thread carries about a run SHALL offer that run's
+log rather than explaining itself in place. Every entry SHALL name who wrote it and when. A question the owner has already
 resolved SHALL be rendered as its exchange in no more than two clamped lines with a control that
 opens the whole of it, and MUST NOT be presented with the border, label, or resolution footer
 that marks a question still open (REQ-912). The thread SHALL be one scrolling region: no part of
@@ -38,6 +41,11 @@ thing to say SHALL show that one entry, with no placeholder and no empty state o
 
 - **WHEN** a stage starts, reports activity, and is accepted with a commit
 - **THEN** the thread SHALL gain no entry for any of it, and that stage's node SHALL carry all of it
+
+#### Scenario: AC-969 — A stop is addressed to the owner; a recovered failure is not
+
+- **WHEN** one attempt at a node fails and a later attempt at the same node is accepted
+- **THEN** the thread SHALL carry no entry for that failure, and a failure that no later attempt recovered from SHALL read as one line offering that run's log
 
 ### Requirement: REQ-920 — The task is one page, and its surfaces are tabs
 
@@ -81,7 +89,11 @@ is open, it is the answer to the question shown, which SHALL be presented direct
 input with a way to move between questions when more than one is open; at a gate, it is the
 gate's comment, offered beside the gate's own actions (REQ-905); while a stage stands interrupted
 or stopped, it is guidance carried into the restart (REQ-914); when nothing is running and the
-pipeline has more to do, it is guidance for the node that runs next. Where the destination is a
+pipeline has more to do, it is guidance for the node that runs next. A discussion the owner opened
+from a question SHALL take the input for as long as it is open, with a control that closes it and
+hands the input back — opening a discussion is an action on a specific question, not a mode set
+before typing, and the owner MUST NOT be able to reach the guide any other way while no Guide
+surface exists. Where the destination is a
 pipeline node, the text SHALL be recorded as guidance targeted at that node, and the view SHALL
 state that it is read on that node's next run — it MUST NOT claim to reach a run already under
 way. Whatever the destination, text the owner sent SHALL appear in the thread (REQ-919). Where
@@ -108,6 +120,11 @@ restore one rather than accepting text that reaches nobody.
 
 - **WHEN** the task is paused with its budget spent
 - **THEN** the input SHALL be unavailable, SHALL state that nothing will run until the cap moves, and SHALL offer raising it
+
+#### Scenario: AC-970 — A discussion takes the input while it is open
+
+- **WHEN** the owner opens the discussion on an unresolved question
+- **THEN** the one input SHALL address that discussion, SHALL say so, and SHALL offer closing it to go back to answering
 
 ## MODIFIED Requirements
 

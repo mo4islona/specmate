@@ -120,3 +120,57 @@ test('a model id is shortened to the name, not the release stamp', () => {
   expect(shortModel('claude-haiku-4-5-20251001')).toBe('haiku-4-5')
   expect(shortModel('claude-opus-5')).toBe('opus-5')
 })
+
+describe('stopped nodes (REQ-914)', () => {
+  test('a failed attempt is stopped, and says how many times it failed', () => {
+    const nodes = buildPipelineNodes({
+      nodes: NODES,
+      stages: [
+        stage({ id: 's1', nodeKey: 'implement', attempt: 0, status: 'failed' }),
+        stage({ id: 's2', nodeKey: 'implement', attempt: 1, status: 'failed' }),
+        stage({ id: 's3', nodeKey: 'implement', attempt: 2, status: 'failed' }),
+      ],
+      status: 'failed',
+      resumeStatus: 'implement',
+      modelBindings: BINDINGS,
+    })
+    const implement = nodes.find((node) => node.key === 'implement')
+
+    expect(implement?.state).toBe('stopped')
+    expect(implement?.stoppedReason).toBe('failed 3 times')
+  })
+
+  test('an interrupted run is stopped, and a failed cleanup says so', () => {
+    const nodes = buildPipelineNodes({
+      nodes: NODES,
+      stages: [
+        stage({
+          id: 's1',
+          nodeKey: 'implement',
+          status: 'interrupted',
+          interruptionCleanupStatus: 'failed',
+        }),
+      ],
+      status: 'paused',
+      resumeStatus: 'implement',
+      modelBindings: BINDINGS,
+    })
+
+    expect(nodes.find((node) => node.key === 'implement')?.stoppedReason).toBe(
+      'stopped · cleanup failed',
+    )
+  })
+
+  test('a node that has not run carries no reason to state', () => {
+    const nodes = buildPipelineNodes({
+      nodes: NODES,
+      stages: [],
+      status: 'research',
+      resumeStatus: null,
+      modelBindings: BINDINGS,
+    })
+
+    expect(nodes.find((node) => node.key === 'implement')?.state).toBe('pending')
+    expect(nodes.find((node) => node.key === 'implement')?.stoppedReason).toBeNull()
+  })
+})

@@ -5,7 +5,7 @@ import {
   type PipelineNodeView,
   shortModel,
 } from '../lib/task-pipeline.ts'
-import { formatDuration, formatTokens, stageDuration, stageTokens } from '../lib/task-thread.ts'
+import { formatDuration, stageDuration } from '../lib/task-thread.ts'
 import { CommitRef } from './commit-ref.tsx'
 
 interface PipelineRailProps {
@@ -20,38 +20,35 @@ const DOT_CLASSES: Record<NodeState, string> = {
   done: 'bg-phosphor/40',
   running: 'bg-phosphor dot-live',
   awaiting: 'bg-amber dot-live',
-  failed: 'bg-danger',
-  stopped: 'bg-amber/50',
+  stopped: 'bg-danger',
   pending: 'border border-border-bright bg-ground',
-}
-
-const STATE_LABELS: Record<NodeState, string> = {
-  done: '',
-  running: 'running',
-  awaiting: 'you',
-  failed: 'failed',
-  stopped: 'stopped',
-  pending: '',
 }
 
 const STATE_TEXT: Record<NodeState, string> = {
   done: 'text-muted',
   running: 'text-phosphor',
   awaiting: 'text-amber',
-  failed: 'text-danger',
-  stopped: 'text-amber',
+  stopped: 'text-danger',
   pending: 'text-muted',
 }
 
-/** Done stages trade their status word for the one number the owner asks of them: how long it took. */
+/**
+ * A finished node trades its status word for the one number the owner asks of
+ * it; a stopped node states the reason in the same slot, because a node that
+ * quietly reverts to looking unstarted is the mush this pass removes.
+ */
 function trailingLabel(node: PipelineNodeView): string {
+  if (node.state === 'stopped') return node.stoppedReason ?? 'stopped'
+  if (node.state === 'running') return 'running'
+  if (node.state === 'awaiting') return 'waiting on you'
+
   if (node.state === 'done' && node.latest) {
     const duration = stageDuration(node.latest)
 
     return duration === null ? '' : formatDuration(duration)
   }
 
-  return STATE_LABELS[node.state]
+  return ''
 }
 
 export function PipelineRail({
@@ -61,6 +58,16 @@ export function PipelineRail({
   selectedKey,
   onSelect,
 }: PipelineRailProps) {
+  // Everything up to the last node that has something to say is drawn; the
+  // unstarted tail is one line naming how many there are. Ten empty circles
+  // were taking a column to report that nothing had happened in them.
+  const lastTold = nodes.reduce(
+    (last, node, index) => (node.state === 'pending' ? last : index),
+    -1,
+  )
+  const told = nodes.slice(0, lastTold + 1)
+  const folded = nodes.slice(lastTold + 1)
+
   return (
     <section aria-label="Pinned pipeline">
       <div className="flex items-baseline justify-between gap-3">
@@ -76,13 +83,13 @@ export function PipelineRail({
       </div>
 
       <ol className="mt-3">
-        {nodes.map((node, index) => {
+        {told.map((node, index) => {
           const selected = selectedKey === node.key
           const trailing = trailingLabel(node)
 
           return (
             <li key={node.key} className="relative pl-5">
-              {index < nodes.length - 1 && (
+              {index < told.length - 1 && (
                 <span
                   className="absolute left-[5px] top-3 h-full w-px bg-border"
                   aria-hidden="true"
@@ -119,16 +126,28 @@ export function PipelineRail({
                 )}
               </button>
 
-              {selected && <NodeDetail node={node} baseline={baseline} repoUrl={repoUrl} />}
+              {selected && <NodeFacts node={node} baseline={baseline} repoUrl={repoUrl} />}
             </li>
           )
         })}
       </ol>
+
+      {folded.length > 0 && (
+        <p className="mt-1 pl-5 font-mono text-[0.66rem] leading-5 text-muted">
+          →{' '}
+          {folded
+            .slice(0, 3)
+            .map((node) => node.label)
+            .join(', ')}
+          {folded.length > 3 && `, +${folded.length - 3} more`}
+        </p>
+      )}
     </section>
   )
 }
 
-function NodeDetail({
+/** The one fact the rail keeps inline: which role, and the binding where it departs from the baseline. */
+function NodeFacts({
   node,
   baseline,
   repoUrl,
@@ -138,10 +157,10 @@ function NodeDetail({
   repoUrl: string
 }) {
   const overridden = !isBaselineBinding(node.binding, baseline)
-  const numbered = node.runs.length > 1
+  const commit = node.latest?.acceptedCommit
 
   return (
-    <div className="mb-2 ml-0 space-y-1.5 pb-1 text-[0.7rem] leading-5">
+    <div className="mb-2 space-y-1 pb-1 text-[0.7rem] leading-5">
       {node.role && (
         <p className="font-mono text-muted">
           {node.role}
@@ -152,26 +171,10 @@ function NodeDetail({
           )}
         </p>
       )}
-
-      {node.runs.map((run, index) => {
-        const duration = stageDuration(run)
-        const tokens = stageTokens(run)
-        const cost = run.telemetry?.costUsd ?? null
-
-        return (
-          <p key={run.id} className="flex flex-wrap items-baseline gap-x-2 font-mono text-muted">
-            {numbered && <span className="text-text">run {index + 1}</span>}
-            <span>{run.status}</span>
-            {duration !== null && <span>{formatDuration(duration)}</span>}
-            {tokens !== null && <span>{formatTokens(tokens)} tok</span>}
-            {cost !== null && <span>${cost.toFixed(2)}</span>}
-            {run.acceptedCommit && <CommitRef sha={run.acceptedCommit} repoUrl={repoUrl} />}
-          </p>
-        )
-      })}
-
-      {node.runs.length === 0 && node.kind === 'stage' && (
-        <p className="font-mono text-muted">not started</p>
+      {commit && (
+        <p className="font-mono text-muted">
+          <CommitRef sha={commit} repoUrl={repoUrl} />
+        </p>
       )}
     </div>
   )
