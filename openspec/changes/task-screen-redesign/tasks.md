@@ -1,4 +1,4 @@
-## 1. Thread grouping (REQ-918)
+## 1. Thread grouping (REQ-919)
 
 - [x] 1.1 Add `apps/web/src/lib/task-thread.ts`: the event vocabulary (titles, tones, the
       silent set), the activity/detail/label helpers moved off the screen, and `buildThread`

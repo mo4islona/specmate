@@ -36,7 +36,7 @@ and what has this task been doing?* — and leaves the underlying contract untou
 - `operator-ui` REQ-914 is amended: an accepted commit is rendered as its short form,
   linked to the commit on hosts whose web address is derivable, with the full hash
   available on the element.
-- `operator-ui` gains REQ-918: the timeline is grouped into per-stage chapters — the task's
+- `operator-ui` gains REQ-919: the timeline is grouped into per-stage chapters — the task's
   history as a chaptered conversation. Only the newest chapter is open; the rest collapse to
   one line each carrying that stage's duration, tokens, cost, and commit. Owner comments and
   conversation turns fall into the chapter of the stage that was running when they were
@@ -57,7 +57,7 @@ and what has this task been doing?* — and leaves the underlying contract untou
 - `operator-ui`: REQ-914's pipeline readout becomes a pinned rail with per-node status,
   activation, role and departing model binding; attempt numbering and commit rendering
   change as above. REQ-912's decision cards move to where the owner acts while open. A new
-  REQ-918 defines the chaptered thread. Every other requirement is unchanged.
+  REQ-919 defines the chaptered thread. Every other requirement is unchanged.
 
 ## Impact
 

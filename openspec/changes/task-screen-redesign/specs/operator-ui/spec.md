@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: REQ-918 — The task's history reads as a conversation, chaptered by stage
+### Requirement: REQ-919 — The task's history reads as a conversation, chaptered by stage
 
 The task view SHALL group its timeline into chapters, one per stage attempt, each naming the
 stage it covers and carrying that attempt's duration, token use, cost, and accepted commit
@@ -17,17 +17,17 @@ scroll the view away from an earlier chapter the owner is reading. Selecting one
 artifacts SHALL render it in the thread's place, leaving the pipeline, spend, and gate controls
 standing. Chapters and their controls SHALL be operable on a phone-sized viewport.
 
-#### Scenario: AC-950 — Going back to an earlier stage
+#### Scenario: AC-958 — Going back to an earlier stage
 
 - **WHEN** the owner activates an earlier stage in the pinned pipeline
 - **THEN** that stage's chapter SHALL open and come into view without leaving the task view
 
-#### Scenario: AC-951 — History does not grow without end
+#### Scenario: AC-959 — History does not grow without end
 
 - **WHEN** the owner opens a task whose pipeline has finished several stages
 - **THEN** every chapter but the newest SHALL be collapsed to one line stating that stage's duration, token use, and cost
 
-#### Scenario: AC-952 — A comment lands in the run it is about
+#### Scenario: AC-960 — A comment lands in the run it is about
 
 - **WHEN** the owner comments while a stage is running
 - **THEN** that comment SHALL appear inside that stage's chapter rather than in a chapter of its own
@@ -114,7 +114,7 @@ once. An attempt SHALL be numbered only where its node has run more than once. A
 commit SHALL be rendered in short form with its full value available, linked to the commit
 wherever the repository's web address is derivable. Its chronological timeline SHALL show
 durable stage, stop/cleanup/restart, conversation, action, decision, and accepted-artifact
-events, grouped per REQ-918. It MUST NOT present a running attempt's uncommitted file edits as
+events, grouped per REQ-919. It MUST NOT present a running attempt's uncommitted file edits as
 accepted changes; new code or artifact content becomes visible only after the stage result and
 commit are accepted. The transcript, pipeline, timeline, composer, stop/restart, and confirmation
 controls SHALL be operable on a phone-sized viewport and update from task events without reload.
