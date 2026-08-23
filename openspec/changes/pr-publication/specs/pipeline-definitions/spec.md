@@ -43,3 +43,9 @@ its terminal.
 
 - **WHEN** the shipped feature/bugfix definition is inspected
 - **THEN** the final human gate's approval target SHALL be the publish action node, and the publish node's forward edge SHALL be the terminal
+
+#### Scenario: AC-420 — One node checks an implementation
+
+- **WHEN** the shipped feature/bugfix definition's nodes between implementation and summarisation are inspected
+- **THEN** exactly one SHALL carry a loop edge to implementation, and it SHALL be the node that both executes the harness and returns the verdict
+
