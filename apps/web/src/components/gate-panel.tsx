@@ -1,8 +1,7 @@
 import { nodeLabel } from '../lib/task-thread.ts'
 
-interface GatePanelProps {
+interface GateVerbsProps {
   readonly gateKey: string
-  readonly approveTo: string
   readonly reworkTargets: readonly string[]
   /** Absent when the gate has no redirect edge; `spent` when its cap is used up. */
   readonly redirect: {
@@ -17,20 +16,18 @@ interface GatePanelProps {
   readonly onReworkTargetChange: (value: string) => void
   readonly busy: boolean
   readonly error?: string
-  readonly onApprove: () => void
   readonly onRedirect: () => void
   readonly onRework: () => void
 }
 
 /**
- * REQ-905: the gate's own verbs, beside the one input rather than around a
- * second one. Approve is the visible action; sending the work back is one
- * disclosure away, since it is the rarer answer — and it needs words, which
- * the console is already collecting.
+ * REQ-905: the gate's own verbs, in the console's footer beside the one input.
+ * Approving is the console's primary button; sending the work back is quieter,
+ * since it is the rarer answer — and it needs words, which the input is already
+ * collecting.
  */
-export function GatePanel({
+export function GateVerbs({
   gateKey,
-  approveTo,
   reworkTargets,
   redirect,
   comment,
@@ -38,83 +35,70 @@ export function GatePanel({
   onReworkTargetChange,
   busy,
   error,
-  onApprove,
   onRedirect,
   onRework,
-}: GatePanelProps) {
-  const canSendBack = reworkTargets.length > 0 || redirect !== null
+}: GateVerbsProps) {
+  if (reworkTargets.length === 0 && redirect === null) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        className="button-primary min-h-9 py-1"
-        onClick={onApprove}
-        disabled={busy}
-      >
-        Approve → {nodeLabel(approveTo).toLowerCase()}
-      </button>
-
-      {canSendBack && (
+    <>
+      {reworkTargets.length > 0 && (
         <details className="relative">
-          <summary className="cursor-pointer px-2 py-1 font-mono text-[0.66rem] uppercase tracking-widest text-muted hover:text-text">
-            Send it back…
-          </summary>
+          <summary className="button-ghost cursor-pointer list-none">Rework ⌄</summary>
 
-          <div className="absolute bottom-full right-0 z-10 mb-2 w-72 border border-amber/35 bg-surface p-3">
+          <div className="absolute bottom-full left-0 z-10 mb-2 w-72 border border-amber/35 bg-surface p-3">
             <p className="font-mono text-[0.62rem] leading-4 text-muted">
-              {nodeLabel(gateKey)} · both need the comment you are typing.
+              {nodeLabel(gateKey)} · rework needs the comment you are typing.
             </p>
 
-            <div className="mt-3 flex flex-col gap-2">
-              {redirect &&
-                (redirect.spent ? (
-                  <p className="font-mono text-xs text-muted" role="status">
-                    Redirect unavailable: {redirect.used} of {redirect.limit}{' '}
-                    {redirect.cap.replaceAll('_', ' ')} used.
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    disabled={!comment.trim() || busy}
-                    onClick={onRedirect}
-                  >
-                    Redirect
-                  </button>
-                ))}
+            <select
+              className="control mt-3 w-full"
+              value={reworkTarget}
+              onChange={(event) => onReworkTargetChange(event.currentTarget.value)}
+              aria-label="Rework target"
+            >
+              <option value="">Rework target…</option>
+              {reworkTargets.map((target) => (
+                <option key={target} value={target}>
+                  {nodeLabel(target).toLowerCase()}
+                </option>
+              ))}
+            </select>
 
-              {reworkTargets.length > 0 && (
-                <>
-                  <select
-                    className="control"
-                    value={reworkTarget}
-                    onChange={(event) => onReworkTargetChange(event.currentTarget.value)}
-                    aria-label="Rework target"
-                  >
-                    <option value="">Rework target…</option>
-                    {reworkTargets.map((target) => (
-                      <option key={target} value={target}>
-                        {nodeLabel(target).toLowerCase()}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="button-danger"
-                    disabled={!comment.trim() || !reworkTarget || busy}
-                    onClick={onRework}
-                  >
-                    Request rework
-                  </button>
-                </>
-              )}
-            </div>
+            <button
+              type="button"
+              className="button-danger mt-2 w-full"
+              disabled={!comment.trim() || !reworkTarget || busy}
+              onClick={onRework}
+            >
+              Request rework
+            </button>
           </div>
         </details>
       )}
 
+      {redirect &&
+        (redirect.spent ? (
+          <span
+            className="button-ghost cursor-not-allowed opacity-50"
+            title={`${redirect.used} of ${redirect.limit} ${redirect.cap.replaceAll('_', ' ')} used`}
+            role="status"
+          >
+            Redirect spent
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="button-ghost"
+            disabled={!comment.trim() || busy}
+            onClick={onRedirect}
+            title={comment.trim() ? undefined : 'Redirecting needs a comment'}
+          >
+            Redirect
+          </button>
+        ))}
+
       {error && <p className="field-error w-full">{error}</p>}
-    </div>
+    </>
   )
 }

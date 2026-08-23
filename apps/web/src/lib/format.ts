@@ -18,6 +18,16 @@ export function formatClock(value: string | Date): string {
   }).format(new Date(value))
 }
 
+/** A run log's lines are seconds apart and all from one run: the day is the run's, not each line's. */
+export function formatRunClock(value: string | Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(value))
+}
+
 export function formatTimestamp(value: string | Date): string {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',

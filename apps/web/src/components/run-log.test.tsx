@@ -58,16 +58,19 @@ describe('RunLog (REQ-914, REQ-915)', () => {
   test('a run states its spend and its model where the thread no longer does', () => {
     render(<RunLog {...props} node={node()} events={[event()]} />)
 
-    expect(screen.getByText('1m 36s')).not.toBeNull()
-    expect(screen.getByText('$1.66')).not.toBeNull()
-    expect(screen.getByText('24.1k tok')).not.toBeNull()
-    expect(screen.getByText('opus-5')).not.toBeNull()
+    // One facts line, dot-separated, naming the role that ran it (REQ-914).
+    const facts = screen.getByText(/1m 36s/).closest('p')?.textContent ?? ''
+    expect(facts).toContain('$1.66')
+    expect(facts).toContain('24.1k tokens')
+    expect(facts).toContain('opus-5')
+    expect(facts).toContain('implementer')
   })
 
-  test('the run’s activity is here, named as an action', () => {
+  test('the run’s activity is here, the verb and its target in their own columns', () => {
     render(<RunLog {...props} node={node()} events={[event()]} />)
 
-    expect(screen.getByText('Reading packages/core/src/state.ts')).not.toBeNull()
+    expect(screen.getByText('Reading')).not.toBeNull()
+    expect(screen.getByText('packages/core/src/state.ts')).not.toBeNull()
   })
 
   test('activity from another run does not leak into this one', () => {

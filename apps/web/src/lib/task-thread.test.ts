@@ -105,7 +105,7 @@ describe('decision timeline events', () => {
     expect(eventDetail(event, new Map([[decision.id, decision]]))).toBe('Worth a follow-up task?')
   })
 
-  test('decision.answered shows the actor and the recorded answer', () => {
+  test('decision.answered carries the words alone — who and what are the entry’s own', () => {
     const decision = decisionItem({ status: 'answered', answerMd: 'The whole repository.' })
     const event = timelineEvent({
       type: 'decision.answered',
@@ -113,12 +113,10 @@ describe('decision timeline events', () => {
     })
 
     expect(EVENT_TITLES[event.type]).toBe('Decision answered')
-    expect(eventDetail(event, new Map([[decision.id, decision]]))).toBe(
-      'Answered by evgeny: The whole repository.',
-    )
+    expect(eventDetail(event, new Map([[decision.id, decision]]))).toBe('The whole repository.')
   })
 
-  test('decision.dismissed with no matching decision row still reads as dismissed, not the raw payload keys', () => {
+  test('decision.dismissed with no matching decision row says nothing rather than raw payload keys', () => {
     const event = timelineEvent({
       type: 'decision.dismissed',
       payload: {
@@ -130,7 +128,8 @@ describe('decision timeline events', () => {
     })
 
     expect(EVENT_TITLES[event.type]).toBe('Decision dismissed')
-    expect(eventDetail(event, new Map())).toBe('Dismissed by evgeny.')
+    // The verb on the entry reads "dismissed"; a body would only repeat it.
+    expect(eventDetail(event, new Map())).toBeNull()
   })
 
   test('other event types keep falling back through the existing payload chain', () => {

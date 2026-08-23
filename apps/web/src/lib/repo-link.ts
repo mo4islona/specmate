@@ -38,3 +38,17 @@ export function commitUrl(repoUrl: string, sha: string): string | null {
 export function shortCommit(sha: string): string {
   return sha.slice(0, 7)
 }
+
+/**
+ * AC-960: one fact per surface, never both. The thread and the documents are
+ * about a repository on a branch; the changed files are about a comparison.
+ */
+export function surfaceContext(
+  surface: 'thread' | 'files' | 'docs',
+  repoUrl: string,
+  baseBranch: string,
+): string {
+  const repo = repoLabel(repoUrl)
+
+  return surface === 'files' ? `${repo} · ${baseBranch} … head` : `${repo} · ${baseBranch}`
+}

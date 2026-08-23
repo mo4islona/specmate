@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { DecisionStack } from '../components/decision-stack.tsx'
-import { GatePanel } from '../components/gate-panel.tsx'
-import { KickoffBrief } from '../components/kickoff-brief.tsx'
+import { DecisionOptions } from '../components/decision-options.tsx'
+import { GateVerbs } from '../components/gate-panel.tsx'
+import type { RailSub } from '../components/pipeline-rail.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
-import { CleanupStrip, RestartPanel, RunningStrip } from '../components/run-controls.tsx'
+import { StopControl } from '../components/run-controls.tsx'
 import { RunLog } from '../components/run-log.tsx'
-import { TaskComposer } from '../components/task-composer.tsx'
+import { type OpenQuestion, TaskComposer } from '../components/task-composer.tsx'
 import { TaskRail } from '../components/task-rail.tsx'
 import { ThreadView } from '../components/thread-view.tsx'
 import { mergeTimelineEvents } from '../hooks/use-task-stream.ts'
@@ -18,14 +18,11 @@ import {
   createConversation,
   type DecisionItem,
   dismissDecision,
-  getArtifact,
   getConversation,
   getTask,
-  listArtifacts,
   listConversations,
   listDecisions,
   listEvents,
-  listTasks,
   postConversationMessage,
   postFeedback,
   type ReworkInput,
@@ -84,25 +81,6 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     queryKey: queryKeys.decisions(taskId),
     queryFn: () => listDecisions(taskId),
   })
-  // Shared with the navigation's own list under the same key: the lineage
-  // needs titles for a handful of ids, not a fetch per id.
-  const tasks = useQuery({
-    queryKey: queryKeys.tasks,
-    queryFn: ({ signal }) => listTasks(signal),
-  })
-  const artifacts = useQuery({
-    queryKey: queryKeys.artifacts(taskId),
-    queryFn: ({ signal }) => listArtifacts(taskId, signal),
-  })
-  // The brief is read at the kickoff gate only — fetching it elsewhere would
-  // be a document no gate is asking the owner to act on.
-  const atKickoffGate = detail.data?.task.status === 'human_kickoff_gate'
-  const briefArtifactId = artifacts.data?.artifacts.find((a) => a.kind === 'proposal')?.id
-  const brief = useQuery({
-    queryKey: queryKeys.artifact(taskId, briefArtifactId ?? 'none'),
-    queryFn: ({ signal }) => getArtifact(taskId, briefArtifactId ?? '', signal),
-    enabled: atKickoffGate && Boolean(briefArtifactId),
-  })
   // Tracks a conversation created by this session the instant its id is
   // known, so the very first message doesn't wait on a list refetch to
   // remount the conversation query on the right key (see converse.onSuccess).
@@ -115,10 +93,12 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   })
   const [comment, setComment] = useState('')
   const [reworkTarget, setReworkTarget] = useState<ReworkInput['target'] | ''>('')
-  const [restartGuidance, setRestartGuidance] = useState('')
   // The node whose run log is open over the thread — null while the thread is
   // what the owner is reading, which is most of the time.
   const [openNode, setOpenNode] = useState<string | null>(null)
+  // Which of the open questions the console is showing. Reset by its own pager,
+  // and clamped below in case the one being answered resolves out from under it.
+  const [questionIndex, setQuestionIndex] = useState(0)
   // answerOption, answerText, and dismiss are one mutation instance each,
   // shared by every open decision on this task — react-query's own
   // isPending/variables/error reflect only the most recently dispatched
@@ -161,7 +141,21 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     ])
   }
 
-  const approve = useMutation({ mutationFn: () => approveGate(taskId), onSuccess: refreshTask })
+  // The approve endpoint takes no comment, so the words the console collected are
+  // recorded against the task before the gate moves — otherwise "say why, if it
+  // needs saying" is an invitation to type into nothing.
+  const approve = useMutation({
+    mutationFn: async () => {
+      const note = comment.trim()
+      if (note) await postFeedback(taskId, { comment: note })
+
+      return approveGate(taskId)
+    },
+    onSuccess: async () => {
+      setComment('')
+      await refreshTask()
+    },
+  })
   const redirect = useMutation({
     mutationFn: () => redirectGate(taskId, { comment: comment.trim() }),
     onSuccess: async () => {
@@ -301,18 +295,21 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     },
     onSuccess: refreshTask,
   })
+  // Guidance travels as the mutation's own input: `restart without guidance` has
+  // to mean the empty string, and clearing the field first would not reach a
+  // closure this render already captured.
   const restart = useMutation({
-    mutationFn: () => {
+    mutationFn: (guidance: string) => {
       if (!interruptedStage) throw new Error('No safely cleaned interrupted stage')
 
       return restartStage(taskId, {
         stageId: interruptedStage.id,
-        guidance: restartGuidance.trim() || undefined,
-        idempotencyKey: `restart:${interruptedStage.id}:${restartGuidance.trim()}`,
+        guidance: guidance || undefined,
+        idempotencyKey: `restart:${interruptedStage.id}:${guidance}`,
       })
     },
     onSuccess: async () => {
-      setRestartGuidance('')
+      setComment('')
       await refreshTask()
     },
   })
@@ -364,12 +361,14 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   // if the task were merely running.
   const parked =
     task.status === 'waiting_human' || task.status === 'paused' || task.status === 'blocked'
-  // What stops the task outranks what is merely open: a blocking question sits
-  // above the run controls, a passing one below them.
+  // What stops the task outranks what is merely open: a blocking question is
+  // paged ahead of one that is only open.
   const openDecisions = decisionRows.filter((decision) => decision.status === 'open')
   const blocks = (decision: DecisionItem) => decision.blocking && parked
-  const blockingDecisions = openDecisions.filter(blocks)
-  const passingDecisions = openDecisions.filter((decision) => !blocks(decision))
+  const queued = [
+    ...openDecisions.filter(blocks),
+    ...openDecisions.filter((decision) => !blocks(decision)),
+  ]
 
   const pipelineNodes = buildPipelineNodes({
     nodes: graph?.dag.nodes ?? [],
@@ -385,9 +384,13 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     .reverse()
     .find((event) => event.type === 'stage.activity' && event.stageId === runningStage?.id)
 
-  // The one question shown above the input, and the rest counted behind it.
-  const answering = blockingDecisions[0] ?? passingDecisions[0] ?? null
-  const queued = [...blockingDecisions, ...passingDecisions]
+  const answeringIndex = Math.min(questionIndex, Math.max(0, queued.length - 1))
+  const answering = queued[answeringIndex] ?? null
+  // The destination describes the question the pager is showing, so the one the
+  // owner paged to is the one the console's line is about.
+  const paged = answering
+    ? [answering, ...queued.filter((decision) => decision.id !== answering.id)]
+    : queued
   const discussing = activeConversationId
     ? (decisionRows.find((row) => row.conversationId === activeConversationId) ?? null)
     : null
@@ -395,8 +398,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     task,
     stages: stageRows,
     nodes: pipelineNodes,
-    openDecisions: queued,
+    openDecisions: paged,
     gateKey: currentGate?.kind === 'gate' ? currentGate.key : null,
+    redirect: redirectCap ? { used: redirectsUsed, limit: redirectCap.limit } : null,
     interruptedStage: interruptedStage ?? null,
     spend: detail.data.spend,
     discussingDecision: discussing,
@@ -404,35 +408,68 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const openNodeView = openNode
     ? (pipelineNodes.find((node) => node.key === openNode) ?? null)
     : null
-  const railProps = {
-    nodes: pipelineNodes,
-    baseline,
-    repoUrl: task.repoUrl,
-    selectedKey: openNode ?? currentNodeKey,
-    onSelect: (key: string) => setOpenNode(key === openNode ? null : key),
-    task,
-    tasks: tasks.data?.tasks,
-    spend: detail.data.spend,
-  }
 
-  function decisionBusy(decisionId: string): boolean {
-    return decisionActivity[decisionId]?.pending ?? false
-  }
+  const question: OpenQuestion | null =
+    destination.kind === 'question' && answering
+      ? {
+          label: answering.nodeKey ? nodeLabel(answering.nodeKey) : 'The task',
+          index: answeringIndex,
+          total: queued.length,
+          promptMd: answering.promptMd,
+          stopped: answering.blocking && parked,
+          options: (
+            <DecisionOptions
+              options={answering.options}
+              busy={decisionActivity[answering.id]?.pending ?? false}
+              onAnswer={(optionId, value) =>
+                answerOption.mutate({ decisionId: answering.id, optionId, value })
+              }
+            />
+          ),
+          onPage: setQuestionIndex,
+          onDismiss: () => dismiss.mutate(answering.id),
+          onDiscuss: answering.conversationId
+            ? () => setActiveConversationId(answering.conversationId ?? undefined)
+            : undefined,
+          busy: decisionActivity[answering.id]?.pending ?? false,
+          error: decisionActivity[answering.id]?.error,
+        }
+      : null
 
-  function decisionError(decisionId: string): string | undefined {
-    return decisionActivity[decisionId]?.error
-  }
+  const railSub = buildRailSub()
 
-  function decisionHandlers(decision: DecisionItem) {
-    return {
-      onAnswerOption: (optionId: string, value?: string) =>
-        answerOption.mutate({ decisionId: decision.id, optionId, value }),
-      onAnswerText: (text: string) => answerText.mutate({ decisionId: decision.id, text }),
-      onDismiss: () => dismiss.mutate(decision.id),
-      onDiscuss: decision.conversationId
-        ? () => setActiveConversationId(decision.conversationId ?? undefined)
-        : undefined,
+  function buildRailSub(): RailSub | null {
+    if (runningStage) {
+      return {
+        nodeKey: runningStage.nodeKey,
+        detail: lastActivity ? stageActivityLabel(lastActivity) : null,
+        action: (
+          <StopControl
+            nodeKey={runningStage.nodeKey}
+            attempt={runningStage.attempt}
+            onStop={() => stop.mutate()}
+            stopping={stop.isPending}
+            error={stop.error?.message}
+          />
+        ),
+      }
     }
+
+    // A stop that has not finished cleaning up is why restart is unavailable —
+    // said under the node it happened to, not in a strip of its own.
+    if (interruptedAttempt && interruptedAttempt.interruptionCleanupStatus !== 'succeeded') {
+      const failed = interruptedAttempt.interruptionCleanupStatus === 'failed'
+
+      return {
+        nodeKey: interruptedAttempt.nodeKey,
+        tone: failed ? 'danger' : 'muted',
+        detail: failed
+          ? `Cannot restart: ${interruptedAttempt.interruptionFailure ?? 'cleanup failed'}`
+          : 'Stopping — uncommitted work is being discarded',
+      }
+    }
+
+    return null
   }
 
   function onThreadScroll(): void {
@@ -443,8 +480,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   }
 
   /**
-   * The input is the answer while a question is open, and guidance otherwise —
-   * the same field, routed by the state the destination already read.
+   * The input is the answer while a question is open, guidance for a restart
+   * while a node stands stopped, and a comment otherwise — the same field,
+   * routed by the state the destination already read.
    */
   function submitInput(): void {
     const text = comment.trim()
@@ -461,6 +499,16 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
 
       return
     }
+    if (destination.kind === 'gate') {
+      approve.mutate()
+
+      return
+    }
+    if (destination.kind === 'restart') {
+      restart.mutate(text)
+
+      return
+    }
 
     feedback.mutate()
   }
@@ -473,7 +521,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     : null
 
   return (
-    <div className="grid min-h-0 min-w-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="grid min-h-0 min-w-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="flex min-h-0 min-w-0 flex-col gap-3">
         {openNodeView ? (
           <RunLog
@@ -493,156 +541,134 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             data-thread=""
             className="scroll-thin min-h-0 flex-1 xl:overflow-y-auto"
           >
-            <ThreadView entries={feed} onOpenNode={setOpenNode} />
+            {/* A thread reads upward from the console. Bottom-aligning the
+                content inside a full-height wrapper — rather than justifying
+                the scroll container itself — keeps the top of a long thread
+                reachable. */}
+            <div className="flex min-h-full flex-col justify-end">
+              <ThreadView entries={feed} onOpenNode={setOpenNode} />
 
-            {task.status === 'failed' && (
-              <section className="mt-3 border-l-2 border-l-danger pl-3">
-                <p className="text-sm leading-6 text-muted">
-                  {failureDetail ?? 'The run stopped without recording a reason.'}
-                  {task.resumeStatus &&
-                    ` Last node: ${nodeLabel(task.resumeStatus).toLowerCase()}.`}
-                </p>
-              </section>
-            )}
+              {task.status === 'failed' && (
+                <section className="mt-3 border-l-2 border-l-danger pl-3">
+                  <p className="text-sm leading-6 text-muted">
+                    {failureDetail ?? 'The run stopped without recording a reason.'}
+                    {task.resumeStatus &&
+                      ` Last node: ${nodeLabel(task.resumeStatus).toLowerCase()}.`}
+                  </p>
+                </section>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Everything that needs a person sits directly above the one input, in
-            the same scroll as the thread — a question with its own fold above a
-            second scrolling column is what pass 3 exists to delete. */}
-        <div className="shrink-0 space-y-3">
-          {runningStage && (
-            <RunningStrip
-              nodeKey={runningStage.nodeKey}
-              attempt={runningStage.attempt}
-              startedAt={runningStage.startedAt ? String(runningStage.startedAt) : null}
-              activity={lastActivity ? stageActivityLabel(lastActivity) : null}
-              onStop={() => stop.mutate()}
-              stopping={stop.isPending}
-              error={stop.error?.message}
-            />
-          )}
-
-          {task.status === 'paused' &&
-            interruptedAttempt &&
-            interruptedAttempt.interruptionCleanupStatus !== 'succeeded' && (
-              <CleanupStrip
-                nodeKey={interruptedAttempt.nodeKey}
-                attempt={interruptedAttempt.attempt}
-                failed={interruptedAttempt.interruptionCleanupStatus === 'failed'}
-                failure={interruptedAttempt.interruptionFailure}
-              />
-            )}
-
-          {atKickoffGate && brief.data && (
-            <details className="border border-amber/25">
-              <summary className="cursor-pointer px-3 py-2 font-mono text-[0.68rem] uppercase tracking-widest text-amber">
-                The kickoff brief
-              </summary>
-              <div className="px-3 pb-3">
-                <KickoffBrief content={brief.data.artifact.content ?? ''} />
-              </div>
-            </details>
-          )}
-
-          {answering && (
-            <DecisionStack
-              decisions={queued}
-              label={parked ? 'Blocking questions' : 'Open questions'}
-              answerInConsole={destination.kind === 'question'}
-              parked={parked}
-              busy={decisionBusy}
-              error={decisionError}
-              handlers={decisionHandlers}
-            />
-          )}
-
-          {actions.length > 0 && (
-            <section className="border border-amber/35 p-3">
-              <p className="micro-label text-amber">Proposed actions</p>
-              <ul className="mt-2 space-y-2">
-                {actions.map((action) => (
-                  <li key={action.id} className="border-l-2 border-l-amber/40 pl-3">
-                    <p className="font-mono text-xs text-amber">{action.kind}</p>
-                    <p className="mt-1 break-words text-sm">
-                      {action.instruction ?? 'No instruction'}
-                    </p>
-                    {action.status === 'proposed' ? (
-                      <button
-                        type="button"
-                        className="button-secondary mt-2"
-                        disabled={confirmAction.isPending}
-                        onClick={() => confirmAction.mutate(action.id)}
-                      >
-                        Confirm action
-                      </button>
-                    ) : (
-                      <p className="mt-2 font-mono text-xs text-muted">{action.status}</p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {confirmAction.error && <p className="field-error">{confirmAction.error.message}</p>}
-            </section>
+        {/* The one thing that needs a person, and the one input, are the same
+            box: a question with its own fold above a second scrolling column is
+            what pass 3 exists to delete. */}
+        <div className="shrink-0">
+          {destination.kind === 'discussion' && actions.length > 0 && (
+            <ul className="mb-2 space-y-1.5">
+              {actions.map((action) => (
+                <li
+                  key={action.id}
+                  className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-l-2 border-l-amber/40 pl-3"
+                >
+                  <span className="micro-label text-amber">{action.kind}</span>
+                  <span className="min-w-0 flex-1 break-words text-sm">
+                    {action.instruction ?? 'No instruction'}
+                  </span>
+                  {action.status === 'proposed' ? (
+                    <button
+                      type="button"
+                      className="button-ghost"
+                      disabled={confirmAction.isPending}
+                      onClick={() => confirmAction.mutate(action.id)}
+                    >
+                      Confirm
+                    </button>
+                  ) : (
+                    <span className="font-mono text-[0.62rem] text-muted">{action.status}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
 
           <TaskComposer
             destination={destination}
+            question={question}
             value={comment}
             onChange={setComment}
-            busy={feedback.isPending || answerText.isPending}
-            error={(feedback.error ?? answerText.error)?.message}
             onSubmit={submitInput}
+            busy={
+              feedback.isPending ||
+              answerText.isPending ||
+              converse.isPending ||
+              approve.isPending ||
+              restart.isPending
+            }
+            error={
+              (feedback.error ?? answerText.error ?? converse.error ?? confirmAction.error)?.message
+            }
             actions={
+              destination.kind === 'gate' && currentGate?.kind === 'gate' ? (
+                <GateVerbs
+                  gateKey={currentGate.key}
+                  reworkTargets={reworkTargets}
+                  redirect={
+                    redirectCap
+                      ? {
+                          spent: redirectsUsed >= redirectCap.limit,
+                          used: redirectsUsed,
+                          limit: redirectCap.limit,
+                          cap: redirectCap.key,
+                        }
+                      : null
+                  }
+                  comment={comment}
+                  reworkTarget={reworkTarget}
+                  onReworkTargetChange={(value) =>
+                    setReworkTarget(value as ReworkInput['target'] | '')
+                  }
+                  busy={gateBusy}
+                  error={gateError?.message}
+                  onRedirect={() => redirect.mutate()}
+                  onRework={() => rework.mutate()}
+                />
+              ) : null
+            }
+            escapes={
               <>
                 {destination.kind === 'discussion' && (
                   <button
                     type="button"
+                    className="link-quiet"
                     onClick={() => setActiveConversationId(undefined)}
-                    className="font-mono text-[0.62rem] text-muted underline-offset-4 hover:text-text hover:underline"
                   >
                     back to answering
                   </button>
                 )}
 
-                {currentGate?.kind === 'gate' && (
-                  <GatePanel
-                    gateKey={currentGate.key}
-                    approveTo={currentGate.approve}
-                    reworkTargets={reworkTargets}
-                    redirect={
-                      redirectCap
-                        ? {
-                            spent: redirectsUsed >= redirectCap.limit,
-                            used: redirectsUsed,
-                            limit: redirectCap.limit,
-                            cap: redirectCap.key,
-                          }
-                        : null
-                    }
-                    comment={comment}
-                    reworkTarget={reworkTarget}
-                    onReworkTargetChange={(value) =>
-                      setReworkTarget(value as ReworkInput['target'] | '')
-                    }
-                    busy={gateBusy}
-                    error={gateError?.message}
-                    onApprove={() => approve.mutate()}
-                    onRedirect={() => redirect.mutate()}
-                    onRework={() => rework.mutate()}
-                  />
+                {destination.kind === 'question' && (
+                  <button
+                    type="button"
+                    className="link-quiet"
+                    disabled={!comment.trim() || feedback.isPending}
+                    onClick={() => feedback.mutate()}
+                    title="Record this as a comment rather than as the answer"
+                  >
+                    just comment instead
+                  </button>
                 )}
 
-                {destination.kind === 'restart' && interruptedStage && (
-                  <RestartPanel
-                    nodeKey={interruptedStage.nodeKey}
-                    attempt={interruptedStage.attempt}
-                    guidance={restartGuidance}
-                    onGuidanceChange={setRestartGuidance}
-                    onRestart={() => restart.mutate()}
-                    busy={restart.isPending}
-                    error={restart.error?.message}
-                  />
+                {destination.kind === 'restart' && (
+                  <button
+                    type="button"
+                    className="link-quiet"
+                    disabled={restart.isPending}
+                    onClick={() => restart.mutate('')}
+                  >
+                    restart without guidance
+                  </button>
                 )}
               </>
             }
@@ -656,12 +682,28 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             Pipeline · {currentNodeKey ? nodeLabel(currentNodeKey).toLowerCase() : task.status}
           </summary>
           <div className="pt-4">
-            <TaskRail {...railProps} />
+            <TaskRail
+              nodes={pipelineNodes}
+              baseline={baseline}
+              selectedKey={openNode ?? currentNodeKey}
+              onSelect={(key) => setOpenNode(key === openNode ? null : key)}
+              task={task}
+              spend={detail.data.spend}
+              sub={railSub}
+            />
           </div>
         </details>
 
         <div className="hidden xl:block">
-          <TaskRail {...railProps} />
+          <TaskRail
+            nodes={pipelineNodes}
+            baseline={baseline}
+            selectedKey={openNode ?? currentNodeKey}
+            onSelect={(key) => setOpenNode(key === openNode ? null : key)}
+            task={task}
+            spend={detail.data.spend}
+            sub={railSub}
+          />
         </div>
       </aside>
     </div>

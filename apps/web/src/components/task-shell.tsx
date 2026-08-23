@@ -1,12 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useTaskStream } from '../hooks/use-task-stream.ts'
-import { getTask, listArtifacts, listDecisions, listDiffFiles } from '../lib/api-client.ts'
+import {
+  getTask,
+  listArtifacts,
+  listDecisions,
+  listDiffFiles,
+  listTasks,
+} from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { repoLabel } from '../lib/repo-link.ts'
+import { surfaceContext } from '../lib/repo-link.ts'
 import { taskStateSentence } from '../lib/task-state.ts'
+import { HarnessBadge } from './harness-badge.tsx'
+import { PlanBadge } from './plan-badge.tsx'
 import { ErrorState, LoadingState } from './query-state.tsx'
 import { TaskHeader } from './task-header.tsx'
+import { TaskLineage } from './task-lineage.tsx'
 import { TaskNav, type TaskSurface } from './task-nav.tsx'
 
 interface TaskShellProps {
@@ -42,6 +51,12 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
     queryKey: queryKeys.diffFiles(taskId),
     queryFn: ({ signal }) => listDiffFiles(taskId, signal),
   })
+  // Shared with the navigation's own list under the same key: the lineage needs
+  // titles for a handful of ids, not a fetch per id.
+  const tasks = useQuery({
+    queryKey: queryKeys.tasks,
+    queryFn: ({ signal }) => listTasks(signal),
+  })
 
   if (detail.isPending) {
     return <LoadingState title="Loading task channel…" />
@@ -57,24 +72,42 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
     decisions: decisions.data?.decisions ?? [],
     spend: detail.data.spend,
   })
-  const repo = repoLabel(task.repoUrl)
-  const context =
-    active === 'files' ? `${repo} · ${task.baseBranch} … head` : `${repo} · ${task.baseBranch}`
+  const context = surfaceContext(active, task.repoUrl, task.baseBranch)
 
   return (
     <div className="flex min-w-0 flex-col gap-3 xl:h-[calc(100vh-5rem)]">
-      <TaskHeader title={task.title} state={state} context={context} connection={connection} />
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:gap-5">
-        <TaskNav
-          taskId={taskId}
-          active={active}
-          fileCount={files.data?.files.length ?? null}
-          docCount={artifacts.data?.artifacts.length ?? null}
+      <div className="shrink-0">
+        <TaskHeader
+          title={task.title}
+          state={state}
+          connection={connection}
+          badges={
+            <span className="flex flex-wrap items-center gap-2">
+              <HarnessBadge status={task.harnessStatus} />
+              <PlanBadge size={task.planSize} />
+            </span>
+          }
         />
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-x-5 gap-y-1 border-b border-border">
+          <TaskNav
+            taskId={taskId}
+            active={active}
+            fileCount={files.data?.files.length ?? null}
+            docCount={artifacts.data?.artifacts.length ?? null}
+          />
+
+          <p className="min-w-0 truncate pb-2 font-mono text-[0.62rem] text-muted">{context}</p>
+        </div>
+
+        <TaskLineage
+          originTaskId={task.originTaskId}
+          blockedBy={task.blockedBy}
+          tasks={tasks.data?.tasks}
+        />
       </div>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </div>
   )
 }

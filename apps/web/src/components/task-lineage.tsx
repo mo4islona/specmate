@@ -29,7 +29,7 @@ export function TaskLineage({ originTaskId, blockedBy, tasks }: TaskLineageProps
   if (!originTaskId && blockedBy.length === 0) return null
 
   return (
-    <p className="mt-3 text-xs leading-6 text-muted">
+    <p className="mt-2 text-xs leading-6 text-muted">
       {originTaskId && (
         <span data-lineage="origin">
           Proposed while planning <TaskLink id={originTaskId} tasks={tasks} />
