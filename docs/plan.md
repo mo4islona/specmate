@@ -601,13 +601,21 @@ Throughout: the mockup's spans are shorthand. Tabs are routes, the console is a 
 labelled textarea, the question pager is a real control, and the `aria-pressed`, `aria-label` and
 `<fieldset><legend>` the current code carries survive the redraw.
 
-Five live requirements are reworded in this change and one is contradicted outright, so all six are
+Six live `operator-ui` requirements are reworded and one is contradicted outright, so all seven are
 MODIFIED rather than added beside what they replace: REQ-901 (screens become tabs, addressability
 restated), REQ-906/AC-912 (a comment is pinned by where it was typed, not by a dropdown), REQ-907
-(documents render in a tab, not their own screen), REQ-912/AC-923 (a resolved card is two clamped
-lines), REQ-914 (the intervention half gets its first real writer; the conversation half loses its
-console entry), and REQ-915/AC-940 (activity moves out of the timeline and behind a rail node — the
-contradiction, and the most recently shipped of them).
+(documents render in a tab, not their own screen), REQ-911 (the phone keeps its tabs and collapses
+the rail), REQ-912/AC-923 (a resolved card is two clamped lines), REQ-914 (the rail's fourth state
+and the run log behind a node; the console loses `Ask guide`), and REQ-915/AC-940 (activity moves
+out of the timeline and behind a rail node — the contradiction, and the most recently shipped of
+them). Three are added: REQ-919 for the thread, REQ-920 for the tabbed shell, REQ-921 for the one
+input and its stated destination.
+
+The writer reaches past the web app, so two more capabilities move with it: `task-surface` REQ-1008,
+where the feedback endpoint learns to store a comment as guidance targeted at the node the task's
+state addresses, and `agent-contracts` REQ-102, where guidance stays pending until a run carrying it
+is accepted. The second is the claim fix stated as a contract rather than as an implementation
+detail — without it the endpoint would write text that a retry silently drops.
 
 ### 16.2 What a task costs
 

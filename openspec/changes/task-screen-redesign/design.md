@@ -1,104 +1,146 @@
 ## Context
 
-The task view reads five sources on every render: the task detail (`task`, `graph`,
-`stages`, `spend`), the event window (last 200 events, merged with the SSE stream), the
-conversation's messages and actions, the decision rows, and the artifact index. Before this
-change all five were rendered as sibling panels down one column, each with its own border,
-uppercase label, and heading — which is why nothing on the screen looked more important than
-anything else.
+The task view reads five sources on every render: the task detail (`task`, `graph`, `stages`,
+`spend`), the event window merged with the SSE stream, the conversation's messages and actions,
+the decision rows, and the artifact index. This change's first pass grouped all of that into
+per-stage chapters beside a pinned rail, which was an improvement over nine equal panels and
+still produced the screen the owner complained about: a scroll container above a scroll
+container, an answered question louder than four open ones, two text inputs, and ten empty
+circles in the rail.
 
-Two of the owner's complaints are about grouping, not styling. The ledger never says *which
-stage* an entry belongs to, and there is no way back to an earlier stage. The data to fix
-both is already present: every stage-scoped event carries `stageId`, every stage row carries
-`startedAt`/`finishedAt`, and every state change is an event carrying `from`/`to`.
+The diagnosis is that the first pass moved things around without deciding what the column is
+*for*. Pass 3 decides: the column carries what people said, and everything the machine did lives
+behind the node that did it. The rest follows from that one line.
+
+One finding is not about rendering at all. `whole task ⌄` does set `feedback.stageId`, the role,
+the provider, and a `nodeKey` on the emitted event — the control is not inert. What is inert is
+the consequence: every comment is stored as `comment`, and the ledger renders only
+`intervention`, `redirect`, and `rework`. The owner picks a destination and no agent ever reads
+the text. That is why this change reaches past `apps/web`.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- One surface answers "what needs me now", and it is the only accented thing on the screen.
-- The history reads as a conversation, chaptered by stage, closed by default.
-- The pipeline is orientation: always visible, never scrolling away, and the way back to an
-  earlier stage.
-- Every number the owner reads is one they asked for (duration, tokens, cost, short commit)
-  and none they did not (`attempt 0`, a 40-character hash, nine identical model rows).
+- The thread is legible in one pass: five to fifteen lines over a whole task, and the newest
+  thing that needs a person is the loudest thing on the screen.
+- Every fact has exactly one place. A count on a tab is not also in the rail; a duration on a
+  node is not also on a thread entry.
+- One input, whose destination the owner reads rather than chooses — and which actually reaches
+  an agent.
+- What the interface claims is what the system does, including the parts that are unflattering:
+  text typed at a running stage is read on its *next* run.
 
 **Non-Goals:**
-- No new read, no new event type, no new dependency (see proposal Non-goals).
-- No graph topology — that stays with `dag-visualization`.
+- The GitHub-shaped diff, a Guide surface, a channel into a live agent, a topology diagram (see
+  proposal Non-goals).
+- No new read. The rail, the run log, the thread and the tab counts are all derived from what
+  `task-surface` REQ-1002/AC-1004 already returns and from the event stream that already drives
+  the timeline.
 
 ## Decisions
 
-**Chapters are derived from `stageId` plus the state timeline, not from a new field.**
-`buildThread` walks entries (events and conversation messages together) in ledger order,
-carrying the task's state as it goes. An entry belongs to a stage when it names one; failing
-that, when it falls inside a stage's `[startedAt, finishedAt]` window while the task stands
-on that stage's node — which is what puts an owner comment written mid-run inside the run it
-is about instead of in a chapter of its own. Everything else falls to the state the task was
-in, which is what makes a gate's approvals and comments read as the gate's own chapter.
+**The thread is a filter, not a window.** Nothing ages out and nothing is paged: at five to
+fifteen entries there is nothing to page. What keeps it that size is the admission rule — an
+entry exists only if a person wrote it or was asked for it — not a cap on length. This matters
+for the empty state, which is why there is not one: a task ten seconds old has one line in the
+thread and one in the rail, and that is the right amount of screen for what is known about it.
 
-Two ordering rules follow from this and are the whole of its subtlety: a state-moving event
-is applied *before* its own placement, so "Parked for you" opens the gate's chapter rather
-than trailing the stage that ran into it; and window matching is inclusive at both ends,
-since an event stamped exactly at a stage's finish is that stage's last word, not a new
-chapter's first.
+**A stage's record moves behind its node, and the run log is a layer, not a route.** Everything
+the thread used to carry inline — start, tool activity, questions raised, commit, acceptance,
+with duration, cost, tokens and model in the header — opens over the column when a node is
+activated. It is not a route, because it is a detail of the surface you are already on, and
+routing it would put a back button between the owner and the thread they were reading. On a
+phone it becomes full-height with its own way back, which is the same decision under a different
+constraint.
 
-**Silent events.** `stage.dispatched` and `task.transitioned` are dropped from the thread:
-the chapter's existence *is* the dispatch, and its title *is* the transition. They still move
-the state machine. This is a rendering decision — nothing is removed from the ledger, and the
-events remain in the API's response.
+**The rail needs a fourth state, and it is the one the pipeline actually produces.** Done,
+running, and waiting on you are the states the first pass drew. The engine also produces
+stopped: a failed attempt, a node at `stageAttemptCap`, a stage the sweeper found orphaned, a
+task paused on an exhausted budget. Drawn as three states, a stopped node reverts to looking
+unstarted, which is exactly the mush this pass removes. It keeps its facts and states the reason
+in the slot the duration would occupy.
 
-**The newest chapter is open; toggles are stored as exceptions.** Storing which chapters are
-open would fight the stream: a new chapter arriving would have to be added to the set, and an
-old one the owner closed would have to survive. Instead the client stores only the chapters
-the owner *flipped* away from their default, and the default is "the newest one is open".
-A newly arriving chapter is open because it is newest, not because anything wrote it down.
+**The destination is derived, never chosen.** The console reads the task's state and states
+where the text goes. The tempting escape hatch — a quiet `send somewhere else` beside the
+destination line — is not kept, because a link that retargets can only open a list of targets,
+which is the removed dropdown in a quieter costume. When the default is wrong the owner types
+where the target already is: `Comment` inside that stage's run log. You never pick a target from
+a list; you type into the thing.
 
-**A run number appears only when there is more than one run.** The chapter knows how many
-attempts its node has, so "Implement" and "Implement · run 2" are decided by the data, not by
-whether `attempt` happens to be zero. AC-937's requirement that the attempt be identifiable
-is met by the node's own detail in the rail, which lists every run.
+**`Ask guide` leaves the console.** It is a mode set before typing, which is what rule 2 forbids,
+and drawing it as a link rather than a toggle hides that instead of fixing it. What it costs is
+smaller than it looks: the guide's reach into a running task is a set of actions it *proposes*
+and the owner then confirms, and the two that bear on a running task — instruct the next run,
+restart a stage — are what the console now does directly, with no model call in between. Until a
+Guide surface exists the guide keeps the entry point it already has, a question's `Discuss`
+(AC-933, AC-936).
 
-**The rail is a list, not a diagram.** A vertical list of the pinned nodes fits a 20rem
-column at any pipeline length, needs no layout pass, no pan/zoom, and no new dependency, and
-it degrades to a phone by collapsing into one disclosure. It gives up exactly one thing a
-diagram would give: the shape of the loop, redirect, and rework edges. That is the remaining
-substance of `dag-visualization`, and this change deliberately leaves it there rather than
-half-drawing it.
+**Guidance is released when a run ends unaccepted.** The engine claims every unconsumed
+intervention whose target names the starting node, stamping `consumedByStageId`; the runner
+renders an intervention only while the stage that claimed it is still running. Put together,
+guidance is stamped when the node starts, and if that run fails the retry inserts a fresh stage
+row, does not re-claim the stamped one, and the stage holding it is no longer running — so the
+text is gone, unread, with no error anywhere. The fix is to clear the stamp in the same
+transaction that already records a stage's end when that end is not acceptance. The alternative —
+never stamp until a run is accepted — keeps exactly one claim per run but leaves a double-read
+window when a run is accepted after a partial failure, and moves the claim away from the moment
+the node starts, which is where the engine's own logic sits. The accepted cost of the chosen fix
+is stated rather than discovered: an intervention stays re-readable until some run carrying it is
+accepted.
 
-**Model bindings are shown by exception.** The rail states the task's baseline binding once —
-the binding most of its roles share — and marks only the nodes that depart from it. A task
-left on its defaults says so once instead of nine times; an override is visible exactly where
-it takes effect, which is what AC-948 asks for.
+**The console cannot promise more than dispatch delivers.** `executor.ts` loads the ledger once
+per stage, before the provider starts. The prompt is sealed at dispatch and there is no channel
+into a running agent at any layer. So the destination line says "picked up by Implement on its
+next run", and the specification says the same. An interface that overstates what it does is how
+the inert dropdown got built in the first place.
 
-**Commits are rendered short and linked.** Seven characters, the full hash on `title`, and an
-`https://host/owner/repo/commit/<sha>` link when the remote parses to a host whose web scheme
-is known (github.com, gitlab.com). An unknown host gets the short hash as plain text — a
-guessed URL that 404s is worse than no link.
+**Tabs are routes; the navigation is a column, not a header row.** The first draft put the tabs
+in the header, and it works for three. It stops working at four, and there is a fourth — the
+guide needs somewhere to live, and a header that grows a row per surface is the four-row header
+this pass is deleting. A column grows downward for free. Routing them keeps REQ-901's
+addressability intact and makes `/tasks/:id/files` and `/tasks/:id/docs` linkable; the old
+`/tasks/:id/artifacts` and `/tasks/:id/diff` redirect rather than 404, since the inbox and older
+links point at them.
 
-**Layout: a fixed-height column at desktop width, page flow below it.** The thread scrolls
-inside its own pane so the action zone above it and the composer below it stay put, which is
-what makes it read as a chat rather than as a page that grows. The action zone is capped
-(46vh at a gate, since deciding on the gate is then the whole screen; 34vh otherwise) and
-scrolls internally, so a tall gate panel can never squeeze the thread to nothing. Below
-`xl` the whole page scrolls normally and the rail collapses into a disclosure above the
-thread.
+**The header's two ambiguous slots get rules.** The repository slot says what the *current
+surface* is about — `owner/repo · base` on the thread and the documents, `base…branch · N
+commits` on the files — one fact per surface, never both. The trailing dot is the event stream,
+not the task: phosphor while connected, muted while reconnecting, and labelled, because on a task
+waiting for the owner the state is amber while the stream is perfectly healthy, and the two must
+not read as one claim. That is also why it sits at the far end of the row rather than beside the
+state sentence.
+
+**What the first pass built is kept.** `task-thread.ts` keeps the event vocabulary and the
+placement rules but stops grouping into chapters; `task-pipeline.ts` keeps `buildPipelineNodes`
+and the baseline-binding rule and gains the fourth state; `repo-link.ts` and `commit-ref.tsx` are
+unchanged — AC-954 and AC-955 are already satisfied and stay satisfied.
 
 ## Risks / Trade-offs
 
-- **A chapter can be mis-attributed when the event window has scrolled past the transition
-  that would have named the state.** Mitigated by reading the opening state off the oldest
-  event that still carries a `from`, and by falling back to the graph's entry node. The cost
-  of being wrong is a chapter titled by the wrong node, not a lost entry.
-- **Collapsed history hides things.** Deliberate: the counts, duration, tokens, cost, and
-  commit stay on the collapsed line, so the summary is informative enough to decide whether
-  to open it. The owner's own toggles always win over the default.
-- **Activity is capped at the last 8 lines per chapter**, with the count of what was dropped
-  shown. A tool-heavy stage otherwise fills the thread with hundreds of one-line entries.
-  Nothing is lost that the ledger does not still hold.
-- **The fixed-height layout depends on viewport height.** Measured at 720/900/1000px tall:
-  the thread pane keeps 137/256/322px respectively with a typical action zone. Below that the
-  action zone's own cap keeps shrinking with the viewport, so the thread never reaches zero.
+- **A filtered thread can hide something the owner wanted.** Mitigated by the rail: every entry
+  the filter drops is behind the node that produced it, one click away, and the node states that
+  it ran. What is genuinely lost is the ability to read the whole task as one linear log — which
+  is what the ledger and the event stream are for, and neither is being changed.
+- **The derived destination will be wrong sometimes.** Two nodes' worth of ambiguity, mostly
+  around a task between stages. Mitigated by stating the destination in words before the owner
+  sends, and by the run log being a place to type when the default is wrong. The failure mode is
+  a comment reaching the next node instead of the last one — visible, and recoverable by typing
+  again in the run log.
+- **Clearing the claim makes guidance re-readable.** An intervention that no accepted run ever
+  carries is re-read by every attempt at that node. Bounded in practice by the attempt cap; the
+  alternative loses the text entirely, which is worse than reading it twice.
+- **The two contradicted requirements are contradicted on purpose.** REQ-915/AC-940 says activity
+  renders in the timeline and this change moves it behind a node. Modified here rather than added
+  beside, so the living spec never asserts both shapes.
+- **Deferring the diff redraw leaves the Files tab looking unlike its neighbours** — a
+  list-detail panel inside a shell built for stacked cards. Accepted: the tab shell is what
+  collapses the header and de-duplicates the rail, and it is worth having before the diff work.
 
 ## Migration Plan
 
-None — a rendering change in `apps/web`. No data migration, no API version bump.
+None for data. `/tasks/:id/artifacts` and `/tasks/:id/diff` become redirects to
+`/tasks/:id/docs` and `/tasks/:id/files`; `/tasks/:id/artifacts/:artifactId` keeps working, since
+REQ-901 requires a single artifact to stay addressable. The claim fix is an `UPDATE` on a column
+that already exists, applied to rows only as stages end, so nothing needs backfilling: an
+intervention stranded by a run that failed before this change is picked up by the next attempt at
+its node the first time that node ends a run unaccepted.
