@@ -17,6 +17,7 @@ import {
   type ConversationActionOption,
   type ConversationActionProposal,
   canTransition,
+  capsForSize,
   type DecisionOption,
   decisionFromRequest,
   definitionForSize,
@@ -32,6 +33,7 @@ import {
   nodeAt,
   type PinnedGraph,
   type PlanPrerequisite,
+  type PlanSize,
   type ProviderId,
   partitionRequests,
   RESERVED_STATES,
@@ -1492,6 +1494,10 @@ export class Engine {
     // the profile mid-run and drop the stages the task was created with.
     if (!ROLE_CONTRACTS[node.role].declaresPlan) return graph
 
+    // Before the profile, and outside its early return: two sizes may share a
+    // profile and differ only in how many rounds they buy (AC-427).
+    await this.applyDeclaredCaps(tx, task, result.plan.size)
+
     const definition = definitionForSize(task.type, result.plan.size)
     if (definition.id === graph.dag.pipeline) return graph
     if (!definition.nodes.some((candidate) => candidate.key === node.key)) return graph
@@ -1504,6 +1510,23 @@ export class Engine {
     })
 
     return appended
+  }
+
+  /**
+   * The caps the declared size buys, over what the task carries, with anything the
+   * owner named at creation winning over both — a size the planner declared does not
+   * overrule a bound the owner chose (AC-641).
+   */
+  private async applyDeclaredCaps(tx: DbClient, task: Task, size: PlanSize): Promise<void> {
+    const caps = capsForSize(size, task.caps, task.capsOverride)
+    if (JSON.stringify(caps) === JSON.stringify(task.caps)) return
+
+    await tx.update(tasks).set({ caps }).where(eq(tasks.id, task.id))
+    await emitEvent(tx, {
+      taskId: task.id,
+      type: 'task.caps_changed',
+      payload: { size, caps },
+    })
   }
 
   private async completeStage(
@@ -3575,7 +3598,10 @@ function stageDefect(node: StageNode, execution: StageExecution): StageDefectRec
   // this for a real agent run, but a dispatcher that builds its result
   // directly (a stub, a test) bypasses that parse — this is the engine's own
   // enforcement of the same contract.
+  // `node.resumes` is the continuation test: the obligations below belong to the
+  // run that opens the session and faces the gate, not to the one continuing it.
   if (
+    !node.resumes &&
     ROLE_CONTRACTS[node.role].probesHarness &&
     execution.result?.status === 'ok' &&
     !execution.result.harness_coverage
@@ -3590,6 +3616,7 @@ function stageDefect(node: StageNode, execution: StageExecution): StageDefectRec
   // selects the profile, so a planning role that declares none must fail the
   // attempt rather than run the full pipeline with no size on record.
   if (
+    !node.resumes &&
     ROLE_CONTRACTS[node.role].declaresPlan &&
     execution.result?.status === 'ok' &&
     !execution.result.plan

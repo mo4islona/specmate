@@ -4,8 +4,10 @@ import {
   bindStageProvider,
   Caps,
   canTransition,
+  conditionDefects,
   definitionFor,
   definitionForSize,
+  evaluateCondition,
   FEATURE_BUGFIX_COMPACT,
   FEATURE_BUGFIX_PIPELINE,
   forwardTarget,
@@ -15,10 +17,13 @@ import {
   isRestartable,
   loadPipelineCatalog,
   loadPipelineProfiles,
+  NODE_PREDICATES,
   PIPELINE_CATALOG,
   type PinnedGraph,
   type PipelineDefinition,
   PipelineDefinitionError,
+  type PredicateId,
+  type PredicateSpec,
   type RecordedRound,
   type StageNode,
   TASK_STATES,
@@ -188,9 +193,33 @@ describe('the feature/bugfix definition', () => {
 
   test('loop identities and targets match the lifecycle', () => {
     const stages = FEATURE_BUGFUX_STAGES()
-    expect(stages.spec_review?.loopEdge).toEqual({ target: 'research', loop: 'spec' })
-    expect(stages.verify?.loopEdge).toEqual({ target: 'implement', loop: 'impl' })
-    expect(stages.code_review?.loopEdge).toEqual({ target: 'implement', loop: 'impl' })
+    expect(stages.spec_review?.loopEdge).toEqual({ target: 'specify', loop: 'spec' })
+    expect(stages.validate?.loopEdge).toEqual({ target: 'implement', loop: 'impl' })
+  })
+
+  test('AC-420: exactly one node loops back to implementation', () => {
+    const loopers = FEATURE_BUGFIX_PIPELINE.nodes.filter(
+      (node) => node.kind === 'stage' && node.loopEdge?.target === 'implement',
+    )
+
+    expect(loopers.map((node) => node.key)).toEqual(['validate'])
+  })
+
+  test('specification continues planning rather than re-reading the repository', () => {
+    const stages = FEATURE_BUGFUX_STAGES()
+    expect(stages.specify?.resumes).toBe('planning')
+    expect(stages.specify?.role).toBe(stages.planning?.role)
+  })
+
+  test('AC-135: no checking node is bound to its role default', () => {
+    const checking = FEATURE_BUGFIX_PIPELINE.nodes.filter(
+      (node) => node.kind === 'stage' && node.loopEdge,
+    )
+
+    expect(checking.length).toBeGreaterThan(0)
+    for (const node of checking) {
+      expect(node.kind === 'stage' && node.binding).toBe('cross_review')
+    }
   })
 
   test('gate inventory is exactly the mandatory human gates', () => {
@@ -238,17 +267,15 @@ describe('derived transitions', () => {
    */
   const EXPECTED: Record<TaskState, readonly TaskState[]> = {
     draft: ['planning', 'cancelled'],
-    planning: ['kickoff_brief', 'failed'],
-    kickoff_brief: ['human_kickoff_gate', 'failed'],
-    human_kickoff_gate: ['research', 'planning', 'cancelled'],
-    research: ['spec_review', 'failed'],
-    spec_review: ['human_spec_gate', 'research', 'failed'],
-    human_spec_gate: ['implement', 'research', 'cancelled'],
-    implement: ['verify', 'failed'],
-    verify: ['code_review', 'implement', 'failed'],
-    code_review: ['summarize', 'implement', 'failed'],
+    planning: ['human_kickoff_gate', 'failed'],
+    human_kickoff_gate: ['specify', 'planning', 'cancelled'],
+    specify: ['spec_review', 'failed'],
+    spec_review: ['human_spec_gate', 'specify', 'failed'],
+    human_spec_gate: ['implement', 'specify', 'cancelled'],
+    implement: ['validate', 'failed'],
+    validate: ['summarize', 'implement', 'failed'],
     summarize: ['human_final_gate', 'failed'],
-    human_final_gate: ['publish', 'implement', 'research', 'cancelled'],
+    human_final_gate: ['publish', 'implement', 'specify', 'cancelled'],
     publish: ['archived', 'failed', 'cancelled'],
     archived: [],
     waiting_human: [],
@@ -257,15 +284,19 @@ describe('derived transitions', () => {
     cancelled: [],
     failed: [
       'planning',
-      'kickoff_brief',
-      'research',
+      'specify',
       'spec_review',
       'implement',
-      'verify',
-      'code_review',
+      'validate',
       'summarize',
       'cancelled',
     ],
+    // Retired node keys. They stay in the status enum for graphs pinned before the
+    // pipeline was compressed, and a graph that does not contain them offers no edges.
+    kickoff_brief: [],
+    research: [],
+    verify: [],
+    code_review: [],
   }
 
   test('graph-derived transitions equal the expected rendering for every state', () => {
@@ -285,14 +316,12 @@ describe('graph-derived legality', () => {
     const path: TaskState[] = [
       'draft',
       'planning',
-      'kickoff_brief',
       'human_kickoff_gate',
-      'research',
+      'specify',
       'spec_review',
       'human_spec_gate',
       'implement',
-      'verify',
-      'code_review',
+      'validate',
       'summarize',
       'human_final_gate',
       'publish',
@@ -307,11 +336,11 @@ describe('graph-derived legality', () => {
   })
 
   test('review loops go back, not forward', () => {
-    expect(canTransition(graph, 'spec_review', 'research')).toBe(true)
-    expect(canTransition(graph, 'code_review', 'implement')).toBe(true)
-    expect(canTransition(graph, 'code_review', 'summarize')).toBe(true)
-    expect(canTransition(graph, 'code_review', 'human_final_gate')).toBe(false)
-    expect(canTransition(graph, 'code_review', 'archived')).toBe(false)
+    expect(canTransition(graph, 'spec_review', 'specify')).toBe(true)
+    expect(canTransition(graph, 'validate', 'implement')).toBe(true)
+    expect(canTransition(graph, 'validate', 'summarize')).toBe(true)
+    expect(canTransition(graph, 'validate', 'human_final_gate')).toBe(false)
+    expect(canTransition(graph, 'validate', 'archived')).toBe(false)
   })
 
   test('interrupt entry and exit keep working', () => {
@@ -347,7 +376,7 @@ describe('graph-derived legality', () => {
     expect(canTransition(graph, 'blocked', 'planning')).toBe(true)
     expect(canTransition(graph, 'blocked', 'cancelled')).toBe(true)
     expect(canTransition(graph, 'blocked', 'implement')).toBe(false)
-    expect(canTransition(graph, 'blocked', 'research')).toBe(false)
+    expect(canTransition(graph, 'blocked', 'specify')).toBe(false)
   })
 
   test('a terminal task cannot be blocked', () => {
@@ -368,7 +397,7 @@ describe('graph-derived legality', () => {
 
     expect(canTransition(other, 'research', 'human_final_gate')).toBe(true)
     expect(canTransition(other, 'research', 'spec_review')).toBe(false)
-    expect(canTransition(graph, 'research', 'spec_review')).toBe(true)
+    expect(canTransition(graph, 'specify', 'spec_review')).toBe(true)
   })
 })
 
@@ -378,7 +407,7 @@ describe('restart eligibility', () => {
   })
 
   test('an earlier stage is restartable', () => {
-    expect(isRestartable(graph, 'research', 'implement')).toBe(true)
+    expect(isRestartable(graph, 'specify', 'implement')).toBe(true)
   })
 
   test('a later stage is not restartable — it may assume artifacts never produced', () => {
@@ -412,7 +441,7 @@ describe('instantiation', () => {
 })
 
 describe('provider binding', () => {
-  const review = graph.nodes.find((n) => n.key === 'code_review') as StageNode
+  const review = graph.nodes.find((n) => n.key === 'validate') as StageNode
   const implement = graph.nodes.find((n) => n.key === 'implement') as StageNode
 
   test('a review never runs on its writer while an alternative exists', () => {
@@ -436,14 +465,14 @@ describe('advance', () => {
     entries.map(([loop, round, verdict, counted]) => ({ loop, round, verdict, counted }))
 
   test('plain success advances along the forward edge', () => {
-    expect(advance(graph, 'research', { status: 'ok' }, [], caps)).toEqual({
+    expect(advance(graph, 'specify', { status: 'ok' }, [], caps)).toEqual({
       kind: 'advance',
       to: 'spec_review',
     })
   })
 
   test('a loop-edged stage without a verdict is a defect, not an approval', () => {
-    expect(() => advance(graph, 'verify', { status: 'ok' }, [], caps)).toThrow(/verdict/)
+    expect(() => advance(graph, 'validate', { status: 'ok' }, [], caps)).toThrow(/verdict/)
   })
 
   test('approve advances and records the round', () => {
@@ -467,7 +496,7 @@ describe('advance', () => {
 
     expect(decision).toEqual({
       kind: 'loop',
-      to: 'research',
+      to: 'specify',
       record: { loop: 'spec', round: 1, verdict: 'revise', findings: [] },
     })
   })
@@ -494,14 +523,14 @@ describe('advance', () => {
 
     expect(decision).toEqual({
       kind: 'loop',
-      to: 'research',
+      to: 'specify',
       record: { loop: 'spec', round: 4, verdict: 'revise', findings: [] },
     })
   })
 
   test('the two impl reviewers share one cap', () => {
     const used = rounds(['impl', 1, 'revise'], ['impl', 2, 'approve'], ['impl', 3, 'revise'])
-    const decision = advance(graph, 'code_review', { status: 'ok', verdict: 'revise' }, used, caps)
+    const decision = advance(graph, 'validate', { status: 'ok', verdict: 'revise' }, used, caps)
 
     expect(decision).toEqual({
       kind: 'loop',
@@ -513,7 +542,7 @@ describe('advance', () => {
   test('escalate parks and records the verdict', () => {
     const decision = advance(
       graph,
-      'code_review',
+      'validate',
       {
         status: 'ok',
         verdict: 'escalate',
@@ -526,7 +555,7 @@ describe('advance', () => {
     expect(decision).toEqual({
       kind: 'park',
       reason: 'escalate',
-      resume: 'code_review',
+      resume: 'validate',
       record: {
         loop: 'impl',
         round: 1,
@@ -545,7 +574,7 @@ describe('advance', () => {
     }
     const decision = advance(
       graph,
-      'code_review',
+      'validate',
       {
         status: 'ok',
         verdict: 'revise',
@@ -558,7 +587,7 @@ describe('advance', () => {
     expect(decision).toEqual({
       kind: 'park',
       reason: 'repeated_finding',
-      resume: 'code_review',
+      resume: 'validate',
       record: {
         loop: 'impl',
         round: 2,
@@ -577,7 +606,7 @@ describe('advance', () => {
     }
     const decision = advance(
       graph,
-      'code_review',
+      'validate',
       {
         status: 'ok',
         verdict: 'revise',
@@ -600,7 +629,7 @@ describe('advance', () => {
     }
     const decision = advance(
       graph,
-      'code_review',
+      'validate',
       {
         status: 'ok',
         verdict: 'revise',
@@ -615,28 +644,28 @@ describe('advance', () => {
 
   test('a needs_decision result with a blocking decision parks without recording a round', () => {
     expect(
-      advance(graph, 'research', { status: 'needs_decision', hasBlockingDecision: true }, [], caps),
+      advance(graph, 'specify', { status: 'needs_decision', hasBlockingDecision: true }, [], caps),
     ).toEqual({
       kind: 'park',
       reason: 'needs_decision',
-      resume: 'research',
+      resume: 'specify',
     })
   })
 
   test('an ok result carrying a blocking decision still parks, not just needs_decision', () => {
     expect(
-      advance(graph, 'research', { status: 'ok', hasBlockingDecision: true }, [], caps),
+      advance(graph, 'specify', { status: 'ok', hasBlockingDecision: true }, [], caps),
     ).toEqual({
       kind: 'park',
       reason: 'needs_decision',
-      resume: 'research',
+      resume: 'specify',
     })
   })
 
   test('an ok result carrying only non-blocking decisions advances normally', () => {
     const decision = advance(
       graph,
-      'research',
+      'specify',
       { status: 'ok', hasBlockingDecision: false },
       [],
       caps,
@@ -647,7 +676,7 @@ describe('advance', () => {
   test('AC-1206: a needs_decision status with only non-blocking decisions still advances', () => {
     const decision = advance(
       graph,
-      'research',
+      'specify',
       { status: 'needs_decision', hasBlockingDecision: false },
       [],
       caps,
@@ -658,7 +687,7 @@ describe('advance', () => {
   test('a blocking decision alongside an escalate verdict still records the round', () => {
     const decision = advance(
       graph,
-      'code_review',
+      'validate',
       {
         status: 'ok',
         verdict: 'escalate',
@@ -672,7 +701,7 @@ describe('advance', () => {
     expect(decision).toEqual({
       kind: 'park',
       reason: 'needs_decision',
-      resume: 'code_review',
+      resume: 'validate',
       record: {
         loop: 'impl',
         round: 1,
@@ -699,20 +728,22 @@ describe('pipeline profiles', () => {
     expect(definitionFor('feature', 'full')).toBe(FEATURE_BUGFIX_PIPELINE)
   })
 
-  test('the compact profile drops the second planner pass and the spec review', () => {
-    const keys = FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key)
-    expect(keys).not.toContain('kickoff_brief')
-    expect(keys).not.toContain('spec_review')
+  test('the compact profile drops the spec review and nothing else', () => {
+    const kept = new Set(FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key))
+    const dropped = FEATURE_BUGFIX_PIPELINE.nodes
+      .map((node) => node.key)
+      .filter((key) => !kept.has(key))
+
+    expect(dropped).toEqual(['spec_review'])
   })
 
-  test('the compact profile keeps the spine, every human gate, and the code review', () => {
+  test('AC-640: the compact profile keeps the spine and every human gate', () => {
     const keys = FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key)
     for (const key of [
       'planning',
-      'research',
+      'specify',
       'implement',
-      'verify',
-      'code_review',
+      'validate',
       'summarize',
       'publish',
       ...HUMAN_GATES,
@@ -722,9 +753,9 @@ describe('pipeline profiles', () => {
     expect(FEATURE_BUGFIX_COMPACT.terminal).toBe(FEATURE_BUGFIX_PIPELINE.terminal)
   })
 
-  test('planning walks straight to the kickoff gate under the compact profile', () => {
-    expect(forwardTarget(compact, 'planning')).toBe('human_kickoff_gate')
-    expect(forwardTarget(graph, 'planning')).toBe('kickoff_brief')
+  test('specification walks straight to the spec gate under the compact profile', () => {
+    expect(forwardTarget(compact, 'specify')).toBe('human_spec_gate')
+    expect(forwardTarget(graph, 'specify')).toBe('spec_review')
   })
 
   test('the compact profile reaches archive through all three gates', () => {
@@ -745,11 +776,11 @@ describe('pipeline profiles', () => {
     const stranded: PipelineDefinition = {
       ...FEATURE_BUGFIX_PIPELINE,
       id: 'stranded',
-      nodes: FEATURE_BUGFIX_PIPELINE.nodes.filter((node) => node.key !== 'research'),
+      nodes: FEATURE_BUGFIX_PIPELINE.nodes.filter((node) => node.key !== 'implement'),
     }
 
     expect(validateReduction(FEATURE_BUGFIX_PIPELINE, stranded).join('\n')).toMatch(
-      /stranded.*research.*drops/s,
+      /stranded.*implement.*drops/s,
     )
   })
 
@@ -771,7 +802,7 @@ describe('pipeline profiles', () => {
       ...FEATURE_BUGFIX_PIPELINE,
       id: 'edited',
       nodes: FEATURE_BUGFIX_PIPELINE.nodes.map((node) =>
-        node.key === 'research' ? { ...node, role: 'summarizer' as const } : node,
+        node.key === 'specify' ? { ...node, role: 'summarizer' as const } : node,
       ),
     }
 
@@ -790,5 +821,98 @@ describe('pipeline profiles', () => {
     expect(() =>
       loadPipelineProfiles({ feature: { full: FEATURE_BUGFIX_PIPELINE, compact: broken } }),
     ).toThrow(/broken.*implement/s)
+  })
+})
+
+describe('conditional nodes', () => {
+  test('AC-423: a predicate reading a stage outcome is refused', () => {
+    const circular: PredicateSpec = {
+      reads: ['checkedNodeVerdict'],
+      evaluate: () => ({ holds: false, reason: 'the last check passed' }),
+    }
+
+    expect(
+      conditionDefects({ predicate: 'spec_scenarios_at_least', threshold: 1 }, circular).join('\n'),
+    ).toMatch(/reads stage outcomes.*checkedNodeVerdict/)
+  })
+
+  test('a predicate the registry does not hold is refused', () => {
+    expect(
+      conditionDefects({ predicate: 'invented' as PredicateId, threshold: 1 }, undefined),
+    ).toEqual(['predicate "invented" is not in the registry'])
+  })
+
+  test('the shipped predicates read only input facts', () => {
+    for (const [id, spec] of Object.entries(NODE_PREDICATES)) {
+      expect(conditionDefects({ predicate: id as PredicateId, threshold: 1 }, spec)).toEqual([])
+    }
+  })
+
+  test('AC-421: the spec review runs at the floor and is skipped below it', () => {
+    const review = graph.nodes.find((node) => node.key === 'spec_review') as StageNode
+
+    expect(evaluateCondition(review, { specScenarioCount: 4 }).holds).toBe(true)
+    const skipped = evaluateCondition(review, { specScenarioCount: 3 })
+    expect(skipped.holds).toBe(false)
+    expect(skipped.reason).toMatch(/3 scenario/)
+  })
+
+  test('an unconditional node always runs', () => {
+    const implement = graph.nodes.find((node) => node.key === 'implement') as StageNode
+    expect(evaluateCondition(implement, { specScenarioCount: 0 }).holds).toBe(true)
+  })
+})
+
+describe('session resumption', () => {
+  const withResume = (resumes: TaskState, role: StageNode['role'] = 'researcher') =>
+    def({
+      nodes: [
+        { kind: 'stage', key: 'research', role: 'researcher', binding: 'role_default' },
+        { kind: 'stage', key: 'implement', role, binding: 'role_default', resumes },
+      ],
+    })
+
+  test('resuming an earlier node of the same role is well-formed', () => {
+    expect(validateDefinition(withResume('research'))).toEqual([])
+  })
+
+  test('AC-424: resuming a later node is refused naming the direction', () => {
+    const broken = def({
+      nodes: [
+        {
+          kind: 'stage',
+          key: 'research',
+          role: 'researcher',
+          binding: 'role_default',
+          resumes: 'implement',
+        },
+        { kind: 'stage', key: 'implement', role: 'researcher', binding: 'role_default' },
+      ],
+    })
+
+    expect(validateDefinition(broken).join('\n')).toMatch(/implement.*not strictly earlier/)
+  })
+
+  test('resuming a node the definition does not contain is refused', () => {
+    expect(validateDefinition(withResume('summarize')).join('\n')).toMatch(
+      /summarize.*does not contain/,
+    )
+  })
+
+  test('a session does not carry between roles', () => {
+    expect(validateDefinition(withResume('research', 'summarizer')).join('\n')).toMatch(
+      /does not carry between roles/,
+    )
+  })
+
+  test('AC-426: a profile dropping a resumed node is refused', () => {
+    const base = withResume('research')
+    const reduction: PipelineDefinition = {
+      ...base,
+      id: 'dropped-base',
+      nodes: base.nodes.filter((node) => node.key !== 'research'),
+    }
+
+    expect(validateReduction(base, reduction).join('\n')).toMatch(/resumes "research".*drops/)
   })
 })

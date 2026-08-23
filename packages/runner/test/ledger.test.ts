@@ -10,7 +10,7 @@ const BASE: LedgerSnapshot = {
   type: 'bugfix',
   repoUrl: 'git@example.com:org/ingester.git',
   baseBranch: 'main',
-  status: 'research',
+  status: 'specify',
   harnessStatus: 'partial',
   harnessEvidence: null,
   planSize: null,
@@ -28,7 +28,7 @@ describe('ledger', () => {
 
     expect(ledger).toContain('Fix the reorg bug in the ingester')
     expect(ledger).toContain('- Base branch: main')
-    expect(ledger).toContain('- Current state: research')
+    expect(ledger).toContain('- Current state: specify')
     expect(ledger).toContain(
       `- spec: 0 round(s) completed, cap ${DEFAULT_CAPS.max_spec_iterations}`,
     )

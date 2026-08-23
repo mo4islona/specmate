@@ -39,7 +39,7 @@ describeDb('decision persistence', () => {
       .insert(decisions)
       .values({
         taskId,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'ambiguous-scope',
         kind: 'question',
         promptMd: 'What does "dark mode" mean here?',
@@ -51,7 +51,7 @@ describeDb('decision persistence', () => {
       (async () =>
         db.insert(decisions).values({
           taskId,
-          nodeKey: 'research',
+          nodeKey: 'specify',
           key: 'ambiguous-scope',
           kind: 'question',
           promptMd: 'A second question with the same identity',
@@ -68,7 +68,7 @@ describeDb('decision persistence', () => {
       .insert(decisions)
       .values({
         taskId,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'ambiguous-scope',
         kind: 'question',
         promptMd: 'Asking again after the answer',

@@ -161,6 +161,10 @@ export async function createTaskInTx(
       // launching: the task starts at its pipeline's entry node.
       status: input.at ?? dag.entry,
       caps: Caps.parse(input.caps ?? {}),
+      // Kept unresolved beside the resolved copy: once `caps` is a full object the
+      // fields the owner chose are indistinguishable from the ones that defaulted,
+      // and a size declared later would overwrite both alike (AC-641).
+      capsOverride: input.caps ?? {},
       budgets: Budgets.parse(input.budgets ?? {}),
       modelBindings: resolveModelBindings(currentDefaults, input.modelBindings),
       originTaskId: input.originTaskId ?? null,

@@ -57,7 +57,12 @@ export class ClaudeCodeProvider implements AgentProvider {
    * `--verbose` is required alongside it under `-p`/`--print`: the CLI refuses
    * to start without it, regardless of whether per-token deltas are used.
    */
-  argv(role: AgentRole, model: ModelId, reasoningEffort: ReasoningEffort): string[] {
+  argv(
+    role: AgentRole,
+    model: ModelId,
+    reasoningEffort: ReasoningEffort,
+    resumeSessionId?: string,
+  ): string[] {
     const { config } = this.deps
     const argv = [
       config.cli,
@@ -70,6 +75,10 @@ export class ClaudeCodeProvider implements AgentProvider {
       '--effort',
       reasoningEffort,
     ]
+    // Forked, never continued in place: a retry of this stage has to start from
+    // the base session as the node that opened it left it, and `--resume` alone
+    // would append this attempt's turns to that base (REQ-209, AC-236).
+    if (resumeSessionId) argv.push('--resume', resumeSessionId, '--fork-session')
     // Nobody is present to answer a permission prompt; the container boundary
     // and the post-run scope check are the safety property, not the prompt.
     argv.push('--permission-mode', 'bypassPermissions')
@@ -92,8 +101,9 @@ export class ClaudeCodeProvider implements AgentProvider {
     // an attempt that never wrote anything.
     await rm(resultPath, { force: true })
 
-    const run = await backend.run({
-      argv: this.argv(job.role, job.model, job.reasoningEffort),
+    let coldStartReason: string | null = null
+    let run = await backend.run({
+      argv: this.argv(job.role, job.model, job.reasoningEffort, job.resumeSessionId),
       stdin: job.prompt,
       workspacePath: job.workspacePath,
       env: {},
@@ -110,7 +120,31 @@ export class ClaudeCodeProvider implements AgentProvider {
         : undefined,
     })
 
-    const log = `$ ${this.argv(job.role, job.model, job.reasoningEffort).join(' ')}\n\n${run.stdout}\n${run.stderr}`
+    // AC-235: the artifacts are the contract and the session is grounding, so a
+    // session the provider will not give back degrades the run rather than failing it.
+    if (job.resumeSessionId && rejectedTheSession(run)) {
+      coldStartReason = `the provider would not continue session ${job.resumeSessionId}`
+      await rm(resultPath, { force: true })
+      run = await backend.run({
+        argv: this.argv(job.role, job.model, job.reasoningEffort),
+        stdin: job.prompt,
+        workspacePath: job.workspacePath,
+        env: {},
+        timeoutMs: job.timeoutMs || config.stageTimeoutMs,
+        limits: { cpus: config.cpus, memory: config.memory },
+        containerRuntime: job.needsContainerRuntime ?? false,
+        environment: job.environment,
+        label,
+        labels: stageContainerLabels(job),
+        onActivityLine: job.onActivity
+          ? (line) => {
+              for (const activity of parseActivityLine(line)) job.onActivity?.(activity)
+            }
+          : undefined,
+      })
+    }
+
+    const log = `$ ${this.argv(job.role, job.model, job.reasoningEffort, job.resumeSessionId).join(' ')}\n\n${run.stdout}\n${run.stderr}`
     await writeFile(join(scratch, 'run.log'), log)
 
     if (run.timedOut) {
@@ -140,7 +174,7 @@ export class ClaudeCodeProvider implements AgentProvider {
       )
     }
 
-    const parsed = parseStageResult(raw)
+    const parsed = parseStageResult(raw, Boolean(job.resumeSessionId))
     if (!parsed.ok) {
       throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, parsed.error)
     }
@@ -165,6 +199,8 @@ export class ClaudeCodeProvider implements AgentProvider {
       exitCode: run.exitCode,
       durationMs: run.durationMs,
       telemetry,
+      sessionId: readSessionId(run.stdout),
+      coldStartReason,
     }
   }
 
@@ -362,6 +398,41 @@ function servingModel(modelUsage: Record<string, unknown>): string | null {
  * still applies per line, one level down from where it used to apply to the
  * whole buffer.
  */
+/**
+ * The session identifier the CLI reports, from whichever streamed line carries it —
+ * the init line has it before any work happens, so a run that dies mid-way still
+ * leaves something a later node could continue.
+ */
+export function readSessionId(stdout: string): string | null {
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+
+    const candidate = Array.isArray(parsed) ? parsed.at(-1) : parsed
+    if (isRecord(candidate) && typeof candidate.session_id === 'string') return candidate.session_id
+  }
+
+  return null
+}
+
+/** A refused resume looks like a failed start, not like a stage that ran and disagreed. */
+function rejectedTheSession(run: ExecResult): boolean {
+  if (run.exitCode === 0) return false
+
+  const said = `${run.stdout}\n${run.stderr}`.toLowerCase()
+
+  return (
+    said.includes('session') && (said.includes('not found') || said.includes('no conversation'))
+  )
+}
+
 function parseEnvelope(stdout: string): Record<string, unknown> | null {
   let result: Record<string, unknown> | null = null
 

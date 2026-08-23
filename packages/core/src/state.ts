@@ -1,15 +1,24 @@
 import { z } from 'zod'
 
-/** Task lifecycle from §5. Transitions are orchestrator-owned; agents never set state. */
+/**
+ * Task lifecycle from §5. Transitions are orchestrator-owned; agents never set state.
+ *
+ * `kickoff_brief`, `research`, `verify` and `code_review` left the catalog when the
+ * pipeline was compressed, and stay here forever: a task pinned before that deploy
+ * still names them, and the transition table is derived from the pinned graph rather
+ * than from the catalog, so those tasks keep walking.
+ */
 export const TASK_STATES = [
   'draft',
   'planning',
   'kickoff_brief',
   'human_kickoff_gate',
+  'specify',
   'research',
   'spec_review',
   'human_spec_gate',
   'implement',
+  'validate',
   'verify',
   'code_review',
   'summarize',

@@ -2,66 +2,69 @@ Design decisions are referenced as D1–D5 and requirements by ID; neither is re
 
 ## 0. The one thing that can change the plan
 
-- [ ] 0.1 Establish whether the pinned provider CLI can start from an existing session without
-      writing into it (D3's fork). Verify: from a container mounted on the auth volume, open a
-      session, fork it twice, and confirm the base session's transcript is unchanged after both.
-      If forking is unavailable, D3 ships as cold-only and tasks 5.2–5.4 reduce to recording the
-      identifier; say so here before continuing.
+- [ ] 0.1 **Deferred by the owner, not done.** The check was to confirm the pinned provider CLI
+      can start from an existing session without writing into it (D3's fork). Half of it is
+      answered on paper: `--fork-session` exists and is documented as "when resuming, create a new
+      session ID". What stays unverified is whether it holds under `-p` with `stream-json`, and
+      whether a second container run resolves a session the first one wrote — the store is keyed
+      by working directory, so a path mismatch hides a session the volume still holds. Implemented
+      on the assumption that it works, with AC-235's cold fallback carrying the failure: if the
+      resume is rejected the stage runs from artifacts and says so, rather than failing.
 
 ## 1. Storage
 
-- [ ] 1.1 Additive status-enum migration adding `specify` and `validate`, dropping nothing —
+- [x] 1.1 Additive status-enum migration adding `specify` and `validate`, dropping nothing —
       REQ-405, D1. Verify: `bun run db:generate` produces an additive diff, and a task row holding
       `research` still reads back after `bun run db:migrate`.
-- [ ] 1.2 Give the stage row its provider session identifier — REQ-214. Verify:
+- [x] 1.2 Give the stage row its provider session identifier — REQ-214. Verify:
       `bun test packages/db`.
 
 ## 2. The graph's new vocabulary
 
-- [ ] 2.1 Add the conditional node: a predicate id and threshold on a stage node, a registry of
+- [x] 2.1 Add the conditional node: a predicate id and threshold on a stage node, a registry of
       predicates each declaring the facts it reads, and the fact bundle the engine assembles —
       REQ-409, D2. Verify: `bun test packages/core/test/pipeline.test.ts`.
-- [ ] 2.2 Reject a predicate reading an output of the node it guards, or of a node that checks
+- [x] 2.2 Reject a predicate reading an output of the node it guards, or of a node that checks
       that node — AC-423. Verify: same command; a fixture catalog with a circular predicate fails
       to load naming the node.
-- [ ] 2.3 Add `resumes` to a stage node, rejecting a target that is later, absent, or of another
+- [x] 2.3 Add `resumes` to a stage node, rejecting a target that is later, absent, or of another
       role — REQ-410, AC-424. Verify: same command.
-- [ ] 2.4 Extend the reduction check so a profile may not drop a node another node resumes —
+- [x] 2.4 Extend the reduction check so a profile may not drop a node another node resumes —
       AC-426. Verify: same command.
 
 ## 3. The role catalog
 
-- [ ] 3.1 Add the merged validating role: writes harness code and its reports, denied product
+- [x] 3.1 Add the merged validating role: writes harness code and its reports, denied product
       code, `injectSpecSkill` on, corroborated — REQ-111, AC-130. Verify:
       `bun test packages/core/test/roles.test.ts`.
-- [ ] 3.2 Bind every checking node across providers and assert no checking node is default-bound —
+- [x] 3.2 Bind every checking node across providers and assert no checking node is default-bound —
       REQ-106, AC-135. Verify: same command; this is the live defect where the implementer's and
       the verifier's defaults coincide.
-- [ ] 3.3 Leave `researcher` in the catalog with nothing scheduling it, as `spec_writer` and
+- [x] 3.3 Leave `researcher` in the catalog with nothing scheduling it, as `spec_writer` and
       `retro` already are. Verify: nothing to run — this task is a decision recorded, and the
       proposal's Non-goals says why.
 
 ## 4. The definition
 
-- [ ] 4.1 Rewrite the feature/bugfix definition to the ten-node shape: `planning`, kickoff gate,
+- [x] 4.1 Rewrite the feature/bugfix definition to the ten-node shape: `planning`, kickoff gate,
       `specify` resuming `planning`, `spec_review` conditional, spec gate, `implement`, `validate`,
       `summarize`, final gate, `publish` — REQ-405, REQ-602, D1. Verify:
       `bun test packages/core/test/pipeline.test.ts` — the definition loads and every node reaches
       the terminal.
-- [ ] 4.2 Reduce profiles to `full` and `compact`, and give each size its caps — REQ-408, REQ-606,
+- [x] 4.2 Reduce profiles to `full` and `compact`, and give each size its caps — REQ-408, REQ-606,
       D4. Verify: same command, plus a test asserting no two sizes select the same profile under
       the same caps (AC-428).
-- [ ] 4.3 Record the declared size's caps on the task when the profile is applied — AC-427,
+- [x] 4.3 Record the declared size's caps on the task when the profile is applied — AC-427,
       AC-641. Verify: `bun test apps/orchestrator/test/engine.test.ts`.
 
 ## 5. The runner
 
-- [ ] 5.1 Parse the provider session identifier from the output stream and return it with the
+- [x] 5.1 Parse the provider session identifier from the output stream and return it with the
       outcome — REQ-214, AC-232. Nothing reads it today. Verify:
       `bun test packages/runner/test/claude.test.ts`.
-- [ ] 5.2 Pass a base session on the invocation when the job carries one, forking rather than
+- [x] 5.2 Pass a base session on the invocation when the job carries one, forking rather than
       continuing in place — D3. Verify: same command.
-- [ ] 5.3 Fall back to a cold run when the session cannot be continued, recording that it did and
+- [x] 5.3 Fall back to a cold run when the session cannot be continued, recording that it did and
       why, and accepting the stage on its own terms — AC-235. Verify: same command with a stub
       provider that rejects the resume.
 - [ ] 5.4 A retry forks the resumed node's session as that node left it, carrying none of the

@@ -61,7 +61,7 @@ describeDb('conversation persistence', () => {
       sequence: 1,
       role: 'assistant',
       status: 'responding',
-      taskState: 'research',
+      taskState: 'specify',
     })
     await expect(
       (async () =>
@@ -72,7 +72,7 @@ describeDb('conversation persistence', () => {
             sequence: 2,
             role: 'assistant',
             status: 'responding',
-            taskState: 'research',
+            taskState: 'specify',
           })
           .returning())(),
     ).rejects.toThrow()
@@ -105,7 +105,7 @@ describeDb('conversation persistence', () => {
       .values({
         taskId,
         version: 1,
-        dag: { entry: 'research', terminal: 'archived', nodes: [] } as never,
+        dag: { entry: 'specify', terminal: 'archived', nodes: [] } as never,
       })
       .returning()
     assert(graph)
@@ -114,7 +114,7 @@ describeDb('conversation persistence', () => {
       .values({
         taskId,
         graphId: graph.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         role: 'researcher',
         provider: 'claude-code',
         status: 'interrupted',

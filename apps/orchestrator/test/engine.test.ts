@@ -119,12 +119,12 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('dispatches a conversation response beside a running stage', async () => {
     const { engine, stagesDispatcher, conversationsDispatcher } = makeEngine()
-    const { task, graph } = await seed({ at: 'research' })
+    const { task, graph } = await seed({ at: 'specify' })
     const [decision] = await db
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'review-direction',
         kind: 'question',
         promptMd: 'Which direction should the review take?',
@@ -160,7 +160,7 @@ describeDb('conversation scheduling and interruption', () => {
           kind: 'answer_decision',
           target: { taskId: task.id, graphId: graph.id, decisionId: decision.id },
           expectedVersion: {
-            taskStatus: 'research',
+            taskStatus: 'specify',
             graphId: graph.id,
             decisionStatus: 'open',
           },
@@ -169,22 +169,22 @@ describeDb('conversation scheduling and interruption', () => {
         },
         {
           kind: 'instruct_next_run',
-          target: { taskId: task.id, graphId: graph.id, nodeKey: 'research' },
-          expectedVersion: { taskStatus: 'research', graphId: graph.id },
+          target: { taskId: task.id, graphId: graph.id, nodeKey: 'specify' },
+          expectedVersion: { taskStatus: 'specify', graphId: graph.id },
           instruction: 'required',
-          description: 'Attach guidance to the next run of stage research.',
+          description: 'Attach guidance to the next run of stage specify.',
         },
       ]),
     )
 
     finishResponse(okConversationExecution())
-    finishStage(okExecution('researcher'))
+    finishStage(okExecution('planner'))
     await engine.idle()
   })
 
   test('answers queued messages FIFO and retries one failed response', async () => {
     const { engine, conversationsDispatcher, ws } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'human_spec_gate' })
+    const { task } = await seed({ at: 'specify', status: 'human_spec_gate' })
     const first = await seedMessage(task.id)
     await appendOwnerMessage(createConversationStore(db), {
       conversationId: first.conversation.id,
@@ -244,7 +244,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('stops only the exact running attempt, discards it, and restarts from the same node', async () => {
     const { engine, stagesDispatcher, ws, killed } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     let finish: (value: StageExecution) => void = () => {}
     stagesDispatcher.plan(
       () =>
@@ -266,13 +266,13 @@ describeDb('conversation scheduling and interruption', () => {
       actor: 'owner',
     })
     await until(() => killed.length === 1)
-    finish(okExecution('researcher'))
+    finish(okExecution('planner'))
     await stopping
-    expect(await reload(db, task.id)).toMatchObject({ status: 'paused', resumeStatus: 'research' })
+    expect(await reload(db, task.id)).toMatchObject({ status: 'paused', resumeStatus: 'specify' })
     expect(ws.calls.discarded).toContain(task.slug)
     expect(killed).toContainEqual({
       'specmate.task': task.id,
-      'specmate.node': 'research',
+      'specmate.node': 'specify',
       'specmate.attempt': '0',
     })
     await expect(
@@ -293,7 +293,7 @@ describeDb('conversation scheduling and interruption', () => {
       guidance: 'Use the bounded variant.',
       idempotencyKey: `restart:${running.id}`,
     })
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
     const [intervention] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
     expect(intervention).toMatchObject({
       kind: 'intervention',
@@ -308,7 +308,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('persists proposals inertly until confirmation records a future-run intervention', async () => {
     const { engine, conversationsDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'human_spec_gate' })
+    const { task } = await seed({ at: 'specify', status: 'human_spec_gate' })
     const seeded = await seedMessage(task.id)
     conversationsDispatcher.plan(() => ({
       ...okConversationExecution('I can pass that guidance on.'),
@@ -362,7 +362,7 @@ describeDb('conversation scheduling and interruption', () => {
         kind: 'instruct_next_run',
         target: { taskId: task.id, nodeKey: 'implement' },
         instruction: 'This is stale.',
-        expectedVersion: { taskStatus: 'research' },
+        expectedVersion: { taskStatus: 'specify' },
       })
       .returning()
     assert(stale)
@@ -373,7 +373,7 @@ describeDb('conversation scheduling and interruption', () => {
         actor: 'owner',
         idempotencyKey: `confirm:${stale.id}`,
       }),
-    ).rejects.toThrow('expected task research')
+    ).rejects.toThrow('expected task specify')
     expect(
       (await db.select().from(conversationActions).where(eq(conversationActions.id, stale.id)))[0],
     ).toMatchObject({ status: 'conflict' })
@@ -381,15 +381,15 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('startup recovery repeats an applying stop and leaves one safely paused task', async () => {
     const { engine, ws, killed } = makeEngine()
-    const { task, graph } = await seed({ at: 'research', status: 'paused' })
-    await db.update(tasks).set({ resumeStatus: 'research' }).where(eq(tasks.id, task.id))
+    const { task, graph } = await seed({ at: 'specify', status: 'paused' })
+    await db.update(tasks).set({ resumeStatus: 'specify' }).where(eq(tasks.id, task.id))
     const [stage] = await db
       .insert(stages)
       .values({
         taskId: task.id,
         graphId: graph.id,
-        nodeKey: 'research',
-        role: 'researcher',
+        nodeKey: 'specify',
+        role: 'planner',
         provider: 'claude-code',
         status: 'interrupted',
         attempt: 0,
@@ -401,7 +401,7 @@ describeDb('conversation scheduling and interruption', () => {
     expect(await engine.sweep()).toBe(1)
     expect(killed).toContainEqual({
       'specmate.task': task.id,
-      'specmate.node': 'research',
+      'specmate.node': 'specify',
       'specmate.attempt': '0',
     })
     expect(ws.calls.discarded).toContain(task.slug)
@@ -409,12 +409,12 @@ describeDb('conversation scheduling and interruption', () => {
       status: 'interrupted',
       interruptionCleanupStatus: 'succeeded',
     })
-    expect(await reload(db, task.id)).toMatchObject({ status: 'paused', resumeStatus: 'research' })
+    expect(await reload(db, task.id)).toMatchObject({ status: 'paused', resumeStatus: 'specify' })
   })
 
   test('approve follows the gate’s approve edge and records who acted', async () => {
     const { engine } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'human_spec_gate' })
+    const { task } = await seed({ at: 'specify', status: 'human_spec_gate' })
 
     await engine.approve(task.id, 'evgeny')
 
@@ -429,18 +429,18 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('gate operations are rejected away from a gate', async () => {
     const { engine } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
 
     await expect(engine.approve(task.id, 'evgeny')).rejects.toThrow(NotAtGateError)
     await expect(
-      engine.rework({ taskId: task.id, actor: 'evgeny', target: 'research' }),
+      engine.rework({ taskId: task.id, actor: 'evgeny', target: 'specify' }),
     ).rejects.toThrow(NotAtGateError)
   })
 
   test('redirect follows its edge, records feedback, and counts against its cap', async () => {
     const { engine } = makeEngine()
     const { task } = await seed({
-      at: 'research',
+      at: 'specify',
       status: 'human_kickoff_gate',
       caps: { max_kickoff_regenerations: 1 },
     })
@@ -458,7 +458,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('rework re-enters a declared target and resets the round counters', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'human_spec_gate' })
+    const { task } = await seed({ at: 'specify', status: 'human_spec_gate' })
     for (const round of [1, 2, 3]) {
       await recordRound(db, task.id, { loop: 'spec', round, verdict: 'revise', findings: [] })
     }
@@ -466,11 +466,11 @@ describeDb('conversation scheduling and interruption', () => {
     await expect(
       engine.rework({ taskId: task.id, actor: 'evgeny', target: 'implement' }),
     ).rejects.toThrow(ReworkTargetError)
-    await engine.rework({ taskId: task.id, actor: 'evgeny', target: 'research' })
+    await engine.rework({ taskId: task.id, actor: 'evgeny', target: 'specify' })
 
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
     const notes = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
-    expect(notes[0]?.target).toEqual({ nodeKey: 'research' })
+    expect(notes[0]?.target).toEqual({ nodeKey: 'specify' })
 
     // With the counters reset, a fourth revise still fits the cap of three.
     await db.update(tasks).set({ status: 'spec_review' }).where(eq(tasks.id, task.id))
@@ -479,14 +479,14 @@ describeDb('conversation scheduling and interruption', () => {
     await engine.idle()
 
     const after = await reload(db, task.id)
-    expect(after.status).toBe('research')
+    expect(after.status).toBe('specify')
     const rounds = await db.select().from(iterations).where(eq(iterations.taskId, task.id))
     expect(rounds).toHaveLength(4)
   })
 
   test('resume returns a paused task exactly where it stopped', async () => {
     const { engine } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'paused', resume: 'spec_review' })
+    const { task } = await seed({ at: 'specify', status: 'paused', resume: 'spec_review' })
 
     await engine.resume(task.id, 'evgeny')
 
@@ -497,7 +497,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('resume refuses a waiting_human task; only answering or dismissing its decisions moves it', async () => {
     const { engine } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'spec_review' })
+    const { task } = await seed({ at: 'specify', status: 'waiting_human', resume: 'spec_review' })
 
     await expect(engine.resume(task.id, 'evgeny')).rejects.toThrow(NotParkedError)
     expect((await reload(db, task.id)).status).toBe('waiting_human')
@@ -505,7 +505,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('a task cancelled while its stage runs stays cancelled', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
 
     let release: (execution: StageExecution) => void = () => {}
     stagesDispatcher.plan(
@@ -520,7 +520,7 @@ describeDb('conversation scheduling and interruption', () => {
     await engine.cancel(task.id, 'evgeny')
     expect((await reload(db, task.id)).status).toBe('cancelled')
 
-    release(okExecution('researcher'))
+    release(okExecution('planner'))
     await engine.idle()
 
     // completeStage() checks the live task status against the node it was
@@ -533,7 +533,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('a parked task can be cancelled', async () => {
     const { engine, ws } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'spec_review' })
+    const { task } = await seed({ at: 'specify', status: 'waiting_human', resume: 'spec_review' })
 
     await engine.cancel(task.id, 'evgeny')
 
@@ -554,8 +554,8 @@ describeDb('conversation scheduling and interruption', () => {
     await expect(engine.restart(task.id, 'evgeny')).rejects.toThrow(NotRestartableError)
 
     const explicit = await seed({ at: 'implement', status: 'failed', resume: 'implement' })
-    await engine.restart(explicit.task.id, 'evgeny', 'research')
-    expect((await reload(db, explicit.task.id)).status).toBe('research')
+    await engine.restart(explicit.task.id, 'evgeny', 'specify')
+    expect((await reload(db, explicit.task.id)).status).toBe('specify')
   })
 
   test('guidance survives the attempt it was written for — AC-129', async () => {
@@ -589,9 +589,7 @@ describeDb('conversation scheduling and interruption', () => {
     const { engine } = makeEngine()
     const { task } = await seed({ at: 'implement', status: 'failed', resume: 'implement' })
 
-    await expect(engine.restart(task.id, 'evgeny', 'code_review')).rejects.toThrow(
-      RestartTargetError,
-    )
+    await expect(engine.restart(task.id, 'evgeny', 'validate')).rejects.toThrow(RestartTargetError)
     expect((await reload(db, task.id)).status).toBe('failed')
   })
 
@@ -680,7 +678,7 @@ describeDb('conversation scheduling and interruption', () => {
 
   test('final-gate approval enters publish without releasing the workspace; cancel releases', async () => {
     const { engine, ws } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'human_final_gate' })
+    const { task } = await seed({ at: 'specify', status: 'human_final_gate' })
 
     await engine.approve(task.id, 'evgeny')
 

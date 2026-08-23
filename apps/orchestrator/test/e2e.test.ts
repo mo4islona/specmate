@@ -199,7 +199,7 @@ describeDb('the loop against a real repository', () => {
       title: `E2E ${slug}`,
       type: 'feature',
       repoUrl: originUrl,
-      at: 'research',
+      at: 'specify',
     })
     created.push(task.id)
 
@@ -242,7 +242,7 @@ describeDb('the loop against a real repository', () => {
       .where(eq(stages.taskId, task.id))
       .orderBy(asc(stages.createdAt))
     expect(rows.map((row) => [row.nodeKey, row.status])).toEqual([
-      ['research', 'succeeded'],
+      ['specify', 'succeeded'],
       ['spec_review', 'succeeded'],
     ])
     // The stub's real envelope landed as queryable telemetry.
@@ -274,7 +274,7 @@ describeDb('the loop against a real repository', () => {
     await queueModes(task, ['half-written', 'nonzero-exit', 'ok'])
 
     await walkOneStage(engine)
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('spec_review')
@@ -289,13 +289,13 @@ describeDb('the loop against a real repository', () => {
       [1, 'succeeded'],
     ])
 
-    const proposal = join(
+    const design = join(
       worktreePath(resolveWorkspaceConfig({ root }), task.slug),
       'openspec/changes',
       task.slug,
-      'proposal.md',
+      'design.md',
     )
-    expect(await readFile(proposal, 'utf8')).toBe('# written by the stub\n')
+    expect(await readFile(design, 'utf8')).toBe('# written by the stub\n')
   })
 
   test('the admin CLI answers a decision and shows it once resolved', async () => {
@@ -304,7 +304,7 @@ describeDb('the loop against a real repository', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'scope',
         kind: 'question',
         promptMd: 'What does this cover?',
@@ -313,7 +313,7 @@ describeDb('the loop against a real repository', () => {
     if (!decision) throw new Error('decision insert returned no row')
     await db
       .update(tasks)
-      .set({ status: 'waiting_human', resumeStatus: 'research' })
+      .set({ status: 'waiting_human', resumeStatus: 'specify' })
       .where(eq(tasks.id, task.id))
 
     const env = {
@@ -351,7 +351,7 @@ describeDb('the loop against a real repository', () => {
       { env, stdout: 'pipe', stderr: 'pipe' },
     )
     expect(await answer.exited).toBe(0)
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
 
     const shownAfter = Bun.spawn(['bun', ADMIN, 'show', '--task', task.id], {
       env,
@@ -370,7 +370,7 @@ describeDb('the loop against a real repository', () => {
     const task = await makeTask()
     await db.insert(decisions).values({
       taskId: task.id,
-      nodeKey: 'research',
+      nodeKey: 'specify',
       key: 'scope',
       kind: 'question',
       promptMd: 'What does this cover?',
@@ -444,7 +444,7 @@ describeDb('the loop against a real repository', () => {
     expect(decision).toMatchObject({
       status: 'open',
       blocking: true,
-      nodeKey: 'research',
+      nodeKey: 'specify',
       key: 'scope',
     })
 
@@ -504,7 +504,7 @@ describeDb('the loop against a real repository', () => {
       actor: 'owner',
       idempotencyKey: `confirm:${proposed.id}`,
     })
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
     const resolved = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
 
@@ -566,13 +566,10 @@ describeDb('the loop against a real repository', () => {
     return task
   }
 
-  test('a task walks planning → kickoff_brief → the kickoff gate: the brief is complete, and its questions are open and discussable without being resolved', async () => {
+  test('a task walks planning → the kickoff gate in one planner run: the brief is complete, and its questions are open and discussable without being resolved', async () => {
     const engine = makeEngine()
     const task = await makeKickoffTask()
-    await queueModes(task, ['brief-complete', 'brief-complete-questions'])
-
-    await walkOneStage(engine)
-    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+    await queueModes(task, ['brief-complete-questions'])
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
@@ -582,9 +579,7 @@ describeDb('the loop against a real repository', () => {
       .from(decisions)
       .where(and(eq(decisions.taskId, task.id), eq(decisions.status, 'open')))
     expect(openDecisions.map((d) => d.key).sort()).toEqual(['auth-scope', 'data-retention'])
-    expect(openDecisions.every((d) => d.blocking === false && d.nodeKey === 'kickoff_brief')).toBe(
-      true,
-    )
+    expect(openDecisions.every((d) => d.blocking === false && d.nodeKey === 'planning')).toBe(true)
 
     // Every question opened its own scoped, discussable conversation.
     const scoped = await db
@@ -616,8 +611,7 @@ describeDb('the loop against a real repository', () => {
   test('a kickoff redirect carries the comment back to planning; approving afterward starts research with no open question', async () => {
     const engine = makeEngine()
     const task = await makeKickoffTask()
-    await queueModes(task, ['brief-complete', 'brief-complete-questions'])
-    await walkOneStage(engine)
+    await queueModes(task, ['brief-complete-questions'])
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
 
@@ -627,16 +621,12 @@ describeDb('the loop against a real repository', () => {
     const record = join(await tempDir('stub-record'), 'invocation.json')
     await queueModes(task, ['brief-complete'], { record })
     await walkOneStage(engine)
-    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
     const invocation = JSON.parse(await readFile(record, 'utf8')) as { prompt: string }
     expect(invocation.prompt).toContain('Please reconsider the auth scope before drafting.')
 
-    await queueModes(task, ['brief-complete-questions'])
-    await walkOneStage(engine)
-    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
-
     await engine.approve(task.id, 'evgeny')
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
     const stillOpen = await db
       .select()
       .from(decisions)
@@ -647,13 +637,10 @@ describeDb('the loop against a real repository', () => {
   test('missing coverage: the brief carries the warning, discussing changes nothing, proceeding waives it and starts research with the waiver in its ledger — AC-1404, AC-1407, AC-1408, AC-1414, AC-1417', async () => {
     const engine = makeEngine()
     const task = await makeKickoffTask()
-    await queueModes(task, ['brief-complete-harness-gap', 'brief-complete-harness-gap'])
+    await queueModes(task, ['brief-complete-harness-gap'])
 
     await walkOneStage(engine)
-    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
     expect((await reload(db, task.id)).harnessStatus).toBe('missing')
-
-    await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
 
     const briefPath = join(
@@ -695,7 +682,7 @@ describeDb('the loop against a real repository', () => {
     const record = join(await tempDir('stub-record'), 'research-invocation.json')
     await queueModes(task, ['ok'], { record })
     await engine.approve(task.id, 'evgeny')
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('spec_review')
@@ -706,9 +693,8 @@ describeDb('the loop against a real repository', () => {
   test('split instead: a harness task is created, the original blocks, the harness task archives, the original re-enters planning and is classified again — AC-1411, AC-1412, AC-627', async () => {
     const engine = makeEngine()
     const task = await makeKickoffTask()
-    await queueModes(task, ['brief-complete-harness-gap', 'brief-complete-harness-gap'])
+    await queueModes(task, ['brief-complete-harness-gap'])
 
-    await walkOneStage(engine)
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
 
@@ -758,7 +744,7 @@ describeDb('the loop against a real repository', () => {
     await queueModes(task, ['brief-complete'])
     await walkOneStage(engine)
     const reclassified = await reload(db, task.id)
-    expect(reclassified.status).toBe('kickoff_brief')
+    expect(reclassified.status).toBe('human_kickoff_gate')
     expect(reclassified.harnessStatus).toBe('adequate')
     const openAfterRelease = await db
       .select()

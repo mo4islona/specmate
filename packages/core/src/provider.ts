@@ -32,6 +32,12 @@ export interface StageJob {
   readonly timeoutMs: number
   readonly attempt: number
   /**
+   * The session an earlier node of the same role left, when the definition says
+   * this node continues it (REQ-410). The run forks it: the base is read, never
+   * appended to, so a retry starts from the same place this attempt did.
+   */
+  readonly resumeSessionId?: string
+  /**
    * Fired for each recognized tool use while the run is still in progress.
    * Absent for callers (e.g. conversation turns) that don't surface activity.
    */
@@ -84,6 +90,13 @@ export interface StageOutcome {
   readonly durationMs: number
   /** Best-effort: null when the provider's envelope could not be parsed. */
   readonly telemetry?: StageTelemetry | null
+  /** The session this run left behind, for a later node to continue (REQ-214). */
+  readonly sessionId?: string | null
+  /**
+   * Set when a resumption was asked for and could not be had. The stage still
+   * counts (AC-235); this says the grounding was rebuilt from artifacts instead.
+   */
+  readonly coldStartReason?: string | null
 }
 
 export type ProviderAuthState = 'ok' | 'expired' | 'unknown'

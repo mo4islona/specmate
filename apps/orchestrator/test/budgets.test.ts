@@ -133,7 +133,7 @@ describeDb('budget-enforcement', () => {
   describe('the dispatch check', () => {
     test('an exhausted cost budget refuses the claim before any stage row is inserted, and pauses with a decision naming it — REQ-1502, REQ-1503, AC-1504, AC-1506', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
       await seedSpentAttempt(graph, { costUsd: 1 })
 
       await engine.tick()
@@ -142,7 +142,7 @@ describeDb('budget-enforcement', () => {
       expect(stagesDispatcher.dispatches.filter((d) => d.task.id === task.id)).toHaveLength(0)
       const after = await reload(db, task.id)
       expect(after.status).toBe('paused')
-      expect(after.resumeStatus).toBe('research')
+      expect(after.resumeStatus).toBe('specify')
 
       const stageRows = await db.select().from(stages).where(eq(stages.taskId, task.id))
       expect(stageRows).toHaveLength(1)
@@ -159,15 +159,15 @@ describeDb('budget-enforcement', () => {
         { id: 'raise:max_cost_usd', label: 'Raise the cost budget' },
         { id: 'cancel', label: 'Cancel this task' },
       ])
-      expect(open[0]?.promptMd).toContain('research')
+      expect(open[0]?.promptMd).toContain('specify')
       expect(open[0]?.promptMd).toContain('$1.00')
     })
 
     test('a running stage that pushes spend past a budget finishes and commits; only the next dispatch is refused — REQ-1502, AC-1505', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
       stagesDispatcher.plan(() =>
-        okExecution('researcher', {
+        okExecution('planner', {
           telemetry: { model: 'stub', tokens: null, costUsd: 5, raw: null },
         }),
       )
@@ -188,7 +188,7 @@ describeDb('budget-enforcement', () => {
     test('a queued conversation response reaches the same check as a stage dispatch — REQ-1501, REQ-1502, AC-1503', async () => {
       const { engine, conversationsDispatcher } = makeEngine()
       const { task, graph } = await seed({
-        at: 'kickoff_brief',
+        at: 'planning',
         status: 'human_kickoff_gate',
         budgets: { max_cost_usd: 1 },
       })
@@ -213,7 +213,7 @@ describeDb('budget-enforcement', () => {
 
     test('a queued conversation response never dispatches once the task is already paused for budget exhaustion — REQ-1502, REQ-1503', async () => {
       const { engine } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
       await seedSpentAttempt(graph, { costUsd: 1 })
       await engine.tick()
       await engine.idle()
@@ -233,7 +233,7 @@ describeDb('budget-enforcement', () => {
 
     test('a queued conversation response still dispatches for a task paused for a reason other than budget — REQ-1502', async () => {
       const { engine, stagesDispatcher, conversationsDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'research' })
+      const { task } = await seed({ at: 'specify' })
       let finish: (value: StageExecution) => void = () => {}
       stagesDispatcher.plan(
         () =>
@@ -254,7 +254,7 @@ describeDb('budget-enforcement', () => {
         attempt: running.attempt,
         actor: 'owner',
       })
-      finish(okExecution('researcher'))
+      finish(okExecution('planner'))
       expect((await reload(db, task.id)).status).toBe('paused')
 
       const { response } = await seedMessage(task.id)
@@ -271,7 +271,7 @@ describeDb('budget-enforcement', () => {
 
     test('a task whose runs report no cost still pauses once its agent-minutes budget is reached — REQ-1505, AC-1514', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_wall_clock_minutes: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_wall_clock_minutes: 1 } })
       await seedSpentAttempt(graph, { costUsd: null, durationMinutes: 2 })
 
       await engine.tick()
@@ -291,7 +291,7 @@ describeDb('budget-enforcement', () => {
   describe('pausing loses nothing', () => {
     test('a refused claim leaves every existing row exactly as it was — REQ-1503, AC-1507', async () => {
       const { engine } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
       await seedSpentAttempt(graph, { costUsd: 1, nodeKey: 'planning' })
       const before = await db.select().from(stages).where(eq(stages.taskId, task.id))
 
@@ -306,7 +306,7 @@ describeDb('budget-enforcement', () => {
   describe('raising a budget', () => {
     async function seedPaused(budgets: { max_cost_usd?: number; max_wall_clock_minutes?: number }) {
       const { engine } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets })
+      const { task, graph } = await seed({ at: 'specify', budgets })
       await seedSpentAttempt(graph, { costUsd: budgets.max_cost_usd ?? 1 })
       await engine.tick()
       await engine.idle()
@@ -320,9 +320,9 @@ describeDb('budget-enforcement', () => {
 
       const resumed = await engine.raiseBudget(task.id, 'evgeny', 'max_cost_usd', 5)
 
-      expect(resumed.status).toBe('research')
+      expect(resumed.status).toBe('specify')
       expect(resumed.budgets.max_cost_usd).toBe(5)
-      expect((await reload(db, task.id)).status).toBe('research')
+      expect((await reload(db, task.id)).status).toBe('specify')
     })
 
     test('a raise at or below current spend is refused, naming the spend, leaving the task paused — REQ-1504, AC-1510', async () => {
@@ -337,7 +337,7 @@ describeDb('budget-enforcement', () => {
 
     test('a raise within float-drift epsilon of current spend is refused rather than silently resuming into a re-pause — REQ-1504', async () => {
       const { engine } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
       // Just under the cap by less than BUDGET_EPSILON — computeSpend
       // already reads this as exhausted, so the raise check must agree.
       await seedSpentAttempt(graph, { costUsd: 0.9999999999999999 })
@@ -353,7 +353,7 @@ describeDb('budget-enforcement', () => {
 
     test('refuses to raise a budget on a task that is not paused', async () => {
       const { engine } = makeEngine()
-      const { task } = await seed({ at: 'research' })
+      const { task } = await seed({ at: 'specify' })
 
       await expect(engine.raiseBudget(task.id, 'evgeny', 'max_cost_usd', 100)).rejects.toThrow(
         NotParkedError,
@@ -394,7 +394,7 @@ describeDb('budget-enforcement', () => {
         text: '5',
       })
 
-      expect(resumed.status).toBe('research')
+      expect(resumed.status).toBe('specify')
       expect(
         (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0],
       ).toMatchObject({ status: 'answered' })
@@ -499,7 +499,7 @@ describeDb('budget-enforcement', () => {
 
     test('a non-integer raise of the agent-minutes budget is refused — REQ-1504', async () => {
       const { engine } = makeEngine()
-      const { task, graph } = await seed({ at: 'research', budgets: { max_wall_clock_minutes: 1 } })
+      const { task, graph } = await seed({ at: 'specify', budgets: { max_wall_clock_minutes: 1 } })
       await seedSpentAttempt(graph, { costUsd: null, durationMinutes: 2 })
       await engine.tick()
       await engine.idle()
@@ -522,7 +522,7 @@ describeDb('budget-enforcement', () => {
     test('raising one of two simultaneously exhausted budgets leaves the task paused and the decision open — REQ-1504', async () => {
       const { engine } = makeEngine()
       const { task, graph } = await seed({
-        at: 'research',
+        at: 'specify',
         budgets: { max_cost_usd: 1, max_wall_clock_minutes: 1 },
       })
       await seedSpentAttempt(graph, { costUsd: 1, durationMinutes: 2 })
@@ -550,17 +550,17 @@ describeDb('budget-enforcement', () => {
       expect(stillOpen?.promptMd).toContain('$100.00')
 
       const resumed = await engine.raiseBudget(task.id, 'evgeny', 'max_wall_clock_minutes', 60)
-      expect(resumed.status).toBe('research')
+      expect(resumed.status).toBe('specify')
     })
   })
 
   describe('end to end', () => {
     test('a task runs, pauses on its cost budget, is raised, and resumes into its next stage — AC-1504, AC-1506, AC-1509', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'research', budgets: { max_cost_usd: 1 } })
+      const { task } = await seed({ at: 'specify', budgets: { max_cost_usd: 1 } })
 
       stagesDispatcher.plan(() =>
-        okExecution('researcher', {
+        okExecution('planner', {
           telemetry: { model: 'stub', tokens: null, costUsd: 0.4, raw: null },
         }),
       )
@@ -604,19 +604,19 @@ describeDb('budget-enforcement', () => {
       stagesDispatcher.plan(() => okExecution('implementer'))
       await engine.tick()
       await engine.idle()
-      expect((await reload(db, task.id)).status).toBe('verify')
+      expect((await reload(db, task.id)).status).toBe('validate')
     })
 
     test('the same walk with cost entirely unreported pauses on agent-minutes instead — AC-1512, AC-1514', async () => {
       const { engine, stagesDispatcher } = makeEngine()
       const { task, graph } = await seed({
-        at: 'research',
+        at: 'specify',
         budgets: { max_wall_clock_minutes: 1 },
       })
       await seedSpentAttempt(graph, { costUsd: null, durationMinutes: 2, nodeKey: 'planning' })
 
       stagesDispatcher.plan(() =>
-        okExecution('researcher', {
+        okExecution('planner', {
           telemetry: { model: 'stub', tokens: null, costUsd: null, raw: null },
         }),
       )
@@ -626,7 +626,7 @@ describeDb('budget-enforcement', () => {
       expect(stagesDispatcher.dispatches.filter((d) => d.task.id === task.id)).toHaveLength(0)
       const paused = await reload(db, task.id)
       expect(paused.status).toBe('paused')
-      expect(paused.resumeStatus).toBe('research')
+      expect(paused.resumeStatus).toBe('specify')
       const open = await openDecisions(task.id)
       expect(open[0]?.options.map((option) => option.id)).toEqual([
         'raise:max_wall_clock_minutes',
@@ -635,7 +635,7 @@ describeDb('budget-enforcement', () => {
 
       await engine.raiseBudget(task.id, 'evgeny', 'max_wall_clock_minutes', 60)
       stagesDispatcher.plan(() =>
-        okExecution('researcher', {
+        okExecution('planner', {
           telemetry: { model: 'stub', tokens: null, costUsd: null, raw: null },
         }),
       )
@@ -648,7 +648,7 @@ describeDb('budget-enforcement', () => {
   describe('spend completeness', () => {
     test('an orphaned conversation response records a real, self-timed duration rather than an unknown one — REQ-1505', async () => {
       const { engine } = makeEngine()
-      const { task } = await seed({ at: 'research' })
+      const { task } = await seed({ at: 'specify' })
       const { response } = await seedMessage(task.id)
       const claimedAt = new Date(Date.now() - 5_000)
       await db

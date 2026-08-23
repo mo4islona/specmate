@@ -90,15 +90,19 @@ const timestamps = {
 export const providerEnum = pgEnum('provider', ['claude-code', 'codex', 'copilot'])
 export const authStateEnum = pgEnum('auth_state', ['ok', 'expired', 'unknown'])
 export const taskTypeEnum = pgEnum('task_type', ['feature', 'bugfix'])
+// Mirrors `TASK_STATES`. Values only ever get added: a retired node key is still
+// named by every graph pinned before it retired.
 export const taskStatusEnum = pgEnum('task_status', [
   'draft',
   'planning',
   'kickoff_brief',
   'human_kickoff_gate',
+  'specify',
   'research',
   'spec_review',
   'human_spec_gate',
   'implement',
+  'validate',
   'verify',
   'code_review',
   'summarize',
@@ -119,12 +123,15 @@ export const harnessStatusEnum = pgEnum('harness_status', [
   'waived',
 ])
 export const planSizeEnum = pgEnum('plan_size', PLAN_SIZES)
+// `verifier` and `researcher` stopped being scheduled when the pipeline was
+// compressed; both stay because stage rows written before that name them.
 export const roleEnum = pgEnum('agent_role', [
   'planner',
   'researcher',
   'spec_writer',
   'implementer',
   'verifier',
+  'validator',
   'reviewer',
   'summarizer',
   'retro',
@@ -261,6 +268,13 @@ export const tasks = pgTable(
     caps: parsedJsonb(Caps)('caps')
       .notNull()
       .default({ ...DEFAULT_CAPS }),
+    /**
+     * The cap fields the owner named at creation, kept because `caps` resolves them
+     * into a full object and the declared size later rewrites the fields nobody chose.
+     * Without this the two are indistinguishable and a declaration would silently
+     * overwrite a deliberate override (AC-641).
+     */
+    capsOverride: jsonb('caps_override').$type<Partial<Caps>>().notNull().default({}),
     modelBindings: jsonb('model_bindings')
       .$type<ModelBindings>()
       .notNull()
@@ -407,6 +421,14 @@ export const stages = pgTable(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     cost: jsonb().$type<StageUsage>().notNull().default({}),
     result: jsonb().$type<StageResult>(),
+    /**
+     * The provider session this attempt ran under, so a later node can continue it
+     * (REQ-214). Recorded whether or not anything resumes it: a session that turns
+     * out to be unresumable is worth knowing about, and it costs one column.
+     */
+    providerSessionId: text('provider_session_id'),
+    /** Set when a resuming stage had to run cold, with the reason (AC-235). */
+    coldStartReason: text('cold_start_reason'),
     /** Task branch HEAD captured before this attempt starts. */
     workspaceCommit: text('workspace_commit'),
     acceptedCommit: text('accepted_commit'),
