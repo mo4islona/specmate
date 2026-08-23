@@ -47,8 +47,14 @@ const STATUS_LETTERS: Record<string, DiffFileStatus> = {
 export async function resolveTaskDiffRange(
   git: Git,
   config: WorkspaceConfig,
-  task: { readonly repoUrl: string; readonly baseBranch: string; readonly slug: string },
+  task: { readonly repoUrl: string; readonly baseBranch: string | null; readonly slug: string },
 ): Promise<TaskDiffRange> {
+  const branch = taskBranch(task.slug)
+  // No pinned base means the task was never provisioned, so its own branch does
+  // not exist either — the same failure, named where it is true.
+  if (task.baseBranch === null) throw new TaskBranchMissingError(task.repoUrl, branch)
+
+  const baseBranch = task.baseBranch
   const mirror = mirrorPath(config, task.repoUrl)
 
   return withMirrorLock(
@@ -56,10 +62,9 @@ export async function resolveTaskDiffRange(
     { heartbeatMs: config.lockHeartbeatMs, staleMs: config.lockStaleMs, waitMs: config.lockWaitMs },
     async () => {
       await ensureMirror(git, config, task.repoUrl)
-      const branch = taskBranch(task.slug)
       const [tip, baseTip] = await Promise.all([
         git.tryInMirror(mirror, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]),
-        resolveBaseCommit(git, mirror, task.repoUrl, task.baseBranch),
+        resolveBaseCommit(git, mirror, task.repoUrl, baseBranch),
       ])
       if (tip.exitCode !== 0 || !tip.stdout.trim()) {
         throw new TaskBranchMissingError(task.repoUrl, branch)

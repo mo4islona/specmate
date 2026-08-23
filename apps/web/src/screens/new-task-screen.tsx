@@ -11,30 +11,37 @@ import { useLocation } from 'wouter'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { ApiRequestError, type CreateTaskInput, createTask } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { repoLabel } from '../lib/repo-link.ts'
 
-const INITIAL_FORM: CreateTaskInput = {
-  title: '',
+/** What the screen holds. Everything but the request is optional at intake (REQ-903). */
+export interface NewTaskForm {
+  description: string
+  repoUrl: string
+  baseBranch: string
+  modelBindings: CreateTaskInput['modelBindings']
+}
+
+const INITIAL_FORM: NewTaskForm = {
   description: '',
-  type: 'bugfix',
   repoUrl: '',
-  baseBranch: 'main',
+  baseBranch: '',
   modelBindings: {},
 }
 
 /**
- * REQ-903: the request is optional, so a blank textarea must reach intake as
- * absent, not as an empty string — trimmed at the edges only, everything
+ * REQ-1001: the request is the ask, trimmed at the edges only — everything
  * between is the owner's exact words, blank lines included. An untouched
- * override control must reach intake as no override at all, not as `{}`.
+ * control must reach intake as absent, not as an empty string or a `{}`:
+ * intake resolves the repository, and planning names the work.
  */
-export function buildCreateTaskPayload(form: CreateTaskInput): CreateTaskInput {
-  const description = form.description?.trim()
+export function buildCreateTaskPayload(form: NewTaskForm): CreateTaskInput {
   const modelBindings = form.modelBindings ?? {}
   const hasOverride = Object.keys(modelBindings).length > 0
 
   return {
-    ...form,
-    description: description || undefined,
+    description: form.description.trim(),
+    repoUrl: form.repoUrl.trim() || undefined,
+    baseBranch: form.baseBranch.trim() || undefined,
     modelBindings: hasOverride ? modelBindings : undefined,
   }
 }
@@ -60,10 +67,64 @@ export function setOverrideField<K extends keyof ModelBinding>(
   return next
 }
 
+interface RepositoryChoiceProps {
+  candidates: readonly string[]
+  selected: string
+  detail?: string
+  onSelect: (repoUrl: string) => void
+}
+
+/**
+ * Shown only when intake could not resolve the repository itself (AC-972).
+ * The candidates are what it would have accepted; the field is for anything
+ * else, including a repository nothing has run against yet.
+ */
+export function RepositoryChoice({
+  candidates,
+  selected,
+  detail,
+  onSelect,
+}: RepositoryChoiceProps) {
+  return (
+    <div className="border border-danger/35 bg-danger/10 p-4">
+      <p className="field-label">Which repository?</p>
+      <p className="mt-1 text-xs text-muted">
+        {detail ?? 'The request did not name one, and there is no default set.'}
+      </p>
+
+      {candidates.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {candidates.map((repoUrl) => (
+            <button
+              key={repoUrl}
+              type="button"
+              aria-pressed={repoUrl === selected}
+              className={repoUrl === selected ? 'button-primary' : 'button-secondary'}
+              onClick={() => onSelect(repoUrl)}
+            >
+              {repoLabel(repoUrl)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <input
+        id="repo-url"
+        type="url"
+        className="control mt-3 w-full font-mono"
+        placeholder="https://github.com/org/repository"
+        aria-label="Repository URL"
+        value={selected}
+        onChange={(event) => onSelect(event.currentTarget.value)}
+      />
+    </div>
+  )
+}
+
 export function NewTaskScreen() {
   const [, navigate] = useLocation()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<CreateTaskInput>(INITIAL_FORM)
+  const [form, setForm] = useState<NewTaskForm>(INITIAL_FORM)
   const launch = useMutation({
     mutationFn: createTask,
     onSuccess: async ({ task }) => {
@@ -72,7 +133,9 @@ export function NewTaskScreen() {
       navigate(`/tasks/${task.id}`)
     },
   })
-  const fields = launch.error instanceof ApiRequestError ? launch.error.fields : {}
+  const rejection = launch.error instanceof ApiRequestError ? launch.error : undefined
+  const fields = rejection?.fields ?? {}
+  const repositoryAsked = Boolean(fields.repoUrl)
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -89,7 +152,8 @@ export function NewTaskScreen() {
         <p className="micro-label text-phosphor">Task intake</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Launch work</h1>
         <p className="mt-3 text-sm leading-6 text-muted">
-          Pin the repository and base branch. The pipeline owns everything after launch.
+          Say what you want done. The repository comes out of the request; planning names the task
+          once it has read the code.
         </p>
       </header>
 
@@ -98,15 +162,14 @@ export function NewTaskScreen() {
           <label className="field-label" htmlFor="task-description">
             Request
           </label>
-          <p className="mt-1 text-xs text-muted">
-            What you want done, in your own words. The planner works from this.
-          </p>
           <textarea
             id="task-description"
-            className="control mt-2 min-h-32 w-full resize-y"
-            value={form.description ?? ''}
+            // biome-ignore lint/a11y/noAutofocus: the screen exists for this one field
+            autoFocus
+            className="control mt-2 min-h-40 w-full resize-y"
+            value={form.description}
             onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
-            placeholder="Describe the request…"
+            placeholder="Fix the login redirect in specmate — it lands on the homepage instead of the dashboard."
             aria-invalid={Boolean(fieldError('description'))}
             aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
           />
@@ -117,84 +180,41 @@ export function NewTaskScreen() {
           )}
         </div>
 
-        <div>
-          <label className="field-label" htmlFor="task-title">
-            Title
-          </label>
-          <input
-            id="task-title"
-            className="control mt-2 w-full"
-            value={form.title}
-            onChange={(event) => setForm({ ...form, title: event.currentTarget.value })}
-            aria-invalid={Boolean(fieldError('title'))}
-            aria-describedby={fieldError('title') ? 'task-title-error' : undefined}
+        {repositoryAsked && (
+          <RepositoryChoice
+            candidates={rejection?.candidates ?? []}
+            selected={form.repoUrl}
+            detail={fieldError('repoUrl')}
+            onSelect={(repoUrl) => setForm({ ...form, repoUrl })}
           />
-          {fieldError('title') && (
-            <p id="task-title-error" className="field-error">
-              {fieldError('title')}
-            </p>
-          )}
-        </div>
+        )}
 
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <label className="field-label" htmlFor="task-type">
-              Task type
-            </label>
-            <select
-              id="task-type"
-              className="control mt-2 w-full"
-              value={form.type}
-              onChange={(event) =>
-                setForm({ ...form, type: event.currentTarget.value as CreateTaskInput['type'] })
-              }
-              aria-invalid={Boolean(fieldError('type'))}
-            >
-              <option value="bugfix">Bugfix</option>
-              <option value="feature">Feature</option>
-            </select>
-            {fieldError('type') && <p className="field-error">{fieldError('type')}</p>}
-          </div>
+        <details className="border-t border-border pt-5">
+          <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted">
+            Advanced
+          </summary>
 
-          <div>
+          <div className="mt-4">
             <label className="field-label" htmlFor="base-branch">
               Base branch
             </label>
+            <p className="mt-1 text-xs text-muted">Empty means the repository's default branch.</p>
             <input
               id="base-branch"
               className="control mt-2 w-full font-mono"
+              placeholder="main"
               value={form.baseBranch}
               onChange={(event) => setForm({ ...form, baseBranch: event.currentTarget.value })}
               aria-invalid={Boolean(fieldError('baseBranch'))}
             />
             {fieldError('baseBranch') && <p className="field-error">{fieldError('baseBranch')}</p>}
           </div>
-        </div>
 
-        <div>
-          <label className="field-label" htmlFor="repo-url">
-            Repository URL
-          </label>
-          <input
-            id="repo-url"
-            type="url"
-            className="control mt-2 w-full font-mono"
-            placeholder="https://github.com/org/repository"
-            value={form.repoUrl}
-            onChange={(event) => setForm({ ...form, repoUrl: event.currentTarget.value })}
-            aria-invalid={Boolean(fieldError('repoUrl'))}
-          />
-          {fieldError('repoUrl') && <p className="field-error">{fieldError('repoUrl')}</p>}
-        </div>
-
-        <details className="border-t border-border pt-5">
-          <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted">
-            Override models for this task
-          </summary>
+          <p className="field-label mt-5">Override models for this task</p>
           {fieldError('modelBindings') && (
             <p className="field-error mt-2">{fieldError('modelBindings')}</p>
           )}
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
             {AGENT_ROLES.map((role) => (
               <div key={role} className="border border-border p-3">
                 <p className="field-label">{role}</p>
@@ -231,14 +251,13 @@ export function NewTaskScreen() {
           </div>
         </details>
 
-        {launch.isError && !(launch.error instanceof ApiRequestError) && (
+        {launch.isError && !rejection && (
           <p className="border border-danger/35 bg-danger/10 p-3 text-sm text-danger">
             {launch.error.message}
           </p>
         )}
 
-        <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-mono text-xs text-muted">The task starts in draft.</p>
+        <div className="flex justify-end border-t border-border pt-5">
           <button className="button-primary" type="submit" disabled={launch.isPending}>
             {launch.isPending ? 'Launching…' : 'Launch task'}
           </button>

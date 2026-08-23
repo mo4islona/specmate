@@ -31,6 +31,8 @@ export const EVENT_TITLES: Record<string, string> = {
   'decision.refused': 'Questions refused',
   'decision.inherited': 'Coverage gap inherited',
   'task.plan_recorded': 'Plan recorded',
+  'task.renamed': 'Task renamed',
+  'task.base_branch_pinned': 'Base branch pinned',
   'task.profile_changed': 'Pipeline profile changed',
   'coverage_waiver.recorded': 'Coverage gap accepted',
   'conversation.action.proposed': 'Action proposed',
@@ -173,6 +175,21 @@ export function eventDetail(
       prerequisites.length > 0 ? `; proposes ${prerequisites.join(', ')}` : '; no prerequisites'
 
     return `Planning declared size ${size}${proposes}${applied}.`
+  }
+
+  if (event.type === 'task.renamed') {
+    const from = payloadValue(event, 'from')
+    const title = payloadValue(event, 'title') ?? 'a name of its own'
+
+    return from
+      ? `Planning read the repository and renamed this from "${from}" to "${title}".`
+      : `Planning named this "${title}".`
+  }
+
+  if (event.type === 'task.base_branch_pinned') {
+    const baseBranch = payloadValue(event, 'baseBranch') ?? 'the repository default'
+
+    return `The task branch was cut from ${baseBranch}, the repository's default.`
   }
 
   if (event.type === 'task.profile_changed') {

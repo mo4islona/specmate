@@ -86,10 +86,11 @@ export function assertNotSelfDependency(taskId: string, blockerTaskId: string): 
 export interface CreateTaskInput {
   readonly slug: string
   readonly title: string
-  /** The owner's request in their own words; absent on a title-only launch. */
+  /** The owner's request in their own words; absent only for a task no owner typed. */
   readonly description?: string
   readonly type: string
   readonly repoUrl: string
+  /** Absent means the repository's default branch, resolved at provisioning (REQ-703). */
   readonly baseBranch?: string
   readonly caps?: Partial<Caps>
   readonly budgets?: Partial<Budgets>
@@ -154,7 +155,7 @@ export async function createTaskInTx(
       description: input.description,
       type: input.type as TaskType,
       repoUrl: input.repoUrl,
-      baseBranch: input.baseBranch ?? 'main',
+      baseBranch: input.baseBranch ?? null,
       // `draft` is a reserved state the poll never dispatches, so a task
       // created there waits forever with nothing to advance it. Creating is
       // launching: the task starts at its pipeline's entry node.
@@ -665,11 +666,26 @@ export async function recordPlanOutcome(
   const sizeApplies =
     plan !== null && definitionForSize(task.type, plan.size).id === runningPipelineId
 
+  // REQ-1306: the name intake cut from the request, replaced by one written
+  // after the repository was read. The slug is deliberately left alone — it
+  // names the branch and the change folder, which already exist.
+  const renamed = plan !== null && plan.title !== task.title
+  // A declared type may not silently disagree with the graph the task runs:
+  // one selecting a different definition would leave the pinned graph naming a
+  // pipeline the column no longer picks. Every type shares one definition
+  // today, so this refuses nothing yet.
+  const retyped =
+    plan !== null &&
+    plan.type !== task.type &&
+    definitionForSize(plan.type, plan.size).id === runningPipelineId
+
   await db
     .update(tasks)
     .set({
       ...(assessment ? { harnessStatus: assessment.classification } : {}),
       ...(sizeApplies && plan ? { planSize: plan.size } : {}),
+      ...(renamed && plan ? { title: plan.title } : {}),
+      ...(retyped && plan ? { type: plan.type } : {}),
       updatedAt: new Date(),
     })
     .where(eq(tasks.id, task.id))
@@ -684,6 +700,15 @@ export async function recordPlanOutcome(
         applied: sizeApplies,
         prerequisites: plan.prerequisites.map((prerequisite) => prerequisite.key),
       },
+    })
+  }
+
+  if (plan && (renamed || retyped)) {
+    await emitEvent(db, {
+      taskId: task.id,
+      stageId,
+      type: 'task.renamed',
+      payload: { from: task.title, title: plan.title, type: retyped ? plan.type : task.type },
     })
   }
 

@@ -1,17 +1,21 @@
+import { render, screen } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import type { CreateTaskInput } from '../lib/api-client.ts'
-import { buildCreateTaskPayload, setOverrideField } from './new-task-screen.tsx'
+import {
+  buildCreateTaskPayload,
+  type NewTaskForm,
+  RepositoryChoice,
+  setOverrideField,
+} from './new-task-screen.tsx'
 
-const BASE: CreateTaskInput = {
-  title: 'Fix the reorg bug',
-  description: '',
-  type: 'bugfix',
-  repoUrl: 'https://github.com/example/repo',
-  baseBranch: 'main',
+const BASE: NewTaskForm = {
+  description: 'Fix the reorg bug',
+  repoUrl: '',
+  baseBranch: '',
+  modelBindings: {},
 }
 
 describe('buildCreateTaskPayload', () => {
-  test('a multi-paragraph request reaches the payload intact', () => {
+  test('a multi-paragraph request reaches the payload intact — AC-925', () => {
     const request = 'Reorgs deeper than 6 blocks corrupt the balance index.\n\nFix the ingester.'
 
     const payload = buildCreateTaskPayload({ ...BASE, description: request })
@@ -19,21 +23,24 @@ describe('buildCreateTaskPayload', () => {
     expect(payload.description).toBe(request)
   })
 
-  test('a blank request reaches the payload as absent, not as an empty string', () => {
-    const payload = buildCreateTaskPayload({ ...BASE, description: '   ' })
-
-    expect(payload.description).toBeUndefined()
-  })
-
-  test('every other field passes through unchanged', () => {
+  test('an untouched repository and branch reach the payload as absent — AC-1056', () => {
     const payload = buildCreateTaskPayload(BASE)
 
-    expect(payload).toMatchObject({
-      title: BASE.title,
-      type: BASE.type,
-      repoUrl: BASE.repoUrl,
-      baseBranch: BASE.baseBranch,
-    })
+    expect(payload.repoUrl).toBeUndefined()
+    expect(payload.baseBranch).toBeUndefined()
+  })
+
+  test('the screen never sends a title or a type — planning declares both', () => {
+    const payload = buildCreateTaskPayload(BASE)
+
+    expect(payload).not.toHaveProperty('title')
+    expect(payload).not.toHaveProperty('type')
+  })
+
+  test('a chosen repository is carried on the resubmit — AC-972', () => {
+    const payload = buildCreateTaskPayload({ ...BASE, repoUrl: ' https://github.com/example/a ' })
+
+    expect(payload.repoUrl).toBe('https://github.com/example/a')
   })
 
   test('an untouched override control reaches the payload as no override at all, not as {} — AC-948', () => {
@@ -58,6 +65,45 @@ describe('buildCreateTaskPayload', () => {
     })
 
     expect(payload.modelBindings).toEqual({ implementer: { reasoningEffort: 'max' } })
+  })
+})
+
+describe('the repository choice — AC-972', () => {
+  test('offers every candidate the rejection carried, marking the chosen one', () => {
+    render(
+      <RepositoryChoice
+        candidates={['https://github.com/example/alpha', 'git@github.com:example/beta.git']}
+        selected="https://github.com/example/alpha"
+        onSelect={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'example/alpha' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'example/beta' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+  })
+
+  test('still takes a repository nothing has run against yet', () => {
+    render(<RepositoryChoice candidates={[]} selected="" onSelect={() => {}} />)
+
+    expect(screen.getByLabelText('Repository URL')).not.toBeNull()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  test('shows what intake said about the field', () => {
+    render(
+      <RepositoryChoice
+        candidates={[]}
+        selected=""
+        detail="name the repository this work belongs to"
+        onSelect={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('name the repository this work belongs to')).not.toBeNull()
   })
 })
 

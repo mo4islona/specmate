@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   BaseBranchMissingError,
+  DefaultBranchUnknownError,
   Git,
   type GitSpawn,
   mirrorPath,
@@ -108,6 +109,26 @@ describe('provisioning', () => {
 
     await expect(failure).rejects.toThrow(BaseBranchMissingError)
     await expect(failure).rejects.toThrow(/develop/)
+  })
+
+  test('cuts a task that named no base branch from the repository default — AC-737', async () => {
+    const origin = await makeOrigin({ 'README.md': '# origin\n' }, 'master')
+    const { manager } = await makeManager()
+
+    const workspace = await manager.provision({ slug: 'no-base', repoUrl: origin.url })
+
+    expect(workspace.baseBranch).toBe('master')
+    expect(await headOf(manager, workspace.path)).toBe(await origin.head('master'))
+  })
+
+  test('refuses to guess when the remote reports no default branch — AC-738', async () => {
+    const empty = await tempDir('empty-origin')
+    await new Git(resolveWorkspaceConfig({ root: empty })).run(['init', '--bare', '--quiet', empty])
+    const { manager } = await makeManager()
+
+    const failure = manager.provision({ slug: 'headless', repoUrl: `file://${empty}` })
+
+    await expect(failure).rejects.toThrow(DefaultBranchUnknownError)
   })
 })
 

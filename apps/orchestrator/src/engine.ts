@@ -291,7 +291,8 @@ export interface EngineWorkspaces {
     taskId: string
     slug: string
     repoUrl: string
-    baseBranch: string
+    /** Absent means the repository's default branch (REQ-703). */
+    baseBranch?: string
   }): Promise<Workspace>
   provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace>
   releaseConversation(task: { slug: string; repoUrl: string }, key: string): Promise<void>
@@ -1008,7 +1009,7 @@ export class Engine {
         taskId: task.id,
         slug: task.slug,
         repoUrl: task.repoUrl,
-        baseBranch: task.baseBranch,
+        baseBranch: task.baseBranch ?? undefined,
       })
       workspace = await workspaces.provisionConversation(
         primary,
@@ -1367,7 +1368,7 @@ export class Engine {
         taskId: task.id,
         slug: task.slug,
         repoUrl: task.repoUrl,
-        baseBranch: task.baseBranch,
+        baseBranch: task.baseBranch ?? undefined,
       })
       if (workspaces.headCommit) {
         const workspaceCommit = await workspaces.headCommit(workspace)
@@ -2041,7 +2042,7 @@ export class Engine {
         taskId: task.id,
         slug: task.slug,
         repoUrl: task.repoUrl,
-        baseBranch: task.baseBranch,
+        baseBranch: task.baseBranch ?? undefined,
       })
       await workspaces.discard(workspace, row.workspaceCommit ?? undefined)
     } catch (e) {
@@ -2201,7 +2202,7 @@ export class Engine {
         taskId: task.id,
         slug: task.slug,
         repoUrl: task.repoUrl,
-        baseBranch: task.baseBranch,
+        baseBranch: task.baseBranch ?? undefined,
       })
       await this.deps.workspaces.discard(workspace, stage.workspaceCommit ?? undefined)
       const [cleaned] = await this.deps.db
@@ -3142,7 +3143,7 @@ export class Engine {
           description: `${proposal.why_md}\n\nProposed while planning "${task.title}".`,
           type: 'feature',
           repoUrl: task.repoUrl,
-          baseBranch: task.baseBranch,
+          baseBranch: task.baseBranch ?? undefined,
           originTaskId: task.id,
           planDepth: task.planDepth + 1,
         })

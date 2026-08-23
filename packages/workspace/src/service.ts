@@ -15,6 +15,7 @@ import type {
 import { changeDir } from './paths.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
+export const BASE_BRANCH_PINNED_EVENT = 'task.base_branch_pinned'
 export const ENVIRONMENT_REPINNED_EVENT = 'task.environment_repinned'
 
 export interface TaskProvisionRequest extends ProvisionRequest {
@@ -30,7 +31,8 @@ export type EnvironmentResolver = (
 export interface DiffTaskRef {
   readonly slug: string
   readonly repoUrl: string
-  readonly baseBranch: string
+  /** Null until provisioning pinned it — a task with no branch has no diff either. */
+  readonly baseBranch: string | null
 }
 
 export class TaskNotFoundError extends Error {
@@ -77,6 +79,12 @@ export class WorkspaceService {
     const task = await this.loadTask(request.taskId)
     this.assertMatchesTask(request, task)
     const workspace = await this.manager.provision(request)
+    // What a task with no base of its own actually ran against, pinned on first
+    // provision so publish and the diff read a branch rather than a convention.
+    if (task.baseBranch === null) {
+      await this.persistBaseBranch(request.taskId, workspace.baseBranch)
+    }
+
     if (task.environment !== null) return workspace
 
     const environment = await this.resolveEnvironment(workspace, request.image)
@@ -176,6 +184,27 @@ export class WorkspaceService {
     await this.manager.release(task.slug, task.repoUrl)
   }
 
+  /**
+   * Guarded on the column still being null, so two provisions racing on a task
+   * that named no branch cannot write two different answers.
+   */
+  private async persistBaseBranch(taskId: string, baseBranch: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(tasks)
+        .set({ baseBranch, updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), isNull(tasks.baseBranch)))
+        .returning({ id: tasks.id })
+      if (!updated) return
+
+      await tx.insert(events).values({
+        taskId,
+        type: BASE_BRANCH_PINNED_EVENT,
+        payload: { baseBranch },
+      })
+    })
+  }
+
   private async persistInitialEnvironment(
     taskId: string,
     environment: ExecutionEnvironment,
@@ -213,11 +242,15 @@ export class WorkspaceService {
   }
 
   private assertMatchesTask(request: TaskProvisionRequest, task: typeof tasks.$inferSelect): void {
-    if (
-      task.slug !== request.slug ||
-      task.repoUrl !== request.repoUrl ||
-      task.baseBranch !== request.baseBranch
-    ) {
+    // Either side may leave the branch open: the request before provisioning
+    // pinned one, the task before its first provision. Only two concrete
+    // branches that disagree are drift.
+    const branchDrift =
+      request.baseBranch !== undefined &&
+      task.baseBranch !== null &&
+      request.baseBranch !== task.baseBranch
+
+    if (task.slug !== request.slug || task.repoUrl !== request.repoUrl || branchDrift) {
       throw new WorkspaceTaskMismatchError(request.taskId)
     }
   }

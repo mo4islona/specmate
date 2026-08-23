@@ -7,8 +7,9 @@ import { eq } from 'drizzle-orm'
 import type { DbClient } from './index.ts'
 import { appSettings } from './schema.ts'
 
-/** The only `app_settings` key wired up today — see model-settings/design.md. */
+/** The `app_settings` keys wired up today — see model-settings/design.md. */
 const MODEL_DEFAULTS_KEY = 'model-defaults'
+const DEFAULT_REPOSITORY_KEY = 'default-repository'
 
 export type ModelDefaultsUpdate = ModelBindingsOverride
 
@@ -55,4 +56,43 @@ export async function updateModelDefaults(
 
     return merged
   })
+}
+
+/**
+ * The repository a launch falls back to when the request named none (REQ-1017).
+ * It may name a repository no task has run against — otherwise a fresh install
+ * could never set one.
+ */
+export async function getDefaultRepository(db: DbClient): Promise<string | null> {
+  const [row] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, DEFAULT_REPOSITORY_KEY))
+    .limit(1)
+
+  const repoUrl = (row?.value as { repoUrl?: unknown } | undefined)?.repoUrl
+
+  return typeof repoUrl === 'string' && repoUrl.length > 0 ? repoUrl : null
+}
+
+/** Passing `null` clears the setting: absent and "cleared" are the same state. */
+export async function setDefaultRepository(
+  db: DbClient,
+  repoUrl: string | null,
+): Promise<string | null> {
+  if (repoUrl === null) {
+    await db.delete(appSettings).where(eq(appSettings.key, DEFAULT_REPOSITORY_KEY))
+
+    return null
+  }
+
+  await db
+    .insert(appSettings)
+    .values({ key: DEFAULT_REPOSITORY_KEY, value: { repoUrl }, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value: { repoUrl }, updatedAt: new Date() },
+    })
+
+  return repoUrl
 }

@@ -198,7 +198,7 @@ const dispatcher: StageDispatcher = async ({
     model: binding.model,
     reasoningEffort: binding.reasoningEffort,
     workspace,
-    baseBranch: task.baseBranch,
+    baseBranch: workspace.baseBranch,
     environment: taskRunnerEnvironment(current?.environment ?? null),
     attempt,
   })
@@ -239,7 +239,7 @@ const conversationDispatcher: ConversationDispatcher = async ({
     model: binding.model,
     reasoningEffort: binding.reasoningEffort,
     workspace,
-    baseBranch: task.baseBranch,
+    baseBranch: workspace.baseBranch,
     environment: taskRunnerEnvironment(current?.environment ?? null),
     attempt,
   })

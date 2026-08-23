@@ -96,13 +96,27 @@ describe('RESULT.json contract', () => {
     expect(parsed.error).toContain('harness coverage')
   })
 
+  test('rejects a plan declaring a size but no title, naming the missing part (AC-1321)', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'planner',
+        harness_coverage: { classification: 'adequate', evidence_md: 'An e2e suite covers it.' },
+        plan: { type: 'bugfix', size: 'small' },
+      }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.error).toContain('plan.title')
+  })
+
   test('accepts a planner result carrying its coverage assessment and plan', () => {
     const parsed = parseStageResult(
       JSON.stringify({
         ...minimal,
         role: 'planner',
         harness_coverage: { classification: 'missing', evidence_md: 'No tests touch this path.' },
-        plan: { size: 'small' },
+        plan: { title: 'Backfill the ingestion cursor', type: 'bugfix', size: 'small' },
       }),
     )
     expect(parsed.ok).toBe(true)
@@ -137,7 +151,12 @@ describe('RESULT.json contract', () => {
         ...minimal,
         role: 'planner',
         harness_coverage: { classification: 'missing', evidence_md: 'No tests touch this path.' },
-        plan: { size: 'large', prerequisites: [prerequisite, prerequisite] },
+        plan: {
+          title: 'Split the ingestion pipeline',
+          type: 'feature',
+          size: 'large',
+          prerequisites: [prerequisite, prerequisite],
+        },
       }),
     )
     expect(parsed.ok).toBe(false)
@@ -225,7 +244,15 @@ describe('checkPlanPresent', () => {
 
   test('accepts a planning role carrying one', () => {
     expect(
-      checkPlanPresent({ ...plannerOk, plan: { size: 'medium', prerequisites: [] } }),
+      checkPlanPresent({
+        ...plannerOk,
+        plan: {
+          title: 'Rework the retry policy',
+          type: 'feature',
+          size: 'medium',
+          prerequisites: [],
+        },
+      }),
     ).toBeNull()
   })
 

@@ -37,7 +37,8 @@ export interface LedgerSnapshot {
   readonly slug: string
   readonly type: string
   readonly repoUrl: string
-  readonly baseBranch: string
+  /** Null until provisioning pinned one — the repository decides it (REQ-703). */
+  readonly baseBranch: string | null
   readonly status: string
   readonly harnessStatus: string
   /** The most recent probe's evidence, short form — null before any probe has run. */
@@ -171,7 +172,7 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     `- Slug: ${snapshot.slug}`,
     `- Type: ${snapshot.type}`,
     `- Repository: ${snapshot.repoUrl}`,
-    `- Base branch: ${snapshot.baseBranch}`,
+    `- Base branch: ${snapshot.baseBranch ?? "the repository's default"}`,
     `- Current state: ${snapshot.status}`,
     `- Harness coverage: ${snapshot.harnessStatus}${harnessEvidence ? ` — ${harnessEvidence}` : ''}`,
     '',

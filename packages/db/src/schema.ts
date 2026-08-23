@@ -215,8 +215,9 @@ export const providerCredentials = pgTable('provider_credentials', {
 })
 
 /**
- * A future setting is a new row here, not a migration — see model-settings/design.md. Only
- * `model-defaults` is wired up today; nothing generic reads or writes an arbitrary key.
+ * A future setting is a new row here, not a migration — see model-settings/design.md.
+ * `model-defaults` and `default-repository` are wired up today; nothing generic reads or
+ * writes an arbitrary key.
  */
 export const appSettings = pgTable('app_settings', {
   key: text().primaryKey(),
@@ -236,7 +237,8 @@ export const tasks = pgTable(
     description: text(),
     type: taskTypeEnum().notNull(),
     repoUrl: text('repo_url').notNull(),
-    baseBranch: text('base_branch').notNull().default('main'),
+    /** Null means the repository's default branch, resolved at provisioning (REQ-703). */
+    baseBranch: text('base_branch'),
     status: taskStatusEnum().notNull().default('draft').$type<TaskState>(),
     /** State to return to once a human gate / pause resolves. */
     resumeStatus: taskStatusEnum('resume_status').$type<TaskState>(),
