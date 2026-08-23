@@ -429,6 +429,12 @@ export const stages = pgTable(
     providerSessionId: text('provider_session_id'),
     /** Set when a resuming stage had to run cold, with the reason (AC-235). */
     coldStartReason: text('cold_start_reason'),
+    /**
+     * Why a conditional node did not run (AC-422). The row exists precisely so the
+     * skip is visible: a node dropped from the graph hides the decision that dropped
+     * it, and every surface renders this where a node that ran states its duration.
+     */
+    skipReason: text('skip_reason'),
     /** Task branch HEAD captured before this attempt starts. */
     workspaceCommit: text('workspace_commit'),
     acceptedCommit: text('accepted_commit'),

@@ -35,7 +35,7 @@ function node(overrides: Partial<PipelineNodeView> = {}): PipelineNodeView {
     role: 'researcher',
     binding: null,
     state: 'pending',
-    stoppedReason: null,
+    reason: null,
     current: false,
     runs: [],
     latest: null,

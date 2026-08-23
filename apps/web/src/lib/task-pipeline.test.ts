@@ -137,7 +137,7 @@ describe('stopped nodes (REQ-914)', () => {
     const implement = nodes.find((node) => node.key === 'implement')
 
     expect(implement?.state).toBe('stopped')
-    expect(implement?.stoppedReason).toBe('failed 3 times')
+    expect(implement?.reason).toBe('failed 3 times')
   })
 
   test('an interrupted run is stopped, and a failed cleanup says so', () => {
@@ -156,9 +156,7 @@ describe('stopped nodes (REQ-914)', () => {
       modelBindings: BINDINGS,
     })
 
-    expect(nodes.find((node) => node.key === 'implement')?.stoppedReason).toBe(
-      'stopped · cleanup failed',
-    )
+    expect(nodes.find((node) => node.key === 'implement')?.reason).toBe('stopped · cleanup failed')
   })
 
   test('a node that has not run carries no reason to state', () => {
@@ -171,6 +169,34 @@ describe('stopped nodes (REQ-914)', () => {
     })
 
     expect(nodes.find((node) => node.key === 'implement')?.state).toBe('pending')
-    expect(nodes.find((node) => node.key === 'implement')?.stoppedReason).toBeNull()
+    expect(nodes.find((node) => node.key === 'implement')?.reason).toBeNull()
+  })
+})
+
+describe('a skipped node', () => {
+  test('AC-422: keeps its place in the rail and states why it was skipped', () => {
+    const nodes = buildPipelineNodes({
+      nodes: [
+        { kind: 'stage', key: 'specify', role: 'planner', binding: 'role_default' },
+        { kind: 'stage', key: 'spec_review', role: 'reviewer', binding: 'cross_review' },
+        { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+      ] as never,
+      stages: [
+        stage({ nodeKey: 'specify', status: 'succeeded', role: 'planner' }),
+        stage({
+          nodeKey: 'spec_review',
+          status: 'skipped',
+          role: 'reviewer',
+          skipReason: 'the specification declares 2 scenario(s), under the 4 this node is worth',
+        }),
+      ],
+      status: 'implement',
+      resumeStatus: null,
+      modelBindings: {} as never,
+    })
+
+    const skipped = nodes.find((node) => node.key === 'spec_review')
+    expect(skipped?.state).toBe('skipped')
+    expect(skipped?.reason).toContain('2 scenario')
   })
 })

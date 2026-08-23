@@ -12,7 +12,7 @@ function node(overrides: Partial<PipelineNodeView> = {}): PipelineNodeView {
     role: 'researcher',
     binding: null,
     state: 'pending',
-    stoppedReason: null,
+    reason: null,
     current: false,
     runs: [],
     latest: null,
@@ -56,7 +56,7 @@ describe('PipelineRail (REQ-914)', () => {
             key: 'implement',
             label: 'Implement',
             state: 'stopped',
-            stoppedReason: 'failed 3 times',
+            reason: 'failed 3 times',
           }),
         ]}
       />,

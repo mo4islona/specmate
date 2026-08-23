@@ -27,7 +27,7 @@ so it MUST NOT be relaxed on the grounds that a later run would have caught the 
 - **WHEN** a brief carries every required part while making a weak case
 - **THEN** the check SHALL pass and the task SHALL reach its gate, where rejecting it is the owner's call
 
-#### Scenario: AC-1320 — One planner run carries the whole check
+#### Scenario: AC-1322 — One planner run carries the whole check
 
 - **WHEN** a definition schedules a single planner run before the kickoff gate
 - **THEN** that run's proposal SHALL be checked in full before commit, with no part deferred to a later run

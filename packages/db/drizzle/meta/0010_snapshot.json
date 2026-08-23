@@ -1,6 +1,6 @@
 {
-  "id": "b261c73b-c536-4b89-b2dc-5f2ea0d9ba6e",
-  "prevId": "ed353dfe-f21a-4e1c-a6f3-2038d11bcf1e",
+  "id": "f9ee41be-4c2d-4bf8-a456-550f076d6440",
+  "prevId": "2921766f-c531-44a1-94a8-91634664b052",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1733,6 +1733,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "workspace_commit": {
           "name": "workspace_commit",
           "type": "text",
@@ -1928,8 +1934,7 @@
           "name": "base_branch",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'main'"
+          "notNull": false
         },
         "status": {
           "name": "status",

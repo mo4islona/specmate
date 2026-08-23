@@ -48,6 +48,12 @@ export interface StageRequest {
   readonly environment: StageJob['environment']
   /** Attempt number of the first try; a retry records the next one. */
   readonly attempt?: number
+  /**
+   * A session an earlier node left, which this run continues by forking (REQ-410).
+   * Every attempt forks the same base, so a retry never reads the reasoning its own
+   * failed attempt produced (AC-236).
+   */
+  readonly resumeSessionId?: string
 }
 
 export interface StageAttemptRecord {
@@ -69,6 +75,10 @@ export interface StageExecution {
   readonly commitDeferred?: boolean
   /** From the successful run's envelope; null when it could not be parsed. */
   readonly telemetry?: StageTelemetry | null
+  /** The session this run left, for a later node to continue (REQ-214). */
+  readonly sessionId?: string | null
+  /** Set when a resumption was asked for and could not be had (AC-235). */
+  readonly coldStartReason?: string | null
 }
 
 /** A recognized tool use, attributed to the stage attempt it came from. */
@@ -123,6 +133,8 @@ export class StageExecutor {
           status: 'succeeded',
           attempts,
           result: outcome.result,
+          sessionId: outcome.sessionId ?? null,
+          coldStartReason: outcome.coldStartReason ?? null,
           commit: outcome.commit,
           commitDeferred: outcome.commitDeferred,
           telemetry: outcome.telemetry ?? null,
@@ -153,6 +165,8 @@ export class StageExecutor {
     commit?: string
     commitDeferred?: boolean
     telemetry?: StageTelemetry | null
+    sessionId?: string | null
+    coldStartReason?: string | null
   }> {
     const { config, provider, git, workspaces, ledger: loadLedger, onActivity } = this.deps
     const ledger = await loadLedger(request.taskId)
@@ -178,6 +192,7 @@ export class StageExecutor {
       environment: request.environment,
       timeoutMs: config.stageTimeoutMs,
       attempt,
+      ...(request.resumeSessionId ? { resumeSessionId: request.resumeSessionId } : {}),
       onActivity: onActivity
         ? (activity) =>
             onActivity({ ...activity, taskId: request.taskId, stageId: request.stageId, attempt })
@@ -312,6 +327,8 @@ export class StageExecutor {
       commit: commit?.committed ? commit.commit : undefined,
       commitDeferred: this.deps.deferCommit,
       telemetry: outcome.telemetry,
+      sessionId: outcome.sessionId,
+      coldStartReason: outcome.coldStartReason,
     }
   }
 }

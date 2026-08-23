@@ -31,6 +31,7 @@ const DOT_CLASSES: Record<NodeState, string> = {
   running: 'bg-phosphor dot-live',
   awaiting: 'bg-amber dot-live',
   stopped: 'bg-danger',
+  skipped: 'border border-border-bright bg-ground',
   pending: 'border border-border-bright bg-ground',
 }
 
@@ -39,6 +40,7 @@ const NAME_CLASSES: Record<NodeState, string> = {
   running: 'font-medium text-phosphor',
   awaiting: 'font-medium text-amber',
   stopped: 'font-medium text-danger',
+  skipped: 'text-muted',
   pending: 'text-muted',
 }
 
@@ -162,7 +164,12 @@ function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
   }`
 
   if (node.state === 'stopped') {
-    return <span className={classes}>{node.stoppedReason ?? 'stopped'}</span>
+    return <span className={classes}>{node.reason ?? 'stopped'}</span>
+  }
+  // Kept in the rail rather than dropped from it: an absent node hides the
+  // decision that removed it, and this one has a reason worth reading.
+  if (node.state === 'skipped') {
+    return <span className={classes}>skipped · {node.reason}</span>
   }
   if (node.state === 'awaiting') {
     return <span className={classes}>waiting on you</span>

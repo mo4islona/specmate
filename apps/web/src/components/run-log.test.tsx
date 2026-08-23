@@ -40,7 +40,7 @@ function node(overrides: Partial<PipelineNodeView> = {}): PipelineNodeView {
     role: 'implementer',
     binding: null,
     state: 'done',
-    stoppedReason: null,
+    reason: null,
     current: false,
     runs: [stage()],
     latest: stage(),

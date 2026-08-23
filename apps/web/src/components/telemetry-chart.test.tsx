@@ -8,6 +8,7 @@ type Stage = TaskDetail['stages'][number]
 function stage(overrides: Partial<Stage> = {}): Stage {
   return {
     id: 'stage-1',
+    skipReason: null,
     taskId: 'task-1',
     graphId: 'graph-1',
     graphVersion: 1,

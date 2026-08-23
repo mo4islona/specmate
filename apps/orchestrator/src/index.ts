@@ -173,6 +173,7 @@ const engineWorkspaces: EngineWorkspaces = {
   headCommit: (workspace) => service.headCommit(workspace),
   commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
   writeDecisionLog: (workspace, markdown) => service.writeDecisionLog(workspace, markdown),
+  countSpecScenarios: (workspace) => service.countSpecScenarios(workspace),
   release: (taskId) => service.release(taskId),
 }
 

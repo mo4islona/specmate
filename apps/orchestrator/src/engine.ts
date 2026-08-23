@@ -24,12 +24,15 @@ import {
   type EscalationInput,
   type ExecutionUsage,
   escalationForPark,
+  evaluateCondition,
+  forwardTarget,
   type GateNode,
   type HarnessCoverageAssessment,
   isCoverageGap,
   isRestartable,
   isTerminal,
   LOOP_CAPS,
+  type NodeFacts,
   nodeAt,
   type PinnedGraph,
   type PlanPrerequisite,
@@ -303,6 +306,13 @@ export interface EngineWorkspaces {
   commitStage?(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
   /** Absent in ops-only contexts (the admin CLI), which never dispatch a stage. */
   writeDecisionLog?(workspace: Workspace, markdown: string): Promise<void>
+  /**
+   * How many scenarios the change's specs declare — the one fact a shipped
+   * predicate reads. Absent means the fact cannot be had, and a node whose
+   * condition cannot be evaluated runs: never skip a check you could not justify
+   * skipping.
+   */
+  countSpecScenarios?(workspace: Workspace): Promise<number>
   release(taskId: string): Promise<void>
 }
 
@@ -315,6 +325,11 @@ export interface StageDispatch {
   readonly attempt: number
   readonly provider: ProviderId
   readonly workspace: Workspace
+  /**
+   * The session the node this one resumes left behind (REQ-410, AC-233). Read from
+   * the resumed stage row, so it survives a restart and any length of gate.
+   */
+  readonly resumeSessionId?: string
 }
 
 export type StageDispatcher = (dispatch: StageDispatch) => Promise<StageExecution>
@@ -521,6 +536,11 @@ export class Engine {
 
       for (const { task, graph, node, provider } of dispatchable) {
         if (stagesDispatched >= stageSlots) break
+        if (await this.skipUnlessConditionHolds(task, graph, node)) {
+          dispatched += 1
+          continue
+        }
+
         const claimed = await this.claim(task, graph, node, provider)
         if (!claimed) continue
 
@@ -711,6 +731,82 @@ export class Engine {
    * just failed its last attempt must not be re-dispatched by a tick that
    * beats `failAttempt`'s own cap check to the punch.
    */
+  /**
+   * A conditional node whose predicate does not hold never reaches a dispatcher:
+   * the task advances past it and a `skipped` row records why. The row is the
+   * point — a node dropped from the graph hides the decision that dropped it
+   * (REQ-409, AC-421, AC-422).
+   *
+   * A fact that cannot be assembled means the condition cannot be evaluated, and
+   * the node runs. Skipping a check needs a reason; running one never does.
+   */
+  private async skipUnlessConditionHolds(
+    task: Task,
+    graph: RunGraphRow,
+    node: StageNode,
+  ): Promise<boolean> {
+    if (!node.condition) return false
+
+    const facts = await this.assembleNodeFacts(task)
+    if (!facts) return false
+
+    const verdict = evaluateCondition(node, facts)
+    if (verdict.holds) return false
+
+    const to = forwardTarget(graph.dag, node.key)
+
+    return this.deps.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
+      if (current?.status !== node.key) return false
+
+      const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
+      const now = new Date()
+      await tx.insert(stages).values({
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: node.key,
+        role: node.role,
+        provider: ROLE_CONTRACTS[node.role].defaultProvider,
+        status: 'skipped',
+        attempt: history.lastAttempt + 1,
+        startedAt: now,
+        finishedAt: now,
+        skipReason: verdict.reason,
+      })
+      await tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id))
+      await emitEvent(tx, {
+        taskId: task.id,
+        type: 'stage.skipped',
+        payload: { node: node.key, reason: verdict.reason, to },
+      })
+
+      return true
+    })
+  }
+
+  /** Null where the fact cannot be had, which the caller reads as "run the node". */
+  private async assembleNodeFacts(task: Task): Promise<NodeFacts | null> {
+    const { workspaces } = this.deps
+    if (!workspaces.countSpecScenarios) return null
+
+    try {
+      const workspace = await workspaces.provision({
+        taskId: task.id,
+        slug: task.slug,
+        repoUrl: task.repoUrl,
+        baseBranch: task.baseBranch ?? undefined,
+      })
+
+      return { specScenarioCount: await workspaces.countSpecScenarios(workspace) }
+    } catch (error) {
+      this.deps.log?.(
+        `could not assemble node facts for ${task.id}: ${(error as Error).message}; the node runs`,
+      )
+
+      return null
+    }
+  }
+
   private async claim(
     task: Task,
     graph: RunGraphRow,
@@ -1348,6 +1444,33 @@ export class Engine {
     })
   }
 
+  /**
+   * The session the resumed node left, from its last accepted attempt. Every
+   * attempt of this node forks that same base, so a retry carries none of the
+   * turns its own failed attempt appended (AC-236).
+   */
+  private async resumedSessionFor(
+    graph: RunGraphRow,
+    node: StageNode,
+  ): Promise<string | undefined> {
+    if (!node.resumes) return undefined
+
+    const [source] = await this.deps.db
+      .select({ providerSessionId: stages.providerSessionId })
+      .from(stages)
+      .where(
+        and(
+          eq(stages.graphId, graph.id),
+          eq(stages.nodeKey, node.resumes),
+          eq(stages.status, 'succeeded'),
+        ),
+      )
+      .orderBy(desc(stages.attempt))
+      .limit(1)
+
+    return source?.providerSessionId ?? undefined
+  }
+
   private async runStage(
     task: Task,
     graph: RunGraphRow,
@@ -1393,6 +1516,9 @@ export class Engine {
         row = { ...row, workspaceCommit }
       }
       if (workspaces.writeDecisionLog) await this.writeDecisionLog(task.id, workspace)
+      // Read per dispatch rather than carried in memory: the gate between the two
+      // nodes may have been held across a restart (AC-234).
+      const resumeSessionId = await this.resumedSessionFor(graph, node)
       execution = await dispatcher({
         task,
         graphId: graph.id,
@@ -1402,6 +1528,7 @@ export class Engine {
         attempt: row.attempt,
         provider: row.provider,
         workspace,
+        ...(resumeSessionId ? { resumeSessionId } : {}),
       })
     } catch (e) {
       await this.failAttempt(task, graph, node, row, 'crash', (e as Error).message, workspace, null)
@@ -1608,6 +1735,10 @@ export class Engine {
           cost: usageRecord(execution.telemetry),
           result,
           acceptedCommit,
+          // Recorded whether or not anything resumes it: a session that turns out
+          // to be unresumable is worth knowing about (REQ-214, AC-232).
+          providerSessionId: execution.sessionId ?? null,
+          coldStartReason: execution.coldStartReason ?? null,
           updatedAt: new Date(),
         })
         .where(and(eq(stages.id, row.id), eq(stages.status, 'running')))

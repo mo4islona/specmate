@@ -71,6 +71,13 @@
       "when": 1787501685421,
       "tag": "0009_colorful_morlun",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787520479760,
+      "tag": "0010_bumpy_charles_xavier",
+      "breakpoints": true
     }
   ]
 }

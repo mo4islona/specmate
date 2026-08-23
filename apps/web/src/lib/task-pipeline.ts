@@ -13,7 +13,7 @@ type PinnedNode = NonNullable<TaskDetail['graph']>['dag']['nodes'][number]
  * sweeper found orphaned — and a node in it keeps its facts rather than
  * reverting to looking unstarted.
  */
-export type NodeState = 'done' | 'running' | 'stopped' | 'awaiting' | 'pending'
+export type NodeState = 'done' | 'running' | 'stopped' | 'skipped' | 'awaiting' | 'pending'
 
 export interface PipelineNodeView {
   readonly key: string
@@ -22,8 +22,12 @@ export interface PipelineNodeView {
   readonly role: string | null
   readonly binding: ModelBinding | null
   readonly state: NodeState
-  /** Why it stopped, in the slot a finished node states its duration in. */
-  readonly stoppedReason: string | null
+  /**
+   * Why it stopped, or why it was skipped — in the slot a finished node states its
+   * duration in. A skipped node keeps its place in the rail precisely so the
+   * decision to skip it is visible rather than inferred from an absence.
+   */
+  readonly reason: string | null
   /** Where the task stands right now — its status, or what it resumes into when parked. */
   readonly current: boolean
   /** Every attempt at this node, oldest first. */
@@ -37,7 +41,7 @@ const STAGE_STATE: Record<string, NodeState> = {
   failed: 'stopped',
   interrupted: 'stopped',
   waiting_human: 'awaiting',
-  skipped: 'done',
+  skipped: 'skipped',
   pending: 'pending',
 }
 
@@ -77,7 +81,7 @@ export function buildPipelineNodes({
       role,
       binding: role ? (modelBindings[role] ?? null) : null,
       state,
-      stoppedReason: state === 'stopped' ? stoppedReason(runs) : null,
+      reason: nodeReason(state, runs),
       current,
       runs,
       latest,
@@ -90,7 +94,10 @@ export function buildPipelineNodes({
  * orchestrator setting the client never sees, so a capped node is described by
  * what it did — failed, this many times — rather than by the bound it hit.
  */
-function stoppedReason(runs: readonly Stage[]): string | null {
+function nodeReason(state: NodeState, runs: readonly Stage[]): string | null {
+  if (state === 'skipped') return runs.at(-1)?.skipReason ?? 'skipped'
+  if (state !== 'stopped') return null
+
   const latest = runs.at(-1)
   if (!latest) return null
 
