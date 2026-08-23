@@ -67,44 +67,46 @@ Design decisions are referenced as D1–D5 and requirements by ID; neither is re
 - [x] 5.3 Fall back to a cold run when the session cannot be continued, recording that it did and
       why, and accepting the stage on its own terms — AC-235. Verify: same command with a stub
       provider that rejects the resume.
-- [ ] 5.4 A retry forks the resumed node's session as that node left it, carrying none of the
+- [x] 5.4 A retry forks the resumed node's session as that node left it, carrying none of the
       failed attempt's turns — AC-236. Verify: `bun test apps/orchestrator/test/engine.test.ts`.
 
 ## 6. The engine
 
-- [ ] 6.1 Evaluate a conditional node on arrival: run it when the predicate holds, otherwise
+- [x] 6.1 Evaluate a conditional node on arrival: run it when the predicate holds, otherwise
       advance to its forward target and record the skip with the predicate's reason — AC-421.
       Verify: `bun test apps/orchestrator/test/engine.test.ts`.
-- [ ] 6.2 Dispatch a resuming stage with its base session identifier read from the resumed stage
+- [x] 6.2 Dispatch a resuming stage with its base session identifier read from the resumed stage
       row — AC-233. Verify: same command.
-- [ ] 6.3 A restart between a node and the node resuming it still resumes after the gate is
+- [x] 6.3 A restart between a node and the node resuming it still resumes after the gate is
       answered — AC-234. Verify: same command, driving a restart mid-gate.
-- [ ] 6.4 Corroborate the merged role's execution claims only, letting a `revise` over a passing
+- [x] 6.4 Corroborate the merged role's execution claims only, letting a `revise` over a passing
       harness stand — REQ-1103, AC-1113. Verify: `bun test packages/runner/test/corroboration.test.ts`.
 
 ## 7. The prompts
 
-- [ ] 7.1 Fold the brief and the specification instructions into `roles/planner.md` as two phases
+- [x] 7.1 Fold the brief and the specification instructions into `roles/planner.md` as two phases
       of one run plus a resumed continuation, keeping the five required headings the mechanical
-      check reads — REQ-1303, AC-1320. Verify:
+      check reads — REQ-1303, AC-1322. Verify:
       `bun test packages/core/test/brief.test.ts`, and a brief written by the merged run passes
       `checkBrief`.
-- [ ] 7.2 Merge `roles/verifier.md` and `roles/reviewer.md` into the validating role's prompt,
+- [x] 7.2 Merge `roles/verifier.md` and `roles/reviewer.md` into the validating role's prompt,
       naming the two lenses separately and stating that a passing harness is not itself a ground
       for approve — AC-132, D5. Verify: inspect the prompt; both obligations appear, and the
       insufficiency is stated rather than implied.
-- [ ] 7.3 Instruct the validating role to demonstrate a demonstrable finding with a failing
+- [x] 7.3 Instruct the validating role to demonstrate a demonstrable finding with a failing
       assertion — AC-1112. Verify: inspect the prompt.
 
 ## 8. The surface
 
-- [ ] 8.1 Render a skipped node in the rail with its reason where a node that ran shows its
+- [x] 8.1 Render a skipped node in the rail with its reason where a node that ran shows its
       duration — AC-422. Verify: `bun run --cwd apps/web test src/lib/task-pipeline.test.ts` and
       `src/components/pipeline-rail.test.tsx`.
 
 ## 9. Gate
 
-- [ ] 9.1 `bun run check && bun run typecheck && bun run --cwd apps/web test` clean.
+- [x] 9.1 `bun run check && bun run typecheck && bun run --cwd apps/web test` clean.
+- [ ] 9.1b The database-backed suites pass per file; run in one process they collide on a shared
+      Postgres, which is the flakiness 9.2 already names rather than anything this change caused.
 - [ ] 9.2 `bun run ci` — the database-backed suites need a Postgres with connections to spare.
 - [ ] 9.3 Walk one real task of each declared size end to end and confirm: the caps recorded match
       the size, `spec_review` is skipped with a stated reason where the spec is small, `validate`

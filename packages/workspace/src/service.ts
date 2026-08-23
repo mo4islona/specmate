@@ -143,6 +143,10 @@ export class WorkspaceService {
     return this.manager.writeDecisionLog(workspace, markdown)
   }
 
+  countSpecScenarios(workspace: Workspace): Promise<number> {
+    return this.manager.countSpecScenarios(workspace)
+  }
+
   releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
     return this.manager.releaseConversation(slug, repoUrl, key)
   }

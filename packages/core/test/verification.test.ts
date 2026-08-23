@@ -250,3 +250,26 @@ describe('deriveFindings', () => {
     expect(findings.map((f) => f.id).sort()).toEqual(['AC-1', 'AC-2'])
   })
 })
+
+describe('what corroboration reaches', () => {
+  const inventory = ['AC-1', 'AC-2']
+  const allPassing = [
+    { scenario: 'AC-1', assertion: 'a.test.ts', outcome: 'pass' as const },
+    { scenario: 'AC-2', assertion: 'b.test.ts', outcome: 'pass' as const },
+  ]
+
+  test('AC-1113: a revise stands over a fully passing harness', () => {
+    // The claim about execution is corroborated; what the stage concluded by
+    // reading the diff is a judgement, and a green harness does not overrule it.
+    expect(corroborate(inventory, allPassing, 'revise')).toEqual({ ok: true, violations: [] })
+    expect(corroborate(inventory, allPassing, 'escalate')).toEqual({ ok: true, violations: [] })
+  })
+
+  test('an approve over the same harness is corroborated rather than assumed', () => {
+    expect(corroborate(inventory, allPassing, 'approve')).toEqual({ ok: true, violations: [] })
+    expect(corroborate([...inventory, 'AC-3'], allPassing, 'approve')).toMatchObject({
+      ok: false,
+      violations: ['AC-3'],
+    })
+  })
+})

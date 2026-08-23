@@ -291,6 +291,7 @@ function serializeStage(stage: Stage) {
     finishedAt: stage.finishedAt,
     interruptionCleanupStatus: stage.interruptionCleanupStatus,
     interruptionFailure: stage.interruptionFailure,
+    skipReason: stage.skipReason,
     createdAt: stage.createdAt,
     updatedAt: stage.updatedAt,
     telemetry: hasTelemetry

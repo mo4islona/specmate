@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { AgentRole, ProviderId } from '@specmate/core'
 import { resolveWorkspaceConfig, type WorkspaceConfig, type WorkspaceOptions } from './config.ts'
@@ -224,6 +224,25 @@ export class WorkspaceManager {
     })
   }
 
+  /**
+   * How many scenarios the change's specs declare. Counted from the headings
+   * rather than parsed: a conditional node reads it to decide whether reviewing
+   * this spec is worth a stage, and that question is about how many separate
+   * claims the spec makes, not about how the file is structured.
+   */
+  async countSpecScenarios(workspace: Workspace): Promise<number> {
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      const specs = join(workspace.path, workspace.changeDir, 'specs')
+      let total = 0
+      for (const file of await walkMarkdown(specs)) {
+        const text = await readFile(file, 'utf8')
+        total += text.split('\n').filter((line) => line.startsWith('#### Scenario:')).length
+      }
+
+      return total
+    })
+  }
+
   async headCommit(workspace: Workspace): Promise<string> {
     return this.withMirrorLock(workspace.mirrorPath, async () => {
       const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
@@ -321,4 +340,20 @@ function assertConversationWorkspaceKey(key: string): void {
   if (key === '.' || key === '..' || !/^[a-zA-Z0-9._-]+$/.test(key)) {
     throw new InvalidConversationWorkspaceKeyError(key)
   }
+}
+
+/** Every markdown file under a directory, or none where the directory is absent. */
+async function walkMarkdown(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  const files: string[] = []
+  for (const entry of entries) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...(await walkMarkdown(full)))
+    } else if (entry.name.endsWith('.md')) {
+      files.push(full)
+    }
+  }
+
+  return files
 }

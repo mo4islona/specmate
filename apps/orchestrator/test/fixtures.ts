@@ -29,6 +29,8 @@ export interface FakeWorkspaces {
     decisionLogs: { slug: string; markdown: string }[]
   }
   readonly workspaces: EngineWorkspaces
+  /** Makes the one predicate fact available; unset, the fact cannot be had. */
+  declareSpecScenarios(count: number): void
   failNextConversationRelease(error?: Error): void
 }
 
@@ -52,13 +54,23 @@ export function fakeWorkspaces(): FakeWorkspaces {
     mirrorPath: '/tmp/fake-mirror',
   })
   let conversationReleaseFailure: Error | undefined
+  // Undefined leaves the fact unavailable, which is the "run the node" path.
+  let specScenarioCount: number | undefined
 
   return {
     calls,
     failNextConversationRelease(error = new Error('conversation cleanup failed')) {
       conversationReleaseFailure = error
     },
+    declareSpecScenarios(count: number) {
+      specScenarioCount = count
+    },
     workspaces: {
+      async countSpecScenarios() {
+        if (specScenarioCount === undefined) throw new Error('no spec scenario count declared')
+
+        return specScenarioCount
+      },
       async provision(request) {
         calls.provisioned.push(request.slug)
         return workspace(request.slug)
