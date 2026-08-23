@@ -358,6 +358,7 @@ describe('stage execution', () => {
     const execution = await makeExecutor(harness, {
       SPECMATE_STUB_MODE_FILE: queue,
       SPECMATE_STUB_RECORD: record,
+      SPECMATE_STUB_ROLE: 'researcher',
     }).execute(request(harness))
 
     // The second attempt's prompt is the last one recorded.
@@ -402,7 +403,7 @@ describe('verification corroboration', () => {
     const before = await commitCount(harness)
 
     const execution = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'approve',
       SPECMATE_STUB_MATRIX: matrixTable(''),
     }).execute(request(harness, { role: 'verifier' }))
@@ -419,7 +420,7 @@ describe('verification corroboration', () => {
     await harness.commitAll('baseline')
 
     const execution = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'approve',
       SPECMATE_STUB_MATRIX: matrixTable(`| ${SCENARIO} | \`bun test\` | pass |\n`),
     }).execute(request(harness, { role: 'verifier' }))
@@ -435,7 +436,7 @@ describe('verification corroboration', () => {
     await harness.commitAll('baseline')
 
     const execution = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'revise',
       SPECMATE_STUB_MATRIX: matrixTable(`| ${SCENARIO} | \`bun test\` | fail |\n`),
     }).execute(request(harness, { role: 'verifier' }))
@@ -451,7 +452,7 @@ describe('verification corroboration', () => {
     await harness.commitAll('baseline')
 
     const execution = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'revise',
       SPECMATE_STUB_MATRIX: matrixTable(`| ${SCENARIO} | \`bun test\` | pass |\n`),
     }).execute(request(harness, { role: 'verifier' }))
@@ -496,7 +497,7 @@ describe('verification corroboration', () => {
     const before = await commitCount(harness)
 
     const revise = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'revise',
       SPECMATE_STUB_MATRIX: matrixTable(`| ${SCENARIO} | \`bun test\` | fail |\n`),
     }).execute(request(harness, { role: 'verifier' }))
@@ -506,7 +507,7 @@ describe('verification corroboration', () => {
     expect(await commitCount(harness)).toBe(before + 1)
 
     const approve = await makeExecutor(harness, {
-      SPECMATE_STUB_MODE: 'verify',
+      SPECMATE_STUB_MODE: 'validate',
       SPECMATE_STUB_VERDICT: 'approve',
       SPECMATE_STUB_MATRIX: matrixTable(''),
     }).execute(request(harness, { role: 'verifier' }))
@@ -532,7 +533,7 @@ describe('brief completeness', () => {
 
     const execution = await makeExecutor(
       harness,
-      { SPECMATE_STUB_MODE: 'ok', SPECMATE_STUB_ROLE: 'planner' },
+      { SPECMATE_STUB_MODE: 'brief-incomplete', SPECMATE_STUB_ROLE: 'planner' },
       { rolesDir: await plannerRolesDir() },
     ).execute(request(harness, { role: 'planner' }))
 

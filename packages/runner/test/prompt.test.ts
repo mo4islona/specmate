@@ -185,7 +185,7 @@ describe('prompt assembly', () => {
         previousAnchorCommit: null,
         previousTaskState: null,
         currentAnchorCommit: 'current',
-        currentTaskState: 'research',
+        currentTaskState: 'specify',
         contextPath: 'stored',
         actionOptions: [
           {
@@ -193,7 +193,7 @@ describe('prompt assembly', () => {
             target: {
               taskId: 'task-1',
               graphId: 'graph-1',
-              nodeKey: 'research',
+              nodeKey: 'specify',
               stageId: 'stage-1',
             },
             expectedVersion: {
@@ -218,7 +218,7 @@ describe('prompt assembly', () => {
         previousAnchorCommit: null,
         previousTaskState: null,
         currentAnchorCommit: 'current',
-        currentTaskState: 'research',
+        currentTaskState: 'specify',
         contextPath: 'stored',
         actionOptions: [],
       },

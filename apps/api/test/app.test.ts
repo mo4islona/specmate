@@ -92,7 +92,7 @@ describeDb('api conversations', () => {
     }
   })
 
-  async function createTask(status: 'research' | 'archived' = 'research'): Promise<string> {
+  async function createTask(status: 'specify' | 'archived' = 'specify'): Promise<string> {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -246,7 +246,7 @@ describeDb('api conversations', () => {
       title: 'API stop fixture',
       type: 'feature',
       repoUrl: 'https://github.com/example/api-stop',
-      at: 'research',
+      at: 'specify',
     })
     createdTaskIds.push(task.id)
     const [stage] = await db
@@ -254,8 +254,8 @@ describeDb('api conversations', () => {
       .values({
         taskId: task.id,
         graphId: graph.id,
-        nodeKey: 'research',
-        role: 'researcher',
+        nodeKey: 'specify',
+        role: 'planner',
         provider: 'claude-code',
         status: 'running',
         attempt: 0,
@@ -270,13 +270,13 @@ describeDb('api conversations', () => {
       body: JSON.stringify({
         stageId: stage.id,
         graphId: graph.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         attempt: 0,
       }),
     })
     expect(stopped.status).toBe(200)
     expect(await stopped.json()).toMatchObject({
-      task: { status: 'paused', resumeStatus: 'research' },
+      task: { status: 'paused', resumeStatus: 'specify' },
       stage: { status: 'interrupted', interruptionCleanupStatus: 'pending' },
     })
 
@@ -324,7 +324,7 @@ describeDb('api conversations', () => {
         role: 'assistant',
         contentMd: 'I can carry that forward.',
         status: 'completed',
-        taskState: 'research',
+        taskState: 'specify',
       })
       .returning()
     assert(message)
@@ -337,7 +337,7 @@ describeDb('api conversations', () => {
         kind: 'instruct_next_run',
         target: { taskId, nodeKey: 'implement' },
         instruction: 'Keep the migration bounded.',
-        expectedVersion: { taskStatus: 'research' },
+        expectedVersion: { taskStatus: 'specify' },
       })
       .returning()
     assert(action)
@@ -865,7 +865,7 @@ describeDb('api', () => {
       type: 'feature',
       repoUrl: 'https://github.com/example/spend-fixture',
       budgets: { max_cost_usd: 20 },
-      at: 'research',
+      at: 'specify',
     })
     createdTaskIds.push(task.id)
     const startedAt = new Date('2026-01-01T00:00:00Z')
@@ -885,7 +885,7 @@ describeDb('api', () => {
       {
         taskId: task.id,
         graphId: graph.id,
-        nodeKey: 'kickoff_brief',
+        nodeKey: 'specify',
         role: 'planner',
         provider: 'claude-code',
         status: 'succeeded',
@@ -963,14 +963,14 @@ describeDb('api', () => {
               title: 'Healthy fixture',
               type: 'bugfix',
               repoUrl: 'https://github.com/example/healthy-fixture',
-              status: 'research',
+              status: 'specify',
             },
             {
               slug: 'attention-decision',
               title: 'Decision fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/decision-fixture',
-              status: 'research',
+              status: 'specify',
               updatedAt: new Date('2026-08-16T11:15:00.000Z'),
             },
             {
@@ -1015,7 +1015,7 @@ describeDb('api', () => {
         await tx.insert(decisions).values([
           {
             taskId: decisionTask.id,
-            nodeKey: 'research',
+            nodeKey: 'specify',
             key: 'style-nit',
             kind: 'question',
             promptMd: 'Worth a follow-up task?',
@@ -1024,7 +1024,7 @@ describeDb('api', () => {
           },
           {
             taskId: parkedOnDecisionTask.id,
-            nodeKey: 'research',
+            nodeKey: 'specify',
             key: 'scope',
             kind: 'question',
             promptMd: 'Which repo does this cover?',
@@ -1321,7 +1321,7 @@ describeDb('api', () => {
           entry: 'implement',
           nodes: [
             { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
-            { kind: 'stage', key: 'verify', role: 'verifier', binding: 'role_default' },
+            { kind: 'stage', key: 'validate', role: 'verifier', binding: 'role_default' },
           ],
         },
       })
@@ -1382,10 +1382,10 @@ describeDb('api', () => {
       .values({
         taskId: task.id,
         dag: {
-          entry: 'research',
+          entry: 'specify',
           nodes: [
-            { kind: 'stage', key: 'research', role: 'researcher', binding: 'role_default' },
-            { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['research'] },
+            { kind: 'stage', key: 'specify', role: 'planner', binding: 'role_default' },
+            { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['specify'] },
             { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
           ],
         },
@@ -1396,8 +1396,8 @@ describeDb('api', () => {
     await db.insert(stages).values({
       taskId: task.id,
       graphId: graph.id,
-      nodeKey: 'research',
-      role: 'researcher',
+      nodeKey: 'specify',
+      role: 'planner',
       provider: 'claude-code',
       status: 'succeeded',
       attempt: 0,
@@ -1478,7 +1478,7 @@ describeDb('api', () => {
       headers: auth,
     })
     expect(approved.status).toBe(200)
-    expect(await approved.json()).toMatchObject({ task: { status: 'research' } })
+    expect(await approved.json()).toMatchObject({ task: { status: 'specify' } })
 
     const redirectedTask = await seedAt('human_kickoff_gate', 'redirect')
     const emptyRedirect = await app.request(`/api/v1/tasks/${redirectedTask.id}/gates/redirect`, {
@@ -1504,7 +1504,7 @@ describeDb('api', () => {
     const emptyRework = await app.request(`/api/v1/tasks/${reworkedTask.id}/gates/rework`, {
       method: 'POST',
       headers: auth,
-      body: JSON.stringify({ target: 'research', comment: '' }),
+      body: JSON.stringify({ target: 'specify', comment: '' }),
     })
     expect(emptyRework.status).toBe(400)
     expect(await emptyRework.json()).toMatchObject({
@@ -1515,10 +1515,10 @@ describeDb('api', () => {
     const reworked = await app.request(`/api/v1/tasks/${reworkedTask.id}/gates/rework`, {
       method: 'POST',
       headers: auth,
-      body: JSON.stringify({ target: 'research', comment: 'Recheck the external constraints' }),
+      body: JSON.stringify({ target: 'specify', comment: 'Recheck the external constraints' }),
     })
     expect(reworked.status).toBe(200)
-    expect(await reworked.json()).toMatchObject({ task: { status: 'research' } })
+    expect(await reworked.json()).toMatchObject({ task: { status: 'specify' } })
 
     const notes = await db
       .select()
@@ -1540,7 +1540,7 @@ describeDb('api', () => {
       ]),
     )
 
-    const runningTask = await seedAt('research', 'running')
+    const runningTask = await seedAt('specify', 'running')
     const rejected = await app.request(`/api/v1/tasks/${runningTask.id}/gates/approve`, {
       method: 'POST',
       headers: auth,
@@ -1552,7 +1552,7 @@ describeDb('api', () => {
       .select({ status: tasks.status })
       .from(tasks)
       .where(eq(tasks.id, runningTask.id))
-    expect(unchanged?.status).toBe('research')
+    expect(unchanged?.status).toBe('specify')
   })
 
   test('a redirect past the kickoff cap is refused as a conflict, leaving the task at its gate', async () => {
@@ -1604,7 +1604,7 @@ describeDb('api', () => {
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-fixture',
         status: 'waiting_human',
-        resumeStatus: 'research',
+        resumeStatus: 'specify',
       })
       .returning()
     if (!task) throw new Error('decision task insert returned no row')
@@ -1615,7 +1615,7 @@ describeDb('api', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'scope',
         kind: 'question',
         promptMd: 'What does this cover?',
@@ -1649,7 +1649,7 @@ describeDb('api', () => {
       body: JSON.stringify({ text: 'The whole repository.' }),
     })
     expect(answered.status).toBe(200)
-    expect(await answered.json()).toMatchObject({ task: { status: 'research' } })
+    expect(await answered.json()).toMatchObject({ task: { status: 'specify' } })
 
     const alreadyAnswered = await app.request(`/api/v1/decisions/${decision.id}/answer`, {
       method: 'POST',
@@ -1670,7 +1670,7 @@ describeDb('api', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'owner',
         kind: 'question',
         promptMd: 'Who owns this?',
@@ -1709,7 +1709,7 @@ describeDb('api', () => {
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-order-fixture',
         status: 'waiting_human',
-        resumeStatus: 'research',
+        resumeStatus: 'specify',
       })
       .returning()
     if (!task) throw new Error('decision task insert returned no row')
@@ -1724,7 +1724,7 @@ describeDb('api', () => {
       .values([
         {
           taskId: task.id,
-          nodeKey: 'research',
+          nodeKey: 'specify',
           key: 'a',
           kind: 'question',
           promptMd: 'A',
@@ -1732,7 +1732,7 @@ describeDb('api', () => {
         },
         {
           taskId: task.id,
-          nodeKey: 'research',
+          nodeKey: 'specify',
           key: 'b',
           kind: 'question',
           promptMd: 'B',
@@ -1740,7 +1740,7 @@ describeDb('api', () => {
         },
         {
           taskId: task.id,
-          nodeKey: 'research',
+          nodeKey: 'specify',
           key: 'c',
           kind: 'question',
           promptMd: 'C',
@@ -1782,7 +1782,7 @@ describeDb('api', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'scope',
         kind: 'question',
         promptMd: 'What does this cover?',
@@ -1810,7 +1810,7 @@ describeDb('api', () => {
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-action-fixture',
         status: 'waiting_human',
-        resumeStatus: 'research',
+        resumeStatus: 'specify',
       })
       .returning()
     if (!task) throw new Error('decision action task insert returned no row')
@@ -1821,7 +1821,7 @@ describeDb('api', () => {
       .insert(decisions)
       .values({
         taskId: task.id,
-        nodeKey: 'research',
+        nodeKey: 'specify',
         key: 'scope',
         kind: 'question',
         promptMd: 'What does this cover?',
@@ -1868,7 +1868,7 @@ describeDb('api', () => {
       },
     )
     expect(confirmed.status).toBe(200)
-    expect(await confirmed.json()).toMatchObject({ task: { status: 'research' } })
+    expect(await confirmed.json()).toMatchObject({ task: { status: 'specify' } })
     const [resolved] = await db.select().from(decisions).where(eq(decisions.id, decision.id))
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
   })

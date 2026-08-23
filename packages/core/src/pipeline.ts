@@ -39,6 +39,72 @@ export interface LoopEdge {
   readonly loop: LoopKind
 }
 
+/**
+ * Facts a predicate may be handed, with what each one is derived from. The kind is
+ * what makes REQ-409's circularity check mechanical rather than a review convention:
+ * an `outcome` fact is something a stage concluded, and a node guarded by one would be
+ * deciding its own necessity from a judgement it exists to produce.
+ */
+export type NodeFactKind = 'input' | 'outcome'
+
+export const NODE_FACT_KINDS = {
+  specScenarioCount: 'input',
+  /**
+   * Named because it is the tempting one: skipping a check because the last check
+   * passed is exactly the circularity REQ-409 forbids. No predicate may read it, so
+   * nothing ever assembles it — it exists to give the guard something to catch.
+   */
+  checkedNodeVerdict: 'outcome',
+} as const satisfies Record<string, NodeFactKind>
+
+export type NodeFactKey = keyof typeof NODE_FACT_KINDS
+
+/** Widens the literal so the check reads as a comparison rather than a tautology. */
+export function factKind(fact: NodeFactKey): NodeFactKind {
+  return NODE_FACT_KINDS[fact]
+}
+
+type InputFactKey = {
+  [K in NodeFactKey]: (typeof NODE_FACT_KINDS)[K] extends 'input' ? K : never
+}[NodeFactKey]
+
+/** Only input facts are ever assembled: an outcome fact has no legal reader. */
+export type NodeFacts = Readonly<Record<InputFactKey, number>>
+
+export interface PredicateVerdict {
+  readonly holds: boolean
+  /** Why the node is being skipped. Empty when it runs — nothing to explain. */
+  readonly reason: string
+}
+
+export interface PredicateSpec {
+  /** Declared rather than inferred: the circularity check reads this, not the body. */
+  readonly reads: readonly NodeFactKey[]
+  evaluate(facts: NodeFacts, threshold: number): PredicateVerdict
+}
+
+/**
+ * A predicate says when a node *runs*, never when it is skipped — REQ-409 is phrased
+ * that way and inverting it here would put the negation in every reading of a catalog
+ * entry.
+ */
+export const NODE_PREDICATES = {
+  spec_scenarios_at_least: {
+    reads: ['specScenarioCount'],
+    evaluate: (facts, threshold) => ({
+      holds: facts.specScenarioCount >= threshold,
+      reason: `the specification declares ${facts.specScenarioCount} scenario(s), under the ${threshold} this node is worth`,
+    }),
+  },
+} as const satisfies Record<string, PredicateSpec>
+
+export type PredicateId = keyof typeof NODE_PREDICATES
+
+export interface NodeCondition {
+  readonly predicate: PredicateId
+  readonly threshold: number
+}
+
 export interface StageNode {
   readonly kind: 'stage'
   /** Node keys are task-status values: the pinned graph names which of the enum's values a task visits. */
@@ -46,6 +112,10 @@ export interface StageNode {
   readonly role: PipelineRole
   readonly binding: ProviderBinding
   readonly loopEdge?: LoopEdge
+  /** Continues an earlier node's provider session instead of opening one (REQ-410). */
+  readonly resumes?: TaskState
+  /** Runs only where the predicate holds; skipped with its reason otherwise (REQ-409). */
+  readonly condition?: NodeCondition
 }
 
 export interface GateRedirect {
@@ -103,6 +173,27 @@ export const RESERVED_STATES: readonly TaskState[] = [
   'failed',
 ]
 
+/**
+ * What only a condition can get wrong. Separate from `validateDefinition` so the rule
+ * can be exercised against a predicate the shipped registry would never contain —
+ * REQ-409's circularity is unreachable while every registered predicate is well-behaved.
+ */
+export function conditionDefects(
+  condition: NodeCondition,
+  spec: PredicateSpec | undefined,
+): string[] {
+  if (!spec) return [`predicate "${condition.predicate}" is not in the registry`]
+
+  // The guard may read what is true when the task arrives, never what the node it
+  // guards would go on to conclude.
+  const circular = spec.reads.filter((fact) => factKind(fact) === 'outcome')
+  if (circular.length === 0) return []
+
+  return [
+    `predicate "${condition.predicate}" reads stage outcomes (${circular.join(', ')}); a node may not be skipped on the strength of a judgement it exists to produce`,
+  ]
+}
+
 export class PipelineDefinitionError extends Error {
   constructor(readonly defects: readonly string[]) {
     super(`invalid pipeline definition(s):\n${defects.map((d) => `  - ${d}`).join('\n')}`)
@@ -147,6 +238,14 @@ export function validateDefinition(def: PipelineDefinition): string[] {
         'binding "cross_review" requires a loopEdge to know whose work to exclude',
       )
     }
+    if (node.kind === 'stage' && node.condition) {
+      for (const defect of conditionDefects(
+        node.condition,
+        NODE_PREDICATES[node.condition.predicate],
+      )) {
+        at(`node ${node.key}`, defect)
+      }
+    }
   }
 
   if (!isTerminal(def.terminal) || def.terminal === 'failed') {
@@ -156,6 +255,24 @@ export function validateDefinition(def: PipelineDefinition): string[] {
   const resolvable = (target: TaskState) => index.has(target) || target === def.terminal
   for (const node of def.nodes) {
     if (node.kind === 'stage') {
+      if (node.resumes) {
+        const from = index.get(node.key)
+        const to = index.get(node.resumes)
+        const resumed = def.nodes.find((candidate) => candidate.key === node.resumes)
+
+        if (to === undefined) {
+          at(`node ${node.key}`, `resumes "${node.resumes}", which the definition does not contain`)
+        } else if (from !== undefined && to >= from) {
+          at(`node ${node.key}`, `resumes "${node.resumes}", which is not strictly earlier`)
+        } else if (resumed?.kind !== 'stage') {
+          at(`node ${node.key}`, `resumes "${node.resumes}", which is not a stage`)
+        } else if (resumed.role !== node.role) {
+          at(
+            `node ${node.key}`,
+            `resumes "${node.resumes}", whose role is "${resumed.role}" and not "${node.role}" — a session does not carry between roles`,
+          )
+        }
+      }
       if (!node.loopEdge) continue
       const { target, loop } = node.loopEdge
       const to = index.get(target)
@@ -253,39 +370,53 @@ export function loadPipelineCatalog<K extends string>(
  * The lifecycle spec as data. The planning segment is declared but fails loudly
  * until the kickoff-brief change ships the planner prompt.
  */
+/**
+ * How small a specification has to be before a cross-provider read of it stops
+ * earning its stage. A number in the catalog rather than a rule in code, because the
+ * honest way to tune it is against real specs.
+ */
+export const SPEC_REVIEW_SCENARIO_FLOOR = 4
+
 export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
   id: 'feature-bugfix',
   terminal: 'archived',
   nodes: [
     { kind: 'stage', key: 'planning', role: 'planner', binding: 'role_default' },
-    { kind: 'stage', key: 'kickoff_brief', role: 'planner', binding: 'role_default' },
     {
       kind: 'gate',
       key: 'human_kickoff_gate',
-      approve: 'research',
+      approve: 'specify',
       redirect: { target: 'planning', cap: 'max_kickoff_regenerations' },
     },
-    { kind: 'stage', key: 'research', role: 'researcher', binding: 'role_default' },
+    // The same planner, continuing the session that read the repository, rather than a
+    // second role reading it again and grounding the spec differently from the brief
+    // the owner just approved.
+    {
+      kind: 'stage',
+      key: 'specify',
+      role: 'planner',
+      binding: 'role_default',
+      resumes: 'planning',
+    },
     {
       kind: 'stage',
       key: 'spec_review',
       role: 'reviewer',
       binding: 'cross_review',
-      loopEdge: { target: 'research', loop: 'spec' },
+      loopEdge: { target: 'specify', loop: 'spec' },
+      condition: {
+        predicate: 'spec_scenarios_at_least',
+        threshold: SPEC_REVIEW_SCENARIO_FLOOR,
+      },
     },
-    { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['research'] },
+    { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['specify'] },
     { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+    // One node proves and judges. Two would read the same diff twice into the same cap,
+    // and would put the cross-provider independence on the half that only asserts.
     {
       kind: 'stage',
-      key: 'verify',
-      role: 'verifier',
-      binding: 'role_default',
-      loopEdge: { target: 'implement', loop: 'impl' },
-    },
-    {
-      kind: 'stage',
-      key: 'code_review',
-      role: 'reviewer',
+      key: 'validate',
+      role: 'validator',
       binding: 'cross_review',
       loopEdge: { target: 'implement', loop: 'impl' },
     },
@@ -294,7 +425,7 @@ export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
       kind: 'gate',
       key: 'human_final_gate',
       approve: 'publish',
-      rework: ['implement', 'research'],
+      rework: ['implement', 'specify'],
     },
     { kind: 'action', key: 'publish' },
   ],
@@ -324,12 +455,33 @@ export const PROFILE_FOR_SIZE: Readonly<Record<PlanSize, PipelineProfile>> = {
 }
 
 /**
- * `kickoff_brief` is the planner running a second time over the file it just
- * wrote — and planning's own output is already checked against every part the
- * brief requires. `spec_review` is a cross-provider review of a spec that, at
- * this size, is a handful of scenarios. Both human gates around them survive.
+ * How much rope a size gets. `medium` and `large` share a profile, so this is the
+ * whole of what separates them — REQ-408 forbids two sizes selecting the same profile
+ * *under the same caps*, and after the merges `spec_review` is the only droppable node
+ * left, everything else being the spine REQ-602 protects.
+ *
+ * Fields absent here keep the task's own value: an owner who set a cap deliberately is
+ * not overruled by a size the planner declared afterwards.
  */
-const COMPACT_DROPS: readonly TaskState[] = ['kickoff_brief', 'spec_review']
+export const CAPS_FOR_SIZE: Readonly<Record<PlanSize, Partial<Caps>>> = {
+  small: { max_spec_iterations: 1, max_impl_iterations: 2 },
+  medium: { max_spec_iterations: 2, max_impl_iterations: 3 },
+  large: { max_spec_iterations: 3, max_impl_iterations: 4 },
+}
+
+/**
+ * The caps a declared size selects, over the task's current caps, with anything the
+ * owner named at creation winning over both.
+ */
+export function capsForSize(size: PlanSize, current: Caps, override: Partial<Caps>): Caps {
+  return { ...current, ...CAPS_FOR_SIZE[size], ...override }
+}
+
+/**
+ * `spec_review` is a cross-provider review of a spec that, at this size, is a handful
+ * of scenarios. Both human gates around it survive.
+ */
+const COMPACT_DROPS: readonly TaskState[] = ['spec_review']
 
 /** Derived from the base rather than written out, so the subsequence property cannot drift. */
 export const FEATURE_BUGFIX_COMPACT: PipelineDefinition = {
@@ -379,6 +531,9 @@ export function validateReduction(
     if (node.kind === 'stage') {
       if (node.loopEdge && strands(node.loopEdge.target)) {
         at(`loop edge ${node.key} → ${node.loopEdge.target}`, 'targets a node this profile drops')
+      }
+      if (node.resumes && strands(node.resumes)) {
+        at(`node ${node.key}`, `resumes "${node.resumes}", which this profile drops`)
       }
       continue
     }
@@ -473,6 +628,21 @@ export function nodeAt(graph: PinnedGraph, key: TaskState): PipelineNode | undef
 
 export function stageNodeKeys(graph: PinnedGraph): TaskState[] {
   return graph.nodes.filter((node) => node.kind === 'stage').map((node) => node.key)
+}
+
+/**
+ * Whether a node runs at all, and why not. An unconditional node always runs, so the
+ * engine asks this of every stage rather than branching on whether one is conditional.
+ */
+export function evaluateCondition(node: PipelineNode, facts: NodeFacts): PredicateVerdict {
+  if (node.kind !== 'stage' || !node.condition) return { holds: true, reason: '' }
+
+  const spec: PredicateSpec | undefined = NODE_PREDICATES[node.condition.predicate]
+  // Unreachable through a loaded catalog: validation rejects an unknown predicate at
+  // import. Running the node is the safe reading if one ever gets here.
+  if (!spec) return { holds: true, reason: '' }
+
+  return spec.evaluate(facts, node.condition.threshold)
 }
 
 /** The next node in walking order, or the terminal after the last one. */

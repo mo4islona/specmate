@@ -176,14 +176,14 @@ describe('docker backend', () => {
       spec({
         labels: {
           'specmate.task': 'task-1',
-          'specmate.node': 'research',
+          'specmate.node': 'specify',
           'specmate.attempt': '0',
         },
       }),
     )
 
     const labels = argv.filter((_, i) => argv[i - 1] === '--label')
-    expect(labels).toEqual(['specmate.task=task-1', 'specmate.node=research', 'specmate.attempt=0'])
+    expect(labels).toEqual(['specmate.task=task-1', 'specmate.node=specify', 'specmate.attempt=0'])
   })
 })
 

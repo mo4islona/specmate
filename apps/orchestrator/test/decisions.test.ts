@@ -126,10 +126,10 @@ describeDb('decision-records', () => {
 
   test('the decision log is regenerated before every dispatch, even an empty one — an agent must never see a stale or scribbled copy', async () => {
     const { engine, ws, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'ok',
         decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
       }),
@@ -157,10 +157,10 @@ describeDb('decision-records', () => {
 
   test('a blocking request parks the task, records waiting_human on the stage, and keeps the committed result', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -176,7 +176,7 @@ describeDb('decision-records', () => {
     const open = await openDecisions(task.id)
     expect(open).toHaveLength(1)
     expect(open[0]).toMatchObject({
-      nodeKey: 'research',
+      nodeKey: 'specify',
       key: 'scope',
       blocking: true,
       status: 'open',
@@ -185,10 +185,10 @@ describeDb('decision-records', () => {
 
   test('a non-blocking request is recorded without parking the task', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'ok',
         decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
       }),
@@ -205,10 +205,10 @@ describeDb('decision-records', () => {
 
   test('an ok status carrying a blocking decision still parks the task, not just needs_decision', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'ok',
         decisions_needed: [{ key: 'scope', prompt_md: 'Which repo?', blocking: true }],
       }),
@@ -272,10 +272,10 @@ describeDb('decision-records', () => {
 
   test('raising a decision creates exactly one conversation and dispatches no response before an owner message', async () => {
     const { engine, stagesDispatcher, conversationsDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -300,10 +300,10 @@ describeDb('decision-records', () => {
 
   test('answering the last of two blocking decisions resumes the task and records feedback against the asking stage', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [
           { key: 'scope', prompt_md: 'What does this cover?' },
@@ -334,8 +334,8 @@ describeDb('decision-records', () => {
       actor: 'evgeny',
       text: 'The platform team.',
     })
-    expect(afterSecond.status).toBe('research')
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect(afterSecond.status).toBe('specify')
+    expect((await reload(db, task.id)).status).toBe('specify')
 
     const feedbackRows = await db
       .select()
@@ -343,17 +343,17 @@ describeDb('decision-records', () => {
       .where(and(eq(feedback.taskId, task.id), eq(feedback.kind, 'decision_answer')))
     expect(feedbackRows).toHaveLength(2)
     for (const row of feedbackRows) {
-      expect(row.role).toBe('researcher')
+      expect(row.role).toBe('planner')
       expect(row.provider).toBe('claude-code')
     }
   })
 
   test('answering with an option id stores the option label, not the id', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [
           {
@@ -385,10 +385,10 @@ describeDb('decision-records', () => {
 
   test('resolving the last blocking decision emits task.resumed alongside decision.answered', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -410,10 +410,10 @@ describeDb('decision-records', () => {
 
   test('resolving twice, and answering with neither an option nor text, are rejected without writing anything', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -445,10 +445,10 @@ describeDb('decision-records', () => {
 
   test('dismissing the last blocker resumes the task and reads as dismissed, not answered', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -465,17 +465,17 @@ describeDb('decision-records', () => {
       reason: 'Superseded.',
     })
 
-    expect(resumed.status).toBe('research')
+    expect(resumed.status).toBe('specify')
     const stored = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
     expect(stored).toMatchObject({ status: 'dismissed', answerMd: 'Superseded.' })
   })
 
   test('cancelling a task with open decisions dismisses them', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'research' })
+    const { task } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -494,7 +494,7 @@ describeDb('decision-records', () => {
 
   test('sweep logs a waiting_human task with no open decision as a defect, without repairing it', async () => {
     const { engine, logs } = makeEngine()
-    const { task } = await seed({ at: 'research', status: 'waiting_human', resume: 'research' })
+    const { task } = await seed({ at: 'specify', status: 'waiting_human', resume: 'specify' })
 
     await engine.sweep()
 
@@ -504,10 +504,10 @@ describeDb('decision-records', () => {
 
   test('a confirmed answer_decision action delegates to the same answer operation; a stale one conflicts', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task, graph } = await seed({ at: 'research' })
+    const { task, graph } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'needs_decision',
         decisions_needed: [{ key: 'scope', prompt_md: 'What does this cover?' }],
       }),
@@ -563,7 +563,7 @@ describeDb('decision-records', () => {
 
     const resolved = (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0]
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repo.' })
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
 
     // A second proposal against the now-resolved decision is a stale target.
     const [staleMessage] = await db
@@ -574,7 +574,7 @@ describeDb('decision-records', () => {
         role: 'assistant',
         contentMd: 'A later, stale proposal.',
         status: 'completed',
-        taskState: 'research',
+        taskState: 'specify',
       })
       .returning()
     assert(staleMessage)
@@ -608,10 +608,10 @@ describeDb('decision-records', () => {
 
   test('answer_decision on a non-blocking decision still applies after the task has advanced past it', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task, graph } = await seed({ at: 'research' })
+    const { task, graph } = await seed({ at: 'specify' })
     stagesDispatcher.plan(() =>
       result({
-        role: 'researcher',
+        role: 'planner',
         status: 'ok',
         decisions_needed: [{ key: 'style-nit', prompt_md: 'Worth a follow-up?', blocking: false }],
       }),
@@ -640,7 +640,7 @@ describeDb('decision-records', () => {
         role: 'assistant',
         contentMd: 'Worth filing separately.',
         status: 'completed',
-        taskState: 'research',
+        taskState: 'specify',
       })
       .returning()
     assert(message)
@@ -656,7 +656,7 @@ describeDb('decision-records', () => {
         // Snapshotted while the task was still at research — stale by the
         // time this gets confirmed, since a non-blocking decision does not
         // pin the task's status while it stays open.
-        expectedVersion: { taskStatus: 'research', graphId: graph.id, decisionStatus: 'open' },
+        expectedVersion: { taskStatus: 'specify', graphId: graph.id, decisionStatus: 'open' },
       })
       .returning()
     assert(action)
@@ -737,7 +737,7 @@ describeDb('kickoff brief questions', () => {
 
   test('a brief stage returning non-blocking questions advances to the gate carrying them open — REQ-1304, AC-1309', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief' })
+    const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() =>
       result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
     )
@@ -748,12 +748,12 @@ describeDb('kickoff brief questions', () => {
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
     const open = await openDecisions(task.id)
     expect(open.map((d) => d.key).sort()).toEqual(['auth-scope', 'data-retention'])
-    expect(open.every((d) => d.blocking === false && d.nodeKey === 'kickoff_brief')).toBe(true)
+    expect(open.every((d) => d.blocking === false && d.nodeKey === 'planning')).toBe(true)
   })
 
   test('questions past the cap are refused, and the event names them — REQ-1208, AC-1225', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 2 } })
+    const { task } = await seed({ at: 'planning', caps: { max_questions_per_stage: 2 } })
     stagesDispatcher.plan(() =>
       result({
         role: 'planner',
@@ -781,7 +781,7 @@ describeDb('kickoff brief questions', () => {
 
   test('a non-blocking request of another kind is capped too — AC-1229', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 1 } })
+    const { task } = await seed({ at: 'planning', caps: { max_questions_per_stage: 1 } })
     stagesDispatcher.plan(() =>
       result({
         role: 'planner',
@@ -811,7 +811,7 @@ describeDb('kickoff brief questions', () => {
 
   test('a blocking request is never refused by the question cap — AC-1226', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief', caps: { max_questions_per_stage: 1 } })
+    const { task } = await seed({ at: 'planning', caps: { max_questions_per_stage: 1 } })
     stagesDispatcher.plan(() =>
       result({
         role: 'planner',
@@ -858,21 +858,25 @@ describeDb('kickoff brief questions', () => {
 
     await engine.tick()
     await engine.idle()
-    expect((await reload(db, task.id)).status).toBe('kickoff_brief')
-
-    await engine.tick()
-    await engine.idle()
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
 
+    // The planner's two nodes now sit either side of the kickoff gate, so the same
+    // question surviving both is what AC-1228 is about.
+    await engine.approve(task.id, 'evgeny')
+    await engine.tick()
+    await engine.idle()
+
+    // One *open* decision carrying the latest prompt, which is what AC-1228 claims.
+    // The kickoff gate resolves what was open when it was approved, so the earlier
+    // ask is closed rather than reopened — the owner does not answer it twice.
     const open = await openDecisions(task.id)
     expect(open).toHaveLength(1)
-    expect(open[0]?.nodeKey).toBe('planning')
-    expect(open[0]?.promptMd).toContain('asked at kickoff_brief')
+    expect(open[0]?.promptMd).toContain('asked at specify')
   })
 
   test('approving the gate resolves every question the brief raised: an answer stands, the rest are dismissed as declined — AC-1310, AC-1311', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief' })
+    const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() =>
       result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
     )
@@ -890,7 +894,7 @@ describeDb('kickoff brief questions', () => {
     })
     await engine.approve(task.id, 'evgeny')
 
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
     const all = await db
       .select()
       .from(decisions)
@@ -910,7 +914,7 @@ describeDb('kickoff brief questions', () => {
 
   test('research reads both the answer and the decline once approval resolves the brief’s questions — AC-1310, AC-1311', async () => {
     const { engine, stagesDispatcher, ws } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief' })
+    const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() =>
       result({ role: 'planner', status: 'ok', decisions_needed: BRIEF_QUESTIONS }),
     )
@@ -927,7 +931,7 @@ describeDb('kickoff brief questions', () => {
     })
     await engine.approve(task.id, 'evgeny')
 
-    stagesDispatcher.plan(() => result({ role: 'researcher', status: 'ok' }))
+    stagesDispatcher.plan(() => result({ role: 'planner', status: 'ok' }))
     await engine.tick()
     await engine.idle()
 
@@ -966,7 +970,7 @@ describeDb('kickoff brief questions', () => {
 
   test('a brief question opens its own scoped conversation; a follow-up message and a proposed answer stay inert until confirmed — REQ-1304, AC-1315', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task, graph } = await seed({ at: 'kickoff_brief' })
+    const { task, graph } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() =>
       result({
         role: 'planner',

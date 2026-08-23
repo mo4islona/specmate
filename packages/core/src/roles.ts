@@ -10,6 +10,7 @@ export const AGENT_ROLES = [
   'spec_writer',
   'implementer',
   'verifier',
+  'validator',
   'reviewer',
   'summarizer',
   'answerer',
@@ -69,12 +70,15 @@ export interface RoleContract {
 }
 
 export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
+  // Runs at two nodes: the brief before the kickoff gate, and the specification after
+  // it, continuing the same session. `checksProposalCompleteness` still fires only on
+  // a run that wrote the proposal, so the second one is not held to the brief's parts.
   planner: {
     role: 'planner',
-    reads: ['proposal', 'decision_log'],
-    writes: ['proposal'],
+    reads: ['proposal', 'design', 'spec', 'decision_log'],
+    writes: ['proposal', 'design', 'spec'],
     writesCode: false,
-    injectSpecSkill: false,
+    injectSpecSkill: true,
     returnsVerdict: false,
     probesHarness: true,
     declaresPlan: true,
@@ -125,6 +129,7 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     defaultProvider: 'codex',
     promptFile: 'roles/implementer.md',
   },
+  /** Unscheduled since the pipeline was compressed; `validator` does this work. */
   verifier: {
     role: 'verifier',
     reads: ['spec', 'design', 'tasks'],
@@ -138,6 +143,23 @@ export const ROLE_CONTRACTS: Readonly<Record<AgentRole, RoleContract>> = {
     checksProposalCompleteness: false,
     defaultProvider: 'codex',
     promptFile: 'roles/verifier.md',
+  },
+  validator: {
+    role: 'validator',
+    reads: ['proposal', 'design', 'spec', 'tasks', 'verification', 'decision_log'],
+    writes: ['verification', 'review'],
+    writesCode: true, // harness code ships in the same PR
+    injectSpecSkill: true,
+    returnsVerdict: true,
+    probesHarness: false,
+    declaresPlan: false,
+    corroborated: true,
+    checksProposalCompleteness: false,
+    // Never the implementer's default. The node's `cross_review` binding is what
+    // guarantees the separation; this only keeps the fallback from undoing it when
+    // one provider is configured and `pickReviewProvider` has nothing to choose.
+    defaultProvider: 'claude-code',
+    promptFile: 'roles/validator.md',
   },
   reviewer: {
     role: 'reviewer',

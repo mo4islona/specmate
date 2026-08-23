@@ -121,7 +121,7 @@ export type ParsedResult =
   | { ok: true; value: StageResult }
   | { ok: false; error: string; raw: string }
 
-export function parseStageResult(raw: string): ParsedResult {
+export function parseStageResult(raw: string, continuation = false): ParsedResult {
   let json: unknown
   try {
     json = JSON.parse(raw)
@@ -134,10 +134,10 @@ export function parseStageResult(raw: string): ParsedResult {
   const verdictError = checkVerdictPresent(parsed.data)
   if (verdictError) return { ok: false, error: verdictError, raw }
 
-  const harnessCoverageError = checkHarnessCoveragePresent(parsed.data)
+  const harnessCoverageError = checkHarnessCoveragePresent(parsed.data, continuation)
   if (harnessCoverageError) return { ok: false, error: harnessCoverageError, raw }
 
-  const planError = checkPlanPresent(parsed.data)
+  const planError = checkPlanPresent(parsed.data, continuation)
   if (planError) return { ok: false, error: planError, raw }
 
   const decisionsError = checkDecisionsPresent(parsed.data)
@@ -165,7 +165,14 @@ export function checkVerdictPresent(result: StageResult): string | null {
  * because `planning`'s one blocking case — the request does not fit the
  * repository — never classifies anything; it asks instead.
  */
-export function checkHarnessCoveragePresent(result: StageResult): string | null {
+export function checkHarnessCoveragePresent(
+  result: StageResult,
+  continuation = false,
+): string | null {
+  // A run continuing an earlier node's session was preceded by the run that
+  // classified coverage; asking the same session twice is asking the same agent
+  // to re-answer a question its own transcript already holds.
+  if (continuation) return null
   if (!ROLE_CONTRACTS[result.role].probesHarness) return null
   if (result.status !== 'ok') return null
   if (result.harness_coverage) return null
@@ -178,7 +185,10 @@ export function checkHarnessCoveragePresent(result: StageResult): string | null 
  * reads back out of the brief. Gated on `status === 'ok'` for the same reason
  * the coverage check is: planning's one blocking case asks instead of planning.
  */
-export function checkPlanPresent(result: StageResult): string | null {
+export function checkPlanPresent(result: StageResult, continuation = false): string | null {
+  // The size is honoured where it is first declared or not at all, so a
+  // continuation has nothing to add and is not held to declaring one.
+  if (continuation) return null
   if (!ROLE_CONTRACTS[result.role].declaresPlan) return null
   if (result.status !== 'ok') return null
   if (!result.plan) return `${result.role} must return a plan`

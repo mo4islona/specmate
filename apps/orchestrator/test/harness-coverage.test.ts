@@ -141,7 +141,7 @@ describeDb('harness-coverage', () => {
       await engine.idle()
 
       const after = await reload(db, task.id)
-      expect(after.status).toBe('kickoff_brief')
+      expect(after.status).toBe('human_kickoff_gate')
       expect(after.harnessStatus).toBe('missing')
     })
   })
@@ -149,7 +149,7 @@ describeDb('harness-coverage', () => {
   describe('the coverage decision', () => {
     test('a short-of-adequate classification reaches the gate carrying an open decision with all three options — REQ-1403, AC-1407', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: PARTIAL }),
       )
@@ -174,7 +174,7 @@ describeDb('harness-coverage', () => {
 
     test('adequate coverage reaches the gate with no coverage decision — AC-1410', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: ADEQUATE }),
       )
@@ -190,7 +190,7 @@ describeDb('harness-coverage', () => {
 
     test('answering proceed records the waiver; a later approve dispatches research — REQ-1403, AC-1408', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: PARTIAL }),
       )
@@ -213,18 +213,18 @@ describeDb('harness-coverage', () => {
         (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0],
       ).toMatchObject({ status: 'answered', answerMd: 'Proceed without it' })
 
-      stagesDispatcher.plan(() => result({ role: 'researcher', status: 'ok' }))
+      stagesDispatcher.plan(() => result({ role: 'planner', status: 'ok' }))
       await engine.approve(task.id, 'evgeny')
-      expect((await reload(db, task.id)).status).toBe('research')
+      expect((await reload(db, task.id)).status).toBe('specify')
 
       await engine.tick()
       await engine.idle()
-      expect(stagesDispatcher.dispatches.some((d) => d.node.key === 'research')).toBe(true)
+      expect(stagesDispatcher.dispatches.some((d) => d.node.key === 'specify')).toBe(true)
     })
 
     test('approving with the coverage decision unanswered records the waiver as the decision resolves — REQ-1403, AC-1409', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: MISSING }),
       )
@@ -237,7 +237,7 @@ describeDb('harness-coverage', () => {
 
       const after = await reload(db, task.id)
       expect(after.harnessStatus).toBe('waived')
-      expect(after.status).toBe('research')
+      expect(after.status).toBe('specify')
       expect(
         (await db.select().from(decisions).where(eq(decisions.id, decision.id)))[0],
       ).toMatchObject({ status: 'answered', answerMd: 'Proceed without it' })
@@ -245,7 +245,7 @@ describeDb('harness-coverage', () => {
 
     test('dismissing the coverage decision is refused — it has no dismissal to fall back to', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: MISSING }),
       )
@@ -267,7 +267,7 @@ describeDb('harness-coverage', () => {
 
     test('answering cancel cancels the task through the existing operation, dismissing any other open decision — REQ-1403', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -309,7 +309,7 @@ describeDb('harness-coverage', () => {
 
     test('discussing the coverage decision leaves it open; confirming the proposed answer invokes the existing answer path — REQ-1403, AC-1417', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task, graph } = await seed({ at: 'kickoff_brief' })
+      const { task, graph } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: PARTIAL }),
       )
@@ -400,7 +400,7 @@ describeDb('harness-coverage', () => {
   describe('the declared plan', () => {
     test('adequate coverage with proposed prerequisites still raises the choice — AC-1418', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -428,7 +428,7 @@ describeDb('harness-coverage', () => {
       const { engine, stagesDispatcher } = makeEngine()
       const { task: origin } = await seed()
       const { task } = await seed({
-        at: 'kickoff_brief',
+        at: 'planning',
         originTaskId: origin.id,
         planDepth: 1,
       })
@@ -455,7 +455,7 @@ describeDb('harness-coverage', () => {
       const { engine, stagesDispatcher } = makeEngine()
       const { task: origin } = await seed()
       const { task } = await seed({
-        at: 'kickoff_brief',
+        at: 'planning',
         originTaskId: origin.id,
         planDepth: 1,
       })
@@ -492,7 +492,7 @@ describeDb('harness-coverage', () => {
 
     test('a plan proposing more than the cap creates the cap and names the rest — AC-637', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief', caps: { max_prerequisite_tasks: 1 } })
+      const { task } = await seed({ at: 'planning', caps: { max_prerequisite_tasks: 1 } })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -532,7 +532,7 @@ describeDb('harness-coverage', () => {
   describe('the split', () => {
     test('answering split creates the tasks the plan proposed, carrying their lineage — AC-1411, AC-1421', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -575,7 +575,7 @@ describeDb('harness-coverage', () => {
 
     test('answering split with nothing proposed falls back to the harness task carrying the evidence — REQ-1404, AC-1420', async () => {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief' })
+      const { task } = await seed({ at: 'planning' })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: MISSING }),
       )
@@ -626,7 +626,7 @@ describeDb('harness-coverage', () => {
     /** Runs one planning stage against a task and returns it reloaded. */
     async function planned(repoUrl: string, coverage: typeof MISSING | typeof ADEQUATE) {
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      const { task } = await seed({ at: 'planning', repoUrl })
       stagesDispatcher.plan(() =>
         result({ role: 'planner', status: 'ok', harness_coverage: coverage }),
       )
@@ -657,7 +657,7 @@ describeDb('harness-coverage', () => {
     test('proceeding on a card raised only by proposed work accepts no gap — REQ-1403', async () => {
       const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      const { task } = await seed({ at: 'planning', repoUrl })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -724,7 +724,7 @@ describeDb('harness-coverage', () => {
       })
 
       const { engine, stagesDispatcher } = makeEngine()
-      const { task } = await seed({ at: 'kickoff_brief', repoUrl })
+      const { task } = await seed({ at: 'planning', repoUrl })
       stagesDispatcher.plan(() =>
         result({
           role: 'planner',
@@ -837,7 +837,7 @@ describeDb('harness-coverage', () => {
 
     test('raises a dependent to the human when its blocker is cancelled, naming it, and resumes into planning once resolved — AC-629', async () => {
       const { engine } = makeEngine()
-      const { task: blocker } = await seed({ at: 'research' })
+      const { task: blocker } = await seed({ at: 'specify' })
       const { task: dependent } = await seed({ status: 'blocked' })
       await db
         .update(tasks)
@@ -864,7 +864,7 @@ describeDb('harness-coverage', () => {
 
     test('a dead blocker raises the escalation without abandoning the live ones — REQ-615', async () => {
       const { engine } = makeEngine()
-      const { task: blocker1 } = await seed({ at: 'research' })
+      const { task: blocker1 } = await seed({ at: 'specify' })
       const { task: blocker2 } = await seed({ status: 'human_final_gate' })
       const { task: dependent } = await seed({ status: 'blocked' })
       await db

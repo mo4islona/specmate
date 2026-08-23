@@ -340,18 +340,18 @@ describe('role contracts', () => {
     expect(ROLE_CONTRACTS.answerer.reads).toEqual(ARTIFACT_KINDS)
   })
 
-  test('only implementer and verifier may touch product code', () => {
+  test('AC-102: only implementing roles may touch product code', () => {
     const codeWriters = Object.values(ROLE_CONTRACTS)
       .filter((c) => c.writesCode)
       .map((c) => c.role)
-    expect(codeWriters.sort()).toEqual(['implementer', 'verifier'])
+    expect(codeWriters.sort()).toEqual(['implementer', 'validator', 'verifier'])
   })
 
-  test('only reviewer and verifier must return a verdict', () => {
+  test('only the checking roles must return a verdict', () => {
     const verdictRoles = Object.values(ROLE_CONTRACTS)
       .filter((c) => c.returnsVerdict)
       .map((c) => c.role)
-    expect(verdictRoles.sort()).toEqual(['reviewer', 'verifier'])
+    expect(verdictRoles.sort()).toEqual(['reviewer', 'validator', 'verifier'])
   })
 
   test('only the planner probes harness coverage', () => {
@@ -361,11 +361,11 @@ describe('role contracts', () => {
     expect(probingRoles).toEqual(['planner'])
   })
 
-  test('planner reads the proposal it is refining and the decisions that rejected the last one', () => {
-    expect(ROLE_CONTRACTS.planner.reads).toEqual(['proposal', 'decision_log'])
-    expect(ROLE_CONTRACTS.planner.writes).toEqual(['proposal'])
+  test('planner writes the brief and, at its second node, the specification', () => {
+    expect(ROLE_CONTRACTS.planner.reads).toEqual(['proposal', 'design', 'spec', 'decision_log'])
+    expect(ROLE_CONTRACTS.planner.writes).toEqual(['proposal', 'design', 'spec'])
     expect(ROLE_CONTRACTS.planner.writesCode).toBe(false)
-    expect(ROLE_CONTRACTS.planner.injectSpecSkill).toBe(false)
+    expect(ROLE_CONTRACTS.planner.injectSpecSkill).toBe(true)
   })
 
   test('only planner has its proposal output checked for completeness', () => {
@@ -375,15 +375,21 @@ describe('role contracts', () => {
     expect(checked).toEqual(['planner'])
   })
 
-  test('only verifier is corroborated against committed evidence', () => {
+  test('only a role reporting on execution is corroborated against committed evidence', () => {
     const corroborated = Object.values(ROLE_CONTRACTS)
       .filter((c) => c.corroborated)
       .map((c) => c.role)
-    expect(corroborated).toEqual(['verifier'])
+    expect(corroborated.sort()).toEqual(['validator', 'verifier'])
   })
 
   test('spec-touching roles receive the house standard skill', () => {
-    for (const role of ['researcher', 'spec_writer', 'reviewer', 'summarizer'] as const) {
+    for (const role of [
+      'planner',
+      'researcher',
+      'spec_writer',
+      'reviewer',
+      'summarizer',
+    ] as const) {
       expect(ROLE_CONTRACTS[role].injectSpecSkill).toBe(true)
     }
   })

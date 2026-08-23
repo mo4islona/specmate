@@ -288,12 +288,12 @@ describe('telemetry parsing', () => {
 
   test('labels every stage container with task, node, and attempt', () => {
     const labels = stageContainerLabels(
-      job({ workspace: { slug: 'x' } } as Harness, { node: 'research', attempt: 2 }),
+      job({ workspace: { slug: 'x' } } as Harness, { node: 'specify', attempt: 2 }),
     )
 
     expect(labels).toEqual({
       'specmate.task': '11111111-1111-4111-8111-111111111111',
-      'specmate.node': 'research',
+      'specmate.node': 'specify',
       'specmate.attempt': '2',
     })
   })

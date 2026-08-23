@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import {
+  CAPS_FOR_SIZE,
   FEATURE_BUGFIX_COMPACT,
   FEATURE_BUGFIX_PIPELINE,
   type PlanShape,
@@ -84,7 +85,7 @@ describeDb('the profile a declared size selects', () => {
       .orderBy(asc(runGraphs.version))
   }
 
-  test('a small plan appends the compact graph and skips the second planner pass — AC-417', async () => {
+  test('a small plan appends the compact graph and drops the spec review — AC-417', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -100,7 +101,7 @@ describeDb('the profile a declared size selects', () => {
     expect(versions).toHaveLength(2)
     expect(versions[0]?.dag.pipeline).toBe(FEATURE_BUGFIX_PIPELINE.id)
     expect(versions[1]?.dag.pipeline).toBe(FEATURE_BUGFIX_COMPACT.id)
-    expect(versions[1]?.dag.nodes.map((node) => node.key)).not.toContain('kickoff_brief')
+    expect(versions[1]?.dag.nodes.map((node) => node.key)).not.toContain('spec_review')
   })
 
   test('planning renames the task and leaves its slug alone — AC-1320, AC-343', async () => {
@@ -155,7 +156,7 @@ describeDb('the profile a declared size selects', () => {
 
     const after = await reload(db, task.id)
     expect(after.planSize).toBe('medium')
-    expect(after.status).toBe('kickoff_brief')
+    expect(after.status).toBe('human_kickoff_gate')
     expect(await graphVersions(task.id)).toHaveLength(1)
   })
 
@@ -175,7 +176,7 @@ describeDb('the profile a declared size selects', () => {
     expect(before[0]?.status).toBe('succeeded')
   })
 
-  test('a compact task dispatches research straight from the kickoff gate', async () => {
+  test('a compact task dispatches the specification straight from the kickoff gate', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -184,19 +185,54 @@ describeDb('the profile a declared size selects', () => {
 
     await engine.approve(task.id, 'evgeny')
 
-    expect((await reload(db, task.id)).status).toBe('research')
+    expect((await reload(db, task.id)).status).toBe('specify')
   })
 
-  test('a size declared at the second planner pass does not strand the task on a dropped node', async () => {
+  test('AC-427: the declared size records its caps on the task', async () => {
     const { engine, stagesDispatcher } = makeEngine()
-    const { task } = await seed({ at: 'kickoff_brief' })
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan(() => planningResult('small'))
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).caps).toMatchObject({
+      max_spec_iterations: CAPS_FOR_SIZE.small.max_spec_iterations,
+      max_impl_iterations: CAPS_FOR_SIZE.small.max_impl_iterations,
+    })
+  })
+
+  test('AC-428: medium and large share a profile and are separated by their caps', async () => {
+    const runs: Record<'medium' | 'large', number | undefined> = {
+      medium: undefined,
+      large: undefined,
+    }
+    for (const size of ['medium', 'large'] as const) {
+      const { engine, stagesDispatcher } = makeEngine()
+      const { task } = await seed({ at: 'planning' })
+      stagesDispatcher.plan(() => planningResult(size))
+
+      await engine.tick()
+      await engine.idle()
+
+      const after = await reload(db, task.id)
+      expect(await graphVersions(task.id)).toHaveLength(1)
+      runs[size] = after.caps.max_impl_iterations
+    }
+
+    expect(runs.medium).not.toBe(runs.large)
+  })
+
+  test('AC-641: a cap the owner chose survives the size the planner declares', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'planning', caps: { max_impl_iterations: 9 } })
     stagesDispatcher.plan(() => planningResult('small'))
 
     await engine.tick()
     await engine.idle()
 
     const after = await reload(db, task.id)
-    expect(after.status).toBe('human_kickoff_gate')
-    expect(await graphVersions(task.id)).toHaveLength(1)
+    expect(after.caps.max_impl_iterations).toBe(9)
+    expect(after.caps.max_spec_iterations).toBe(CAPS_FOR_SIZE.small.max_spec_iterations)
   })
 })

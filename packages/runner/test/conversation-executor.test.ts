@@ -50,7 +50,7 @@ function request(workspace: ConversationWorkspace): ConversationRequest {
     previousAnchorCommit: null,
     previousTaskState: null,
     currentAnchorCommit: workspace.branch,
-    currentTaskState: 'research',
+    currentTaskState: 'specify',
     contextPath: 'stored',
     actionOptions: [
       {
@@ -61,7 +61,7 @@ function request(workspace: ConversationWorkspace): ConversationRequest {
           nodeKey: 'implement',
         },
         expectedVersion: {
-          taskStatus: 'research',
+          taskStatus: 'specify',
           graphId: '77777777-7777-4777-8777-777777777777',
         },
         instruction: 'required',

@@ -39,7 +39,7 @@ describeDb('task store', () => {
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created))
   })
 
-  async function make(at?: 'research') {
+  async function make(at?: 'specify') {
     const slug = `store-${crypto.randomUUID().slice(0, 8)}`
     const seeded = await createTask(db, {
       slug,
@@ -79,9 +79,9 @@ describeDb('task store', () => {
   })
 
   test('dev creation positions the task at a named stage node, and only a stage node', async () => {
-    const { task } = await make('research')
+    const { task } = await make('specify')
 
-    expect(task.status).toBe('research')
+    expect(task.status).toBe('specify')
     await expect(
       createTask(db, {
         slug: 'never-gate',
@@ -94,12 +94,12 @@ describeDb('task store', () => {
   })
 
   test('re-planning appends a version and leaves the prior one readable', async () => {
-    const { task, graph } = await make('research')
+    const { task, graph } = await make('specify')
     await db.insert(stages).values({
       taskId: task.id,
       graphId: graph.id,
-      nodeKey: 'research',
-      role: 'researcher',
+      nodeKey: 'specify',
+      role: 'planner',
       provider: 'claude-code',
       status: 'succeeded',
       attempt: 0,
@@ -133,7 +133,7 @@ describeDb('task store', () => {
 
   describe('raiseDecision', () => {
     const request = {
-      nodeKey: 'research' as const,
+      nodeKey: 'specify' as const,
       key: 'scope',
       kind: 'question' as const,
       promptMd: 'What does this cover?',
@@ -147,7 +147,7 @@ describeDb('task store', () => {
       const { decision, created } = await raiseDecision(db, task.id, null, request)
 
       expect(created).toBe(true)
-      expect(decision).toMatchObject({ nodeKey: 'research', key: 'scope', status: 'open' })
+      expect(decision).toMatchObject({ nodeKey: 'specify', key: 'scope', status: 'open' })
       const [conversation] = await db
         .select()
         .from(conversations)
@@ -243,7 +243,7 @@ describeDb('task store', () => {
       expect(second.created).toBe(false)
       expect(second.decision.id).toBe(first.decision.id)
       // The record keeps the node that first raised it; only what is asked changes.
-      expect(second.decision.nodeKey).toBe('research')
+      expect(second.decision.nodeKey).toBe('specify')
       expect(second.decision.promptMd).toBe('Asked again, later in the walk')
     })
 
@@ -305,8 +305,8 @@ describeDb('task store', () => {
         .values({
           taskId: task.id,
           graphId: graph.id,
-          nodeKey: 'research',
-          role: 'researcher',
+          nodeKey: 'specify',
+          role: 'planner',
           provider: 'claude-code',
           attempt: 1,
         })
@@ -316,8 +316,8 @@ describeDb('task store', () => {
         .values({
           taskId: task.id,
           graphId: graph.id,
-          nodeKey: 'research',
-          role: 'researcher',
+          nodeKey: 'specify',
+          role: 'planner',
           provider: 'claude-code',
           attempt: 2,
         })

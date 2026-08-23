@@ -104,7 +104,7 @@ export interface FakeDispatcher {
 export function fakeDispatcher(): FakeDispatcher {
   const dispatches: StageDispatch[] = []
   let next: (dispatch: StageDispatch) => Promise<StageExecution> | StageExecution = () =>
-    okExecution('researcher')
+    okExecution('planner')
 
   return {
     dispatches,

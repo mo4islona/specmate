@@ -104,7 +104,7 @@ async function commitStrayChange(): Promise<void> {
 }
 
 function role(): string {
-  return process.env.SPECMATE_STUB_ROLE ?? 'researcher'
+  return process.env.SPECMATE_STUB_ROLE ?? 'planner'
 }
 
 /**
@@ -136,6 +136,15 @@ function stubPlan() {
     size: process.env.SPECMATE_STUB_PLAN_SIZE ?? 'medium',
     prerequisites: raw ? JSON.parse(raw) : [],
   }
+}
+
+/**
+ * Which artifact a generic mode scribbles. A planner run that writes `proposal.md`
+ * is held to the brief's required parts, and these modes are not writing a brief —
+ * so at the planner's second node they write `design.md` instead.
+ */
+function scratchArtifact(): string {
+  return role() === 'planner' ? 'design.md' : 'proposal.md'
 }
 
 function validResult(): string {
@@ -186,7 +195,9 @@ async function writeVerdict(verdict: string): Promise<void> {
   await writeResult(
     JSON.stringify({
       schema_version: 1,
-      role: role(),
+      // The reviewing node's own role, not the queue's default: a verdict mode is
+      // only ever dispatched at the specification review.
+      role: process.env.SPECMATE_STUB_ROLE ?? 'reviewer',
       status: 'ok',
       verdict,
       findings,
@@ -205,7 +216,7 @@ async function writeVerification(verdict: string): Promise<void> {
   await writeResult(
     JSON.stringify({
       schema_version: 1,
-      role: 'verifier',
+      role: 'validator',
       status: 'ok',
       verdict,
       findings: [],
@@ -338,7 +349,7 @@ switch (mode) {
         },
         instruction: 'Keep the compatibility adapter.',
         expectedVersion: {
-          taskStatus: 'research',
+          taskStatus: 'specify',
           graphId: '77777777-7777-4777-8777-777777777777',
         },
       },
@@ -394,7 +405,7 @@ switch (mode) {
     await writeVerdict(mode)
     break
   }
-  case 'verify': {
+  case 'validate': {
     await writeVerification(process.env.SPECMATE_STUB_VERDICT ?? 'approve')
     break
   }
@@ -402,7 +413,7 @@ switch (mode) {
     await writeResult(
       JSON.stringify({
         schema_version: 1,
-        role: 'verifier',
+        role: 'validator',
         status: 'ok',
         verdict: process.env.SPECMATE_STUB_VERDICT ?? 'approve',
         findings: [],
@@ -413,6 +424,15 @@ switch (mode) {
     break
   }
   case 'ok': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  // The planner's first run, leaving a proposal that the mechanical check refuses.
+  case 'brief-incomplete': {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
@@ -504,7 +524,7 @@ switch (mode) {
   case 'scribble-decision-log': {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
-    await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
+    await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeFile(join(folder, 'decisions.md'), '# an agent scribbled here\n')
     await writeResult(validResult())
     await Bun.write(Bun.stdout, `${telemetry}\n`)
@@ -514,7 +534,7 @@ switch (mode) {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
     await writeFile(
-      join(folder, 'proposal.md'),
+      join(folder, scratchArtifact()),
       '# a question came up before this could be drafted\n',
     )
     await writeResult(
@@ -544,7 +564,7 @@ switch (mode) {
   case 'half-written': {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
     await mkdir(folder, { recursive: true })
-    await writeFile(join(folder, 'proposal.md'), '# HALF-WRITTEN-GARBAGE\n')
+    await writeFile(join(folder, scratchArtifact()), '# HALF-WRITTEN-GARBAGE\n')
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }
