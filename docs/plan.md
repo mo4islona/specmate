@@ -255,6 +255,11 @@ Layout:
 
 Stack: Next.js + React Flow (DAG) + D2 renderer (WASM or Kroki sidecar) + shadcn/ui; WS (or SSE) from the events table.
 
+This section is the shape the UI was planned as, and it is where the task screen grew from. What
+it is being rebuilt into — one-row header, a nav column of tabs, a feed of what people said, and a
+rail carrying the machine — is §16.1; the argument for the change is
+[`docs/design/task-screen-pass-3.md`](./design/task-screen-pass-3.md).
+
 ---
 
 ## 9. Runtime & 24/7 Operation (single user)
@@ -366,7 +371,7 @@ This makes the human comments the training signal — which is why UI delivery i
 - **Exit**: every new task pauses on its kickoff brief; a deliberately ambiguous task escalates instead of looping; answering resumes it — all from the UI.
 
 ### Phase 3 — UI v1 + first Retro (weeks 5–6)
-- UI polish: React Flow DAG with live stage status, artifact diff-since-last-approval view, D2 diagram rendering (Mermaid fallback), rework flow.
+- UI polish: React Flow DAG with live stage status, artifact diff-since-last-approval view, D2 diagram rendering (Mermaid fallback), rework flow. **The DAG did not survive contact with a real task** — a rail that carries done and current nodes with their facts and folds the unstarted into one line says more in less space, and §16.1 is what replaced it.
 - **Retro agent v1**: weekly distillation of accumulated feedback → proposed prompt/policy edits as OpenSpec changes with kickoff briefs for approval — including PRs to the skill repo when the standard itself needs changing.
 - PR tracking (GitHub webhook/poll) feeding unmerged-PR items into the Attention Inbox.
 - **Self-hosting milestone**: start running SpecMate's own OpenSpec changes through SpecMate — including the Retro agent's improvement changes.
@@ -506,8 +511,190 @@ wiki (git repo; the Phase-6 MkDocs site renders this + every repo's archived spe
 
 ---
 
-## 16. Immediate Next Steps
-1. Pick the name + create the repo, `openspec init`.
-2. Write the first three OpenSpec changes (`init-architecture`, `data-model`, `role-contracts`) — reuse §3/§4/§6 of this document as the raw material for `design.md`.
-3. Provision the server, Docker Compose with Postgres, do the one-time interactive Claude login into the runner volume.
-4. Build Phase 1 against a small real repo (e.g. a toy service or Wick Charts) so the e2e test is a genuinely useful fix.
+## 16. Execution plan — current
+
+*Written 2026-08-23. Replaces the original first-steps list, all of which is done.*
+
+The pipeline runs end to end and publishes its own PRs. Since `planner-decomposition` the planner
+sizes its own work and the engine bounds what that plan may create. What is left in front of it is
+the surface the owner works through, what a task costs, and the last places the pipeline stops for
+a human it does not need.
+
+Three workstreams. §16.1 and §16.2 are the priority and can run in parallel — one is the web app,
+the other is a table of defaults in `packages/core/src/models.ts`. §16.3 is what those two leave
+behind.
+
+### 16.1 The task screen, pass 3
+
+The argument is [`docs/design/task-screen-pass-3.md`](./design/task-screen-pass-3.md) with its
+mockup beside it. Three rules carry it: the column is the conversation and the rail is the machine,
+so stage lifecycle, tool calls, commits, durations and tokens leave the feed and live behind the
+node they belong to; one input, at the bottom, labelled by whatever is being asked of you — never
+two, never a mode set before typing; Files and Docs are tabs on the task, in a nav column down the
+left, so the header stays one row when a fourth tab arrives.
+
+Four decisions, taken before the work starts.
+
+**The in-flight change is rewritten, not merged.** PR #19 draws the chaptered thread that pass 3
+replaces, and its delta claims REQ-918 — which `decision-floors` took on main while the branch sat
+open. Rather than merge a requirement the next change deletes wholesale, the branch rebases onto
+`origin/main` and `openspec/changes/task-screen-redesign` is rewritten in place: one proposal, one
+review, pass-3 shape, numbering from REQ-919 / AC-958 (`bun run spec:next-id`). The pass-2 code is a
+foundation, not a mistake — `task-thread.ts`, `pipeline-rail.tsx` and `commit-ref.tsx` are reshaped,
+not reverted.
+
+**Files and Docs become tabs now; the diff is redrawn later.** The tab shell is what collapses the
+header to one row and stops the rail carrying a second copy of the artifact list, and it costs
+routing, not a diff engine. Today's `ListDetailPanel` rendering moves inside the tab untouched. One
+useful consequence: REQ-916/AC-944 — *selecting a file renders its unified diff* — is contradicted
+by stacking every file, not by the tab, so it survives this pass unamended and is the deferred
+change's problem (§16.4).
+
+**The console gets a writer, and the fix that makes it honest.** The feedback endpoint learns to
+write `kind: 'intervention'` with `target.nodeKey`; the engine and the runner already claim and
+render those. The claim is cleared whenever a stage ends any way but accepted, so guidance survives
+the failed attempt it was typed for — which is precisely the case the feature exists for. The cost,
+stated rather than discovered: an intervention stays re-readable until some run is accepted.
+
+**The console never promises more than the runner delivers.** `executor.ts` loads the ledger once
+per stage, before the provider starts, so text typed while `Implement` runs reaches `Implement` on
+its *next* run. The wording says exactly that. A channel into a live agent is a different change and
+is not in this one.
+
+The work, in the order it can be reviewed:
+
+1. **The shell** — one-row header: title, state as a sentence, `owner/repo · base` on Thread and
+   Docs or `base…branch · N commits` on Files, and a trailing `STREAM` dot that reports the event
+   stream and not the task. The nav column carries Thread / Files n / Docs n / Guide (drawn, greyed,
+   `soon`); routes are `/tasks/:id`, `/tasks/:id/files`, `/tasks/:id/docs`, with
+   `/tasks/:id/artifacts/:artifactId` still addressable. `task-rail.tsx` loses the artifact list and
+   the `files changed →` link. **Done when** the header is one row on every tab and no fact on the
+   screen is stated twice.
+2. **The feed** — questions, answers, comments, the guide's replies, gate outcomes: five to fifteen
+   lines over a whole task. No chapter headers, no `Stage started`, no `Reading foo.ts`. An answered
+   question stops looking like a question — two clamped lines of dialogue and a link to the whole
+   thing. **Done when** a ten-second-old task has one line in the feed and one in the rail, with no
+   empty state written for it.
+3. **The rail and the run log** — four node states, not three: done, running, waiting on you, and
+   **stopped**, which keeps its facts and states the reason in the slot a duration would occupy.
+   Unstarted nodes fold into one line. Clicking a node opens its run log over the column — start,
+   tool calls, questions, commit, acceptance, with duration, cost, tokens and model in its header —
+   and `Comment on this run` inside it is how a comment reaches an older stage. **Done when**
+   everything the thread used to carry inline is one click away and nowhere else.
+4. **The console** — one field, no toggle and no scope select, with one line under it naming the
+   destination the task's own state picked: a message to the running stage, the answer to an open
+   question, a gate comment beside the gate's own verbs, guidance carried into a restart, a message
+   to the next node when nothing runs, or nothing at all when the budget is spent, said plainly.
+   `Ask guide` leaves the console — it is a mode, and rule 2 forbids modes; until the Guide tab
+   lands the guide is reachable through `Discuss` on an open question.
+5. **The writer** — `apps/api/src/app.ts` writes the intervention (`restartInterruptedStage` is the
+   shape to copy) and emits an event, so the text lands in the thread it was typed into;
+   `apps/orchestrator/src/engine.ts` clears the claim when a stage ends unaccepted. About twenty
+   lines and no migration. **Done when** text typed at a failing stage is read by its retry and
+   appears in the feed either way.
+6. **The phone** — the tab bar stays, because it is routing and it is how you leave the thread; the
+   rail collapses into the state sentence plus one `Pipeline ⌄` disclosure; a run log opens as a
+   full-height layer with its own back. REQ-911 is live spec, and the mockup's stacking contradicts
+   it.
+
+Throughout: the mockup's spans are shorthand. Tabs are routes, the console is a form with a
+labelled textarea, the question pager is a real control, and the `aria-pressed`, `aria-label` and
+`<fieldset><legend>` the current code carries survive the redraw.
+
+Five live requirements are reworded in this change and one is contradicted outright, so all six are
+MODIFIED rather than added beside what they replace: REQ-901 (screens become tabs, addressability
+restated), REQ-906/AC-912 (a comment is pinned by where it was typed, not by a dropdown), REQ-907
+(documents render in a tab, not their own screen), REQ-912/AC-923 (a resolved card is two clamped
+lines), REQ-914 (the intervention half gets its first real writer; the conversation half loses its
+console entry), and REQ-915/AC-940 (activity moves out of the timeline and behind a rail node — the
+contradiction, and the most recently shipped of them).
+
+### 16.2 What a task costs
+
+`DEFAULT_MODEL_BINDINGS` gives all nine roles `claude-opus-5` at `high` effort. `model-settings`
+built every mechanism for changing that — per-role bindings resolved at creation, per-stage
+dispatch, a Settings screen that edits them — and then bound every role to the same expensive
+default. Nothing in the machinery is saving money: the rail states one binding for the whole task
+because there is only ever one, and the node that summarises a diff runs the same model as the node
+that writes the code.
+
+So the change is the defaults, not the machinery: `resolveModelBindings` already reads them, the
+settings row already overrides them, and REQ-917's screen already edits them per role. A starting
+table, to be tuned from Settings once there are numbers:
+
+| Role | Binding | Why |
+|---|---|---|
+| `planner` | opus · high | Reads the repository, sizes the work, and its output gates the task |
+| `researcher` | opus · high | Writes the specs everything downstream is checked against |
+| `implementer` | opus · high | Writes the code |
+| `reviewer` | sonnet · high | Judgement over a diff, but the effort is where its value is — keep effort, drop the model |
+| `verifier` | sonnet · medium | Runs the harness and reads its output; mostly mechanical |
+| `summarizer` | haiku · low | Renders artifacts already written into a summary |
+| `answerer` | haiku · medium | Answers from artifacts, on every `Discuss` |
+| `spec_writer`, `retro` | unchanged | No node schedules either (§16.3) |
+
+The guardrail is that a cheaper reviewer is a worse reviewer somewhere, and the place it shows is
+rework: the rate at which a gate sends work back, and the loop counts already recorded per task.
+**Done when** the same small task, run twice against the same repo, costs measurably less and does
+not need an extra round to get there.
+
+### 16.3 Where the pipeline still stops
+
+`planner-decomposition` and `decision-floors` closed most of
+[`docs/autonomy-gaps.md`](./autonomy-gaps.md): the split recursion is bounded by plan depth and
+prerequisite count, an acceptance now outlives the task that gave it, questions have a per-stage
+cap and an identity that stops multiplying one question by the nodes that ask it, and a declared
+size selects a reduced pipeline profile. What is left is named there as non-goals, in the order it
+is worth doing:
+
+- **Sizing has to be watched, not trusted.** Whether a planner asked to size its own work sizes it
+  honestly is a question about real runs, not about code. The two gates before code are what catch
+  it; §16.2's cost line is where it shows.
+- **A chain has no budget.** Every prerequisite task resolves its own from settings, so a plan with
+  two prerequisites buys three budgets and nothing bounds the whole.
+- **Caps and budgets do not scale with the declared size.** Size selects a profile and nothing else,
+  so a small task keeps a large task's iteration caps.
+- **A plan's prerequisites are unordered**, one flat level deep.
+- **Two roles sit in the catalog with no node scheduling them** — `spec_writer` and `retro` — while
+  the researcher does the first one's job. That is a question about what the roles are for, and it
+  is the one item here that could remove a stage rather than bound one.
+
+Beside those are the stops the screen surfaces but does not remove: a node at its attempt cap, a
+stage the sweeper found orphaned, a task paused on an exhausted budget. Pass 3 gives all three one
+shape (§16.1, item 3) and says why each happened; making them rarer is not a UI change.
+
+The honest test of all of it is running §16.1's own change through SpecMate — the Phase-3
+self-hosting milestone, still unclaimed.
+
+### 16.4 Deferred, and why
+
+- **The Files diff in GitHub shape** — every file stacked rather than selected, per-file `+N −N`
+  with the block bar, `Viewed` and `n / N viewed`, hunk expanders, unified/split. Its own change
+  after §16.1, and the one that amends REQ-916/AC-944. Two costs to carry into it: stacking means N
+  diff requests against an API that serves one path at a time, so the first few expand and the rest
+  lazy-load; and `Viewed` is keyed per file per `HEAD`, not `localStorage`, because a counter that
+  survives the diff changing is worse than no counter.
+- **The Guide tab.** A conversation with its own history needs room to be one. Drawn now as `soon`,
+  because knowing where a thing will land is most of what stops it landing badly.
+- **`dag-visualization`.** A rail that summarises done and current and folds the rest is not a
+  diagram, and pass 3 does not need one; the untracked draft under `openspec/changes/` should go.
+  Phase 3's React Flow DAG (§14) is superseded by the same argument.
+- **A channel into a running agent.** The prompt is sealed at dispatch. Reaching a live agent means
+  re-reading pending interventions between rounds or steering at the provider-session level —
+  either way, not a UI change.
+- **Housekeeping, before any of the above**: `openspec/changes/code-diff-view/` is an untracked copy
+  of the archived change with every task box unchecked and reads as unstarted work to anyone who
+  opens it — delete it. The loose `app-shell.tsx` / `icons.tsx` edit in the working tree is
+  unrelated to pass 3; commit it on its own.
+
+### 16.5 Order
+
+| # | Work | Waits on | Done when |
+|---|---|---|---|
+| 0 | Rebase onto `origin/main`; renumber to REQ-919; delete the stale `code-diff-view` copy | — | The branch builds on current main and `bun run spec:next-id` agrees with the delta |
+| 1 | Rewrite `task-screen-redesign` into pass-3 shape (proposal, design, delta, tasks) | 0 | `openspec validate` passes and the delta MODIFIES all six requirements in §16.1 |
+| 2 | Per-role model defaults (§16.2) | — | Same task, same repo, measurably cheaper, no extra rework round |
+| 3 | Shell, feed, rail and run log (§16.1, items 1–3) | 1 | Header one row; feed five to fifteen lines; every stage fact behind its node |
+| 4 | Console and its writer (§16.1, items 4–5) | 3 | Typed text reaches the node the line named, survives a failed attempt, and shows in the feed |
+| 5 | Phone (§16.1, item 6) | 3, 4 | REQ-911 holds below `62rem` with the tab bar intact |
+| 6 | The Files diff, GitHub shape (§16.4) | 3 | Its own change, amending REQ-916/AC-944 |
