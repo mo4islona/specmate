@@ -309,23 +309,24 @@ Pass 3 is not additive. Six live requirements move, and two of them it contradic
 | **REQ-914** — the task view supports conversation *and* explicit intervention | The intervention half gets its first real writer. The conversation half loses its console entry: `Ask guide` goes, and until a Guide tab lands the guide is reachable only through a question's `Discuss` |
 | **REQ-915 / AC-940** — activity events render "in the timeline" | **Contradiction.** Pass 3 moves them behind a rail node. This is the most recently shipped of the six (`archive/2026-08-18-live-run-activity`) |
 | **REQ-916 / AC-944** — "selecting a file SHALL render its unified diff" | **Contradiction.** Every file stacks; nothing is selected |
-| **REQ-918** — the chaptered thread (`task-screen-redesign`, unarchived) | Replaced, not amended. AC-950/951/952/953 go with it |
+| **REQ-919** — the chaptered thread (`task-screen-redesign`, unarchived) | Replaced, not amended. AC-953/956/957/958/959/960 go with it. It was drafted as REQ-918; `decision-floors` took that number on main while the branch sat open, so the delta renumbered before anything else |
 
 The two contradictions have to be MODIFIED requirements in whatever change carries pass 3, not new
 ones added beside them — otherwise the spec asserts both shapes at once.
 
 ## Effect on changes already in flight
 
-- **`task-screen-redesign`** is implemented but not archived, and pass 3 removes the whole of REQ-918
-  rather than refining it. That has to be settled before the change is archived: either rewrite its
-  delta now, or archive it as shipped and let pass 3's change supersede REQ-918 outright. Leaving a
-  requirement in the living spec that the next change deletes wholesale is the worse of the two.
+- **`task-screen-redesign`** is implemented but not archived, and pass 3 removes the whole of REQ-919
+  rather than refining it. **Settled:** the change is rewritten in place rather than merged and then
+  superseded, so no requirement enters the living spec that the next change deletes wholesale. Its
+  pass-2 code stays as the foundation pass 3 reshapes. The execution order is `docs/plan.md` §16.
 - **`code-diff-view`** is archived and shipped, not in flight. Its Files-Changed shape is now REQ-916,
   and that is what pass 3 amends. Separately, `openspec/changes/code-diff-view/` is a stale untracked
   copy of the archived change — byte-identical except that every task box is unchecked — and reads as
-  an unstarted change to anyone who opens it. It should go.
+  an unstarted change to anyone who opens it. **Deleted.**
 - **`dag-visualization`** loses more ground. The rail summarising done-and-current and folding the
-  rest is not a diagram, and pass 3 does not need one.
+  rest is not a diagram, and pass 3 does not need one. **Dropped** — its untracked draft is gone,
+  and Phase 3's React Flow DAG is marked superseded in `docs/plan.md` §14.
 
 ## Open questions
 
@@ -337,3 +338,5 @@ ones added beside them — otherwise the spec asserts both shapes at once.
   a double-read if a run is accepted after a partial failure; the second is a one-line update in the
   same transaction that already records the stage's end, but makes an intervention re-readable an
   unbounded number of times until some run finally accepts.
+  **Settled: clear the stamp.** Guidance surviving the failed attempt it was typed for is the whole
+  point of the feature; being read again by the retry is the behaviour, not the cost.
