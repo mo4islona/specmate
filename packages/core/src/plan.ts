@@ -1,9 +1,10 @@
 import { z } from 'zod'
+import { TASK_TYPES } from './pipeline.ts'
 
 /**
- * What planning declares about the shape of the work: how much process it
- * needs, and what has to land before it. The engine bounds this; it no longer
- * decides it (REQ-1306).
+ * What planning declares about the work once it has read the repository: what
+ * it is called, how much process it needs, and what has to land before it. The
+ * engine bounds this; it no longer decides it (REQ-1306).
  */
 export const PLAN_SIZES = ['small', 'medium', 'large'] as const
 export const PlanSize = z.enum(PLAN_SIZES)
@@ -26,6 +27,13 @@ export const PlanPrerequisite = z.object({
 export type PlanPrerequisite = z.infer<typeof PlanPrerequisite>
 
 export const PlanShape = z.object({
+  /**
+   * Intake derives a title from the request before anyone has opened the
+   * repository; this is the one that replaces it (REQ-1306). The task's slug
+   * is not re-derived from it — the branch and change folder already exist.
+   */
+  title: z.string().min(1).max(120),
+  type: z.enum(TASK_TYPES),
   size: PlanSize,
   prerequisites: z.array(PlanPrerequisite).default([]),
 })

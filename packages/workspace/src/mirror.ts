@@ -16,6 +16,13 @@ export class BaseBranchMissingError extends Error {
   }
 }
 
+export class DefaultBranchUnknownError extends Error {
+  constructor(readonly repoUrl: string) {
+    super(`${repoUrl} reports no default branch`)
+    this.name = 'DefaultBranchUnknownError'
+  }
+}
+
 const EXCLUDE_MARKER = '# specmate: runner scratch'
 
 /**
@@ -83,6 +90,35 @@ export async function resolveBaseCommit(
   }
 
   return result.stdout.trim()
+}
+
+/**
+ * The branch a task runs against when it named none (REQ-703). A plain fetch
+ * leaves `refs/remotes/origin/HEAD` unset, so the symref is asked for
+ * explicitly — one `ls-remote` against the forge, paid only by a task that
+ * needs it.
+ */
+export async function resolveDefaultBranch(
+  git: Git,
+  mirror: string,
+  repoUrl: string,
+): Promise<string> {
+  const auth = await git.authEnv(repoUrl)
+  await git.tryInMirror(mirror, ['remote', 'set-head', 'origin', '--auto'], { env: auth })
+
+  const result = await git.tryInMirror(mirror, [
+    'symbolic-ref',
+    '--short',
+    'refs/remotes/origin/HEAD',
+  ])
+  const head = result.exitCode === 0 ? result.stdout.trim() : ''
+  const branch = head.startsWith('origin/') ? head.slice('origin/'.length) : ''
+
+  // A conventional name here would be a fallback that hides a broken remote —
+  // exactly what AC-708 refuses for a branch the owner did name.
+  if (!branch) throw new DefaultBranchUnknownError(repoUrl)
+
+  return branch
 }
 
 /**

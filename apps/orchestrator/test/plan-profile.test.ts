@@ -1,18 +1,26 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { FEATURE_BUGFIX_COMPACT, FEATURE_BUGFIX_PIPELINE, StageResult } from '@specmate/core'
-import { createDb, type Database, runGraphs, stages, tasks } from '@specmate/db'
+import {
+  FEATURE_BUGFIX_COMPACT,
+  FEATURE_BUGFIX_PIPELINE,
+  type PlanShape,
+  StageResult,
+} from '@specmate/core'
+import { createDb, type Database, events, runGraphs, stages, tasks } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
-import { asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { Engine, type EngineSettings } from '../src/engine.ts'
-import { fakeDispatcher, fakeWorkspaces, reload, seedTask } from './fixtures.ts'
+import { fakeDispatcher, fakeWorkspaces, planShape, reload, seedTask } from './fixtures.ts'
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
 
 const ADEQUATE = { classification: 'adequate' as const, evidence_md: 'An e2e suite covers it.' }
 
-function planningResult(size: 'small' | 'medium' | 'large'): StageExecution {
+function planningResult(
+  size: 'small' | 'medium' | 'large',
+  overrides: Partial<PlanShape> = {},
+): StageExecution {
   return {
     status: 'succeeded',
     attempts: [{ attempt: 0, ok: true, durationMs: 5 }],
@@ -21,7 +29,7 @@ function planningResult(size: 'small' | 'medium' | 'large'): StageExecution {
       role: 'planner',
       status: 'ok',
       harness_coverage: ADEQUATE,
-      plan: { size, prerequisites: [] },
+      plan: planShape({ size, ...overrides }),
     }),
     telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
   }
@@ -93,6 +101,48 @@ describeDb('the profile a declared size selects', () => {
     expect(versions[0]?.dag.pipeline).toBe(FEATURE_BUGFIX_PIPELINE.id)
     expect(versions[1]?.dag.pipeline).toBe(FEATURE_BUGFIX_COMPACT.id)
     expect(versions[1]?.dag.nodes.map((node) => node.key)).not.toContain('kickoff_brief')
+  })
+
+  test('planning renames the task and leaves its slug alone — AC-1320, AC-343', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan(() =>
+      planningResult('medium', { title: 'Recover ingestion from a stale lease', type: 'bugfix' }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    const after = await reload(db, task.id)
+    expect(after.title).toBe('Recover ingestion from a stale lease')
+    expect(after.type).toBe('bugfix')
+    expect(after.slug).toBe(task.slug)
+
+    const renames = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'task.renamed')))
+    expect(renames).toHaveLength(1)
+    expect(renames[0]?.payload).toMatchObject({
+      from: task.title,
+      title: 'Recover ingestion from a stale lease',
+      type: 'bugfix',
+    })
+  })
+
+  test('a plan repeating the title the task already has renames nothing', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan(() => planningResult('medium', { title: task.title, type: task.type }))
+
+    await engine.tick()
+    await engine.idle()
+
+    const renames = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'task.renamed')))
+    expect(renames).toHaveLength(0)
   })
 
   test('a medium plan appends nothing and walks the graph it has — AC-418', async () => {

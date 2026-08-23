@@ -124,12 +124,15 @@ const STUB_HARNESS_COVERAGE = {
  * The stub's stand-in for a planning stage's declared plan. `medium` keeps the
  * full profile, so a test that says nothing about size sees the shape it
  * always saw; `SPECMATE_STUB_PLAN_SIZE` and `SPECMATE_STUB_PREREQS` are how a
- * test drives the profile swap and the prerequisite proposals.
+ * test drives the profile swap and the prerequisite proposals; the title and
+ * type follow the same pattern for the rename.
  */
 function stubPlan() {
   const raw = process.env.SPECMATE_STUB_PREREQS
 
   return {
+    title: process.env.SPECMATE_STUB_PLAN_TITLE ?? 'Stub: the work planning named',
+    type: process.env.SPECMATE_STUB_PLAN_TYPE ?? 'feature',
     size: process.env.SPECMATE_STUB_PLAN_SIZE ?? 'medium',
     prerequisites: raw ? JSON.parse(raw) : [],
   }

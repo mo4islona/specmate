@@ -16,7 +16,7 @@ import type { StageExecution } from '@specmate/runner'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { CoverageDecisionRequiresOptionError, Engine, type EngineSettings } from '../src/engine.ts'
 import { assertNotSelfDependency, SelfDependencyError } from '../src/store.ts'
-import { fakeDispatcher, fakeWorkspaces, reload, seedTask } from './fixtures.ts'
+import { fakeDispatcher, fakeWorkspaces, planShape, reload, seedTask } from './fixtures.ts'
 
 describe('assertNotSelfDependency', () => {
   test('rejects a task depending on itself', () => {
@@ -36,8 +36,7 @@ function result(overrides: Partial<StageResult> & { role: StageResult['role'] })
   // now fails the attempt when it does not. Defaulted here so a test about
   // coverage need not restate it; one about the plan overrides it.
   const declaresPlan = overrides.role === 'planner' && (overrides.status ?? 'ok') === 'ok'
-  const planned =
-    declaresPlan && !overrides.plan ? { plan: { size: 'medium' as const, prerequisites: [] } } : {}
+  const planned = declaresPlan && !overrides.plan ? { plan: planShape() } : {}
 
   return {
     status: 'succeeded',
@@ -407,7 +406,7 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: ADEQUATE,
-          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+          plan: planShape({ prerequisites: [HARNESS_PREREQUISITE] }),
         }),
       )
 
@@ -438,7 +437,7 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: MISSING,
-          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+          plan: planShape({ prerequisites: [HARNESS_PREREQUISITE] }),
         }),
       )
 
@@ -499,7 +498,10 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: ADEQUATE,
-          plan: { size: 'large', prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE] },
+          plan: planShape({
+            size: 'large',
+            prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE],
+          }),
         }),
       )
       await engine.tick()
@@ -536,7 +538,7 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: MISSING,
-          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE] },
+          plan: planShape({ prerequisites: [HARNESS_PREREQUISITE, FIXTURE_PREREQUISITE] }),
         }),
       )
       await engine.tick()
@@ -661,7 +663,7 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: ADEQUATE,
-          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+          plan: planShape({ prerequisites: [HARNESS_PREREQUISITE] }),
         }),
       )
       await engine.tick()
@@ -728,7 +730,7 @@ describeDb('harness-coverage', () => {
           role: 'planner',
           status: 'ok',
           harness_coverage: MISSING,
-          plan: { size: 'medium', prerequisites: [HARNESS_PREREQUISITE] },
+          plan: planShape({ prerequisites: [HARNESS_PREREQUISITE] }),
         }),
       )
       await engine.tick()

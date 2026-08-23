@@ -23,10 +23,12 @@ import {
   decisions,
   events,
   feedback,
+  getDefaultRepository,
   getModelDefaults,
   ping,
   runGraphs,
   type Stage,
+  setDefaultRepository,
   stages,
   type Task,
   tasks,
@@ -35,7 +37,7 @@ import {
 import type { Engine } from '@specmate/orchestrator/engine'
 import { createTask, revokeCoverageWaiverInForce, taskSpend } from '@specmate/orchestrator/store'
 import { GitError, mirrorKey, type WorkspaceService } from '@specmate/workspace'
-import { and, asc, count, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNull, max, ne } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { streamSSE } from 'hono/streaming'
@@ -44,6 +46,7 @@ import { z } from 'zod'
 import { passwordAuth } from './auth.ts'
 import type { Config } from './config.ts'
 import { ApiError, handleApiError, type ValidationFields } from './errors.ts'
+import { deriveTitle, resolveRepository } from './intake.ts'
 
 export interface AppDeps {
   db: Database
@@ -92,26 +95,30 @@ interface AttentionItem {
 }
 
 const CreateTask = z.object({
-  title: z.string().trim().min(1).max(200),
+  // The request is the only thing a launch must carry: everything else is
+  // resolved from it, or declared later by planning (REQ-1001).
   description: z
     .string()
     .trim()
+    .min(1)
     // .max() counts UTF-16 code units, not bytes — this task's request text
     // feeds the ledger's byte-capped budget (packages/runner/src/ledger.ts),
     // so the cap has to be measured the same way or non-Latin scripts could
     // blow the whole budget on this one field.
     .refine((value) => Buffer.byteLength(value, 'utf8') <= 20_000, {
       message: 'description must not exceed 20,000 bytes',
-    })
-    .optional()
-    .transform((value) => (value ? value : undefined)),
-  type: z.enum(['feature', 'bugfix']),
-  repoUrl: z.url(),
-  baseBranch: z.string().trim().min(1).default('main'),
+    }),
+  title: z.string().trim().min(1).max(200).optional(),
+  type: z.enum(['feature', 'bugfix']).optional(),
+  repoUrl: z.url().optional(),
+  baseBranch: z.string().trim().min(1).optional(),
   modelBindings: ModelBindingsOverride.optional(),
 })
 
 const UpdateModelDefaults = ModelBindingsOverride
+
+/** `null` clears it. A repository nothing has run against is a legal default (REQ-1017). */
+const UpdateDefaultRepository = z.object({ repoUrl: z.url().nullable() })
 
 const CreateComment = z.object({
   comment: z.string().trim().min(1).max(20_000),
@@ -319,6 +326,27 @@ function parseEventCursor(value: string | undefined): number {
   }
 
   return cursor
+}
+
+/**
+ * The repositories this system has tasks against, most recently used first.
+ * A repository has no row of its own — the tasks that name it are the record
+ * (REQ-1017).
+ */
+async function knownRepositories(
+  db: Database,
+): Promise<{ repoUrl: string; taskCount: number; lastUsedAt: Date | null }[]> {
+  const rows = await db
+    .select({
+      repoUrl: tasks.repoUrl,
+      taskCount: count(tasks.id),
+      lastUsedAt: max(tasks.createdAt),
+    })
+    .from(tasks)
+    .groupBy(tasks.repoUrl)
+    .orderBy(desc(max(tasks.createdAt)))
+
+  return rows.map((row) => ({ ...row, lastUsedAt: row.lastUsedAt ?? null }))
 }
 
 export function createApp({
@@ -696,6 +724,21 @@ export function createApp({
       },
     )
 
+    .get('/settings/default-repository', async (c) => {
+      const repoUrl = await getDefaultRepository(db)
+      return c.json({ defaultRepository: repoUrl })
+    })
+
+    .put(
+      '/settings/default-repository',
+      validator('json', validateJson(UpdateDefaultRepository)),
+      async (c) => {
+        const { repoUrl } = c.req.valid('json')
+        const stored = await setDefaultRepository(db, repoUrl)
+        return c.json({ defaultRepository: stored })
+      },
+    )
+
     /**
      * The repositories this system works with — derived from the tasks that
      * name them, since a repository has no row of its own — each carrying the
@@ -704,12 +747,9 @@ export function createApp({
      * repository's mirror by, so one repository is one id everywhere.
      */
     .get('/repositories', async (c) => {
-      const [repoRows, waiverRows] = await Promise.all([
-        db
-          .select({ repoUrl: tasks.repoUrl, taskCount: count(tasks.id) })
-          .from(tasks)
-          .groupBy(tasks.repoUrl)
-          .orderBy(desc(count(tasks.id))),
+      const [repoRows, defaultRepoUrl, waiverRows] = await Promise.all([
+        knownRepositories(db),
+        getDefaultRepository(db),
         db
           .select({
             repoUrl: coverageWaivers.repoUrl,
@@ -722,14 +762,22 @@ export function createApp({
           .where(isNull(coverageWaivers.revokedAt)),
       ])
       const waiverFor = new Map(waiverRows.map((row) => [row.repoUrl, row]))
+      // A default nothing has run against yet still belongs on the list — it is
+      // what the next launch resolves to (REQ-1017).
+      const rows =
+        defaultRepoUrl && !repoRows.some((row) => row.repoUrl === defaultRepoUrl)
+          ? [...repoRows, { repoUrl: defaultRepoUrl, taskCount: 0, lastUsedAt: null }]
+          : repoRows
 
-      const repositories = repoRows.map((row) => {
+      const repositories = rows.map((row) => {
         const waiver = waiverFor.get(row.repoUrl)
 
         return {
           id: mirrorKey(row.repoUrl),
           repoUrl: row.repoUrl,
           taskCount: row.taskCount,
+          lastUsedAt: row.lastUsedAt,
+          isDefault: row.repoUrl === defaultRepoUrl,
           coverageWaiver: waiver
             ? {
                 originTaskId: waiver.originTaskId,
@@ -770,12 +818,32 @@ export function createApp({
 
     .post('/tasks', validator('json', validateJson(CreateTask)), async (c) => {
       const { title, description, type, repoUrl, baseBranch, modelBindings } = c.req.valid('json')
-      const { task } = await createTask(db, {
-        slug: `${slugify(title)}-${Bun.randomUUIDv7().slice(0, 8)}`,
-        title,
-        description,
-        type,
+      const [known, defaultRepoUrl] = await Promise.all([
+        knownRepositories(db),
+        getDefaultRepository(db),
+      ])
+      const resolution = resolveRepository({
         repoUrl,
+        request: description,
+        known: known.map((row) => row.repoUrl),
+        defaultRepoUrl,
+      })
+      if (!resolution.resolved) {
+        throw new ApiError('validation', 'the target repository could not be determined', {
+          status: 400,
+          fields: { repoUrl: ['name the repository this work belongs to'] },
+          candidates: resolution.candidates,
+        })
+      }
+
+      const taskTitle = title ?? deriveTitle(description)
+      const { task } = await createTask(db, {
+        slug: `${slugify(taskTitle)}-${Bun.randomUUIDv7().slice(0, 8)}`,
+        title: taskTitle,
+        description,
+        // Provisional until planning declares what supersedes it (REQ-1306).
+        type: type ?? 'feature',
+        repoUrl: resolution.repoUrl,
         baseBranch,
         modelBindings,
       })

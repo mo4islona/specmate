@@ -5,7 +5,7 @@ import { resolveWorkspaceConfig, type WorkspaceConfig, type WorkspaceOptions } f
 import { isDirectory, pathExists } from './fs.ts'
 import { Git } from './git.ts'
 import { withMirrorLock as lockMirror } from './lock.ts'
-import { ensureExcludes, ensureMirror, resolveBaseCommit } from './mirror.ts'
+import { ensureExcludes, ensureMirror, resolveBaseCommit, resolveDefaultBranch } from './mirror.ts'
 import {
   changeDir,
   conversationWorktreePath,
@@ -19,13 +19,16 @@ import {
 export interface ProvisionRequest {
   readonly slug: string
   readonly repoUrl: string
-  readonly baseBranch: string
+  /** Absent means the repository's default branch, resolved here (REQ-703). */
+  readonly baseBranch?: string
 }
 
 export interface Workspace {
   readonly slug: string
   readonly repoUrl: string
   readonly branch: string
+  /** The base branch the task branch was actually cut from. */
+  readonly baseBranch: string
   /** Absolute path of the working tree — what a runner container mounts. */
   readonly path: string
   /** Change folder, relative to the working tree (see `StageJob.changeDir`). */
@@ -92,7 +95,10 @@ export class WorkspaceManager {
     const mirror = mirrorPath(this.config, request.repoUrl)
     return this.withMirrorLock(mirror, async () => {
       await ensureMirror(this.git, this.config, request.repoUrl)
-      const base = await resolveBaseCommit(this.git, mirror, request.repoUrl, request.baseBranch)
+      const baseBranch =
+        request.baseBranch ?? (await resolveDefaultBranch(this.git, mirror, request.repoUrl))
+
+      const base = await resolveBaseCommit(this.git, mirror, request.repoUrl, baseBranch)
       const branch = taskBranch(request.slug)
       await this.ensureBranch(mirror, branch, base)
       await ensureExcludes(mirror)
@@ -103,6 +109,7 @@ export class WorkspaceManager {
         slug: request.slug,
         repoUrl: request.repoUrl,
         branch,
+        baseBranch,
         path,
         changeDir: changeDir(request.slug),
         mirrorPath: mirror,

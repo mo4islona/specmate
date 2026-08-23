@@ -26,6 +26,7 @@ import {
   fakeConversationDispatcher,
   fakeDispatcher,
   fakeWorkspaces,
+  planShape,
   reload,
   seedTask,
 } from './fixtures.ts'
@@ -52,7 +53,7 @@ function result(overrides: Partial<StageResult> & { role: StageResult['role'] })
       ...(needsCoverage
         ? {
             harness_coverage: FIXTURE_HARNESS_COVERAGE,
-            plan: { size: 'medium' as const, prerequisites: [] },
+            plan: planShape(),
           }
         : {}),
       ...overrides,

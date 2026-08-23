@@ -13,5 +13,6 @@ export const queryKeys = {
   diffFiles: (taskId: string) => ['tasks', taskId, 'diff', 'files'] as const,
   diffFile: (taskId: string, path: string) => ['tasks', taskId, 'diff', 'file', path] as const,
   modelDefaults: ['settings', 'model-defaults'] as const,
+  defaultRepository: ['settings', 'default-repository'] as const,
   repositories: ['repositories'] as const,
 }

@@ -1,4 +1,10 @@
-import { type Budgets, type Caps, StageResult, type TaskState } from '@specmate/core'
+import {
+  type Budgets,
+  type Caps,
+  type PlanShape,
+  StageResult,
+  type TaskState,
+} from '@specmate/core'
 import type { Database, Task } from '@specmate/db'
 import { tasks } from '@specmate/db'
 import type { ConversationExecution, StageExecution } from '@specmate/runner'
@@ -42,6 +48,7 @@ export function fakeWorkspaces(): FakeWorkspaces {
     branch: `task/${slug}`,
     path: `/tmp/fake/${slug}`,
     changeDir: `openspec/changes/${slug}`,
+    baseBranch: 'main',
     mirrorPath: '/tmp/fake-mirror',
   })
   let conversationReleaseFailure: Error | undefined
@@ -137,6 +144,20 @@ export function fakeConversationDispatcher(): FakeConversationDispatcher {
 
       return next(dispatch)
     },
+  }
+}
+
+/**
+ * A plan declaration with the parts a given test does not care about filled in
+ * — every planning result must carry all four (REQ-1306).
+ */
+export function planShape(overrides: Partial<PlanShape> = {}): PlanShape {
+  return {
+    title: 'The work planning named',
+    type: 'feature',
+    size: 'medium',
+    prerequisites: [],
+    ...overrides,
   }
 }
 

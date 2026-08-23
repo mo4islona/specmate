@@ -16,12 +16,15 @@ export type ValidationFields = Record<string, string[]>
 export interface ApiErrorOptions {
   status: ApiErrorStatus
   fields?: ValidationFields
+  /** Values the offending field would have accepted — the client offers them as a choice. */
+  candidates?: readonly string[]
 }
 
 export class ApiError extends Error {
   override readonly name = 'ApiError'
   readonly status: ApiErrorStatus
   readonly fields?: ValidationFields
+  readonly candidates?: readonly string[]
 
   constructor(
     readonly code: ApiErrorCode,
@@ -31,6 +34,7 @@ export class ApiError extends Error {
     super(message)
     this.status = options.status
     this.fields = options.fields
+    this.candidates = options.candidates
   }
 }
 
@@ -41,6 +45,7 @@ export function handleApiError(error: unknown, context: Context): Response {
         code: error.code,
         detail: error.message,
         ...(error.fields ? { fields: error.fields } : {}),
+        ...(error.candidates ? { candidates: error.candidates } : {}),
       },
       error.status,
     )

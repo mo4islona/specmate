@@ -63,7 +63,7 @@ const workspace = await workspaces.provision({
   taskId: task.id,
   slug: task.slug,
   repoUrl: task.repoUrl,
-  baseBranch: task.baseBranch,
+  baseBranch: task.baseBranch ?? undefined,
   image: config.image,
 })
 const [provisionedTask] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
@@ -89,7 +89,7 @@ const execution = await executor.execute({
   model: binding.model,
   reasoningEffort: binding.reasoningEffort,
   workspace,
-  baseBranch: task.baseBranch,
+  baseBranch: workspace.baseBranch,
   environment: taskRunnerEnvironment(provisionedTask.environment),
 })
 

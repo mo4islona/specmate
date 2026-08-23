@@ -142,7 +142,11 @@ export class Git {
     return this.run(['-C', mirror, ...args], options)
   }
 
-  async tryInMirror(mirror: string, args: string[]): Promise<GitResult> {
-    return this.tryRun(['-C', mirror, ...args])
+  async tryInMirror(
+    mirror: string,
+    args: string[],
+    options: { env?: Record<string, string> } = {},
+  ): Promise<GitResult> {
+    return this.tryRun(['-C', mirror, ...args], options)
   }
 }

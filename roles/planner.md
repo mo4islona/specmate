@@ -66,12 +66,21 @@ re-probe, it repeats the same `classification` and `evidence_md` `planning` foun
 
 ## Declaring the shape of the work — `planning`
 
-You also decide how much process this task gets, and what has to land before it. Both go in
-`plan` in `RESULT.json`, alongside `harness_coverage`:
+You also name this task, classify it, decide how much process it gets, and say what has to land
+before it. All four go in `plan` in `RESULT.json`, alongside `harness_coverage`:
 
 ```
-"plan": { "size": "small", "prerequisites": [] }
+"plan": { "title": "Retry the ingestion cursor on a stale lease", "type": "bugfix", "size": "small", "prerequisites": [] }
 ```
+
+`title` is what this task is called from here on. The owner launched it with a request, not a
+name: the title it carries right now was cut from the first line of that request before anyone
+had opened the repository. Write the one a person scanning a list of tasks would want — what
+changes, in a handful of words, no ticket prefix, no trailing period. The task's branch and
+change folder keep the name they were created with; only the title changes.
+
+`type` is `feature` or `bugfix`: restoring behaviour that was meant to work already is a bugfix,
+everything else is a feature. It is a label on the task, not a lever — both run the same pipeline.
 
 `size` is one of `small`, `medium`, `large`, and it is not a guess about hours — it selects how
 many stages the task runs:
@@ -217,6 +226,8 @@ A `planning` run that grounded the request:
   "decisions_needed": [],
   "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the ingestion path this request targets." },
   "plan": {
+    "title": "Recover ingestion from a stale lease",
+    "type": "bugfix",
     "size": "medium",
     "prerequisites": [
       {
@@ -272,7 +283,7 @@ A `kickoff_brief` run with one open question:
     }
   ],
   "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the auth path this request targets." },
-  "plan": { "size": "small", "prerequisites": [] },
+  "plan": { "title": "Retry the ingestion cursor on a stale lease", "type": "bugfix", "size": "small", "prerequisites": [] },
   "notes_md": "One or two sentences a human will read in a chat timeline."
 }
 ```

@@ -46,9 +46,11 @@ export function shortCommit(sha: string): string {
 export function surfaceContext(
   surface: 'thread' | 'files' | 'docs',
   repoUrl: string,
-  baseBranch: string,
+  baseBranch: string | null,
 ): string {
   const repo = repoLabel(repoUrl)
+  // Null until provisioning resolved the repository's default (REQ-703).
+  const base = baseBranch ?? 'default branch'
 
-  return surface === 'files' ? `${repo} · ${baseBranch} … head` : `${repo} · ${baseBranch}`
+  return surface === 'files' ? `${repo} · ${base} … head` : `${repo} · ${base}`
 }

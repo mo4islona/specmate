@@ -414,56 +414,54 @@ describeDb('api', () => {
     }
   })
 
-  test('accepts a task with request text and returns it; accepts one without', async () => {
-    const described = await app.request('/api/v1/tasks', {
+  test('launches on the request alone, deriving the name from it — AC-1001, AC-1056', async () => {
+    const created = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
       body: JSON.stringify({
-        title: 'Described task fixture',
-        description: 'Fix the login redirect so it lands on the dashboard, not the homepage.',
-        type: 'bugfix',
+        description:
+          'Fix the login redirect so it lands on the dashboard\n\nIt goes to the homepage today.',
         repoUrl: 'https://github.com/example/described-task',
       }),
     })
-    expect(described.status).toBe(201)
-    const describedBody = (await described.json()) as { task: { id: string; description: string } }
-    createdTaskIds.push(describedBody.task.id)
-    expect(describedBody.task.description).toBe(
-      'Fix the login redirect so it lands on the dashboard, not the homepage.',
-    )
+    expect(created.status).toBe(201)
+    const body = (await created.json()) as {
+      task: { id: string; title: string; slug: string; type: string; baseBranch: string | null }
+    }
+    createdTaskIds.push(body.task.id)
 
+    expect(body.task.title).toBe('Fix the login redirect so it lands on the dashboard')
+    expect(body.task.slug).toStartWith('fix-the-login-redirect')
+    expect(body.task.type).toBe('feature')
+    expect(body.task.baseBranch).toBeNull()
+  })
+
+  test('refuses a launch carrying no request — AC-1002', async () => {
     const titleOnly = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
       body: JSON.stringify({
         title: 'Title-only task fixture',
-        type: 'bugfix',
+        type: 'unheard-of',
         repoUrl: 'https://github.com/example/title-only-task',
       }),
     })
-    expect(titleOnly.status).toBe(201)
-    const titleOnlyBody = (await titleOnly.json()) as {
-      task: { id: string; description: string | null }
-    }
-    createdTaskIds.push(titleOnlyBody.task.id)
-    expect(titleOnlyBody.task.description).toBeNull()
+    expect(titleOnly.status).toBe(400)
+    expect(await titleOnly.json()).toMatchObject({
+      code: 'validation',
+      fields: { description: expect.any(Array), type: expect.any(Array) },
+    })
 
-    const blankDescription = await app.request('/api/v1/tasks', {
+    const blank = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
       body: JSON.stringify({
-        title: 'Blank-description task fixture',
         description: '   ',
-        type: 'bugfix',
         repoUrl: 'https://github.com/example/blank-description-task',
       }),
     })
-    expect(blankDescription.status).toBe(201)
-    const blankDescriptionBody = (await blankDescription.json()) as {
-      task: { id: string; description: string | null }
-    }
-    createdTaskIds.push(blankDescriptionBody.task.id)
-    expect(blankDescriptionBody.task.description).toBeNull()
+    expect(blank.status).toBe(400)
+    expect(await blank.json()).toMatchObject({ code: 'validation' })
   })
 
   test('rejects a description under 20,000 characters that exceeds 20,000 bytes in UTF-8', async () => {
@@ -480,6 +478,118 @@ describeDb('api', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ code: 'validation' })
+  })
+
+  describe('the repository a launch resolves to — REQ-1016, REQ-1017', () => {
+    const tag = crypto.randomUUID().slice(0, 8)
+    const alpha = `https://github.com/example/alpha-${tag}`
+    const beta = `https://github.com/example/beta-${tag}`
+    const unused = `https://github.com/example/unused-${tag}`
+
+    interface CreatedTask {
+      task: { id: string; repoUrl: string }
+    }
+
+    async function launch(body: Record<string, unknown>): Promise<Response> {
+      return app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify(body),
+      })
+    }
+
+    async function launched(response: Response): Promise<CreatedTask> {
+      const body = (await response.json()) as CreatedTask
+      createdTaskIds.push(body.task.id)
+
+      return body
+    }
+
+    afterAll(async () => {
+      await app.request('/api/v1/settings/default-repository', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ repoUrl: null }),
+      })
+    })
+
+    test('a URL written in the request is the repository — AC-1047', async () => {
+      const response = await launch({ description: `Fix the redirect in ${alpha}, it loops.` })
+      expect(response.status).toBe(201)
+      expect((await launched(response)).task.repoUrl).toBe(alpha)
+    })
+
+    test('a repository the system knows, named in the request — AC-1048', async () => {
+      const response = await launch({ description: `Tidy the alpha-${tag} logging` })
+      expect(response.status).toBe(201)
+      expect((await launched(response)).task.repoUrl).toBe(alpha)
+    })
+
+    test('two known repositories named at once is a question — AC-1050', async () => {
+      const seeded = await launch({ description: `Add a health check to ${beta}` })
+      expect(seeded.status).toBe(201)
+      await launched(seeded)
+
+      const response = await launch({
+        description: `Move alpha-${tag} onto the beta-${tag} pipeline`,
+      })
+      expect(response.status).toBe(400)
+      const body = (await response.json()) as {
+        fields: { repoUrl: string[] }
+        candidates: string[]
+      }
+      expect(body.fields.repoUrl).toBeDefined()
+      expect(body.candidates.sort()).toEqual([alpha, beta].sort())
+    })
+
+    test('nothing to resolve is a rejection carrying the candidates — AC-1049', async () => {
+      const response = await launch({ description: 'Make the retry backoff configurable.' })
+
+      expect(response.status).toBe(400)
+      const body = (await response.json()) as { code: string; candidates: string[] }
+      expect(body.code).toBe('validation')
+      expect(body.candidates).toContain(alpha)
+    })
+
+    test('the list names what ran and what is default — AC-1051, AC-1053', async () => {
+      const set = await app.request('/api/v1/settings/default-repository', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ repoUrl: unused }),
+      })
+      expect(set.status).toBe(200)
+
+      const listed = await app.request('/api/v1/repositories', { headers: auth })
+      const { repositories } = (await listed.json()) as {
+        repositories: { repoUrl: string; taskCount: number; isDefault: boolean }[]
+      }
+      const names = repositories.map((row) => row.repoUrl)
+
+      expect(names).toContain(alpha)
+      expect(names.indexOf(beta)).toBeLessThan(names.indexOf(alpha))
+      expect(repositories.find((row) => row.repoUrl === unused)).toMatchObject({
+        taskCount: 0,
+        isDefault: true,
+      })
+    })
+
+    test('the default carries a request that names nothing — AC-1052', async () => {
+      const response = await launch({ description: 'Make the retry backoff configurable.' })
+      expect(response.status).toBe(201)
+      expect((await launched(response)).task.repoUrl).toBe(unused)
+    })
+
+    test('a default that is not a repository URL is refused — AC-1054', async () => {
+      const response = await app.request('/api/v1/settings/default-repository', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ repoUrl: 'not-a-repository' }),
+      })
+      expect(response.status).toBe(400)
+
+      const current = await app.request('/api/v1/settings/default-repository', { headers: auth })
+      expect(await current.json()).toEqual({ defaultRepository: unused })
+    })
   })
 
   describe('repositories and their coverage waivers — REQ-1015', () => {
@@ -500,7 +610,12 @@ describeDb('api', () => {
       const created = await app.request('/api/v1/tasks', {
         method: 'POST',
         headers: auth,
-        body: JSON.stringify({ title: 'Waived repository fixture', type: 'feature', repoUrl }),
+        body: JSON.stringify({
+          title: 'Waived repository fixture',
+          description: 'Waived repository fixture request.',
+          type: 'feature',
+          repoUrl,
+        }),
       })
       expect(created.status).toBe(201)
       const { task } = (await created.json()) as { task: { id: string } }
@@ -584,6 +699,7 @@ describeDb('api', () => {
         headers: auth,
         body: JSON.stringify({
           title: 'Picks up updated default fixture',
+          description: 'Picks up updated default fixture request.',
           type: 'bugfix',
           repoUrl: 'https://github.com/example/picks-up-updated-default',
         }),
@@ -667,6 +783,7 @@ describeDb('api', () => {
         headers: auth,
         body: JSON.stringify({
           title: 'Model override fixture',
+          description: 'Model override fixture request.',
           type: 'bugfix',
           repoUrl: 'https://github.com/example/model-override',
           modelBindings: { implementer: { model: 'claude-fable-5' } },
@@ -689,6 +806,7 @@ describeDb('api', () => {
         headers: auth,
         body: JSON.stringify({
           title: 'Effort override fixture',
+          description: 'Effort override fixture request.',
           type: 'bugfix',
           repoUrl: 'https://github.com/example/effort-override',
           modelBindings: { implementer: { reasoningEffort: 'low' } },
@@ -711,6 +829,7 @@ describeDb('api', () => {
         headers: auth,
         body: JSON.stringify({
           title: 'Unknown model override fixture',
+          description: 'Unknown model override fixture request.',
           type: 'bugfix',
           repoUrl: 'https://github.com/example/unknown-model-override',
           modelBindings: { implementer: { model: 'gpt-99' } },
@@ -727,6 +846,7 @@ describeDb('api', () => {
         headers: auth,
         body: JSON.stringify({
           title: 'Unknown effort override fixture',
+          description: 'Unknown effort override fixture request.',
           type: 'bugfix',
           repoUrl: 'https://github.com/example/unknown-effort-override',
           modelBindings: { implementer: { reasoningEffort: 'ultra' } },

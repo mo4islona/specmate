@@ -35,6 +35,7 @@ interface ApiErrorPayload {
   code?: string
   detail?: string
   fields?: Record<string, string[]>
+  candidates?: string[]
 }
 
 export class ApiRequestError extends Error {
@@ -45,6 +46,8 @@ export class ApiRequestError extends Error {
     readonly code: string,
     readonly fields: Record<string, string[]> = {},
     detail = 'Request failed',
+    /** Values the offending field would have accepted — rendered as a choice. */
+    readonly candidates: readonly string[] = [],
   ) {
     super(detail)
   }
@@ -64,7 +67,13 @@ async function readJson<T>(response: {
 
   if (!response.ok) {
     const error = body as ApiErrorPayload
-    throw new ApiRequestError(response.status, error.code ?? 'internal', error.fields, error.detail)
+    throw new ApiRequestError(
+      response.status,
+      error.code ?? 'internal',
+      error.fields,
+      error.detail,
+      error.candidates,
+    )
   }
 
   return body as T
@@ -148,6 +157,10 @@ type ModelDefaultsResponse = InferResponseType<
 type UpdateModelDefaultsRequest = InferRequestType<
   (typeof apiClient.api.v1.settings)['model-defaults']['$put']
 >
+type DefaultRepositoryResponse = InferResponseType<
+  (typeof apiClient.api.v1.settings)['default-repository']['$get'],
+  200
+>
 
 export type TaskSummary = TasksResponse['tasks'][number]
 export type AttentionItem = AttentionResponse['items'][number]
@@ -173,6 +186,7 @@ export type AnswerDecisionInput = AnswerDecisionRequest['json']
 export type DismissDecisionInput = DismissDecisionRequest['json']
 export type Repository = RepositoriesResponse['repositories'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
+export type DefaultRepository = DefaultRepositoryResponse['defaultRepository']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
 
 export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
@@ -411,6 +425,27 @@ export async function updateModelDefaults(
   const response = await apiClient.api.v1.settings['model-defaults'].$put({ json: input })
 
   return readJson<ModelDefaultsResponse>(response)
+}
+
+export async function getDefaultRepository(
+  signal?: AbortSignal,
+): Promise<DefaultRepositoryResponse> {
+  const response = await apiClient.api.v1.settings['default-repository'].$get(undefined, {
+    init: { signal },
+  })
+
+  return readJson<DefaultRepositoryResponse>(response)
+}
+
+/** `null` clears it — a launch then has to name its repository some other way. */
+export async function setDefaultRepository(
+  repoUrl: string | null,
+): Promise<DefaultRepositoryResponse> {
+  const response = await apiClient.api.v1.settings['default-repository'].$put({
+    json: { repoUrl },
+  })
+
+  return readJson<DefaultRepositoryResponse>(response)
 }
 
 export async function getArtifact(
