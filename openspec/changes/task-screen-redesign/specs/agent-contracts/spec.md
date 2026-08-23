@@ -40,3 +40,9 @@ for.
 
 - **WHEN** a run that received confirmed guidance fails and the node is attempted again
 - **THEN** the replacement attempt's ledger SHALL contain that guidance, and it SHALL stop being pending only once a run carrying it is accepted
+
+#### Scenario: AC-134 — A resuming stage still receives its artifacts
+
+- **WHEN** a stage declaring resumption of an earlier node is prepared for execution
+- **THEN** its prompt SHALL contain the role prompt, the current declared artifacts, and the ledger, with the earlier session continued alongside them rather than in place of them
+

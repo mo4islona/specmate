@@ -56,12 +56,15 @@ detail — this is the alignment step before research, not its result.
 
 ### Requirement: REQ-1303 — An incomplete brief never reaches the gate
 
-After any planner run that wrote the proposal — the grounding draft as much as the finished
-page — the parts REQ-1302 requires SHALL be checked mechanically, with no agent judgment
-involved, before anything is committed. A brief missing a
+After the planner run that wrote the proposal, the parts REQ-1302 requires SHALL be checked
+mechanically, with no agent judgment involved, before anything is committed. A brief missing a
 required part SHALL fail the stage attempt naming what is missing, and the task SHALL NOT reach
 its gate. The check SHALL judge presence, explicitness, and length only: whether the brief
 persuades is the owner's judgement at the gate, never the check's.
+
+The check SHALL run on every planner run that writes the proposal, however many the definition
+schedules. It is the whole of the mechanical guarantee that the page the owner opens is complete,
+so it MUST NOT be relaxed on the grounds that a later run would have caught the gap.
 
 #### Scenario: AC-1306 — The key points are missing
 
@@ -77,6 +80,11 @@ persuades is the owner's judgement at the gate, never the check's.
 
 - **WHEN** a brief carries every required part while making a weak case
 - **THEN** the check SHALL pass and the task SHALL reach its gate, where rejecting it is the owner's call
+
+#### Scenario: AC-1322 — One planner run carries the whole check
+
+- **WHEN** a definition schedules a single planner run before the kickoff gate
+- **THEN** that run's proposal SHALL be checked in full before commit, with no part deferred to a later run
 
 ### Requirement: REQ-1304 — The brief's questions are answered beside it
 
