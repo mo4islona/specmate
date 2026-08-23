@@ -1,92 +1,109 @@
-## 1. Thread grouping (REQ-919)
+The first pass shipped on this branch and is the starting point, not a rollback: `task-thread.ts`,
+`task-pipeline.ts`, `repo-link.ts`, `commit-ref.tsx`, `pipeline-rail.tsx` and the vitest setup are
+kept and reshaped. Only what pass 3 changes is listed here.
 
-- [x] 1.1 Add `apps/web/src/lib/task-thread.ts`: the event vocabulary (titles, tones, the
-      silent set), the activity/detail/label helpers moved off the screen, and `buildThread`
-      grouping events and conversation messages into per-stage chapters.
-      Verify: `bun run --cwd apps/web test src/lib/task-thread.test.ts`.
-- [x] 1.2 Cover the grouping rules with tests: stage-scoped placement, a mid-run comment
-      joining its run, gate work becoming the gate's chapter, re-entry opening a new chapter,
-      parking opening the destination's chapter, boundary-stamped entries staying with their
-      stage, silent events leaving no entry, and a started stage whose events fell outside the
-      event window still getting a chapter. Verify: same command.
-- [x] 1.3 Render chapters in `apps/web/src/components/thread-view.tsx`: collapsed by default
-      except the newest, `isChapterOpen` as the single rule shared with the screen, activity
-      capped at the last 8 lines with the dropped count shown, and resolved decision cards
-      rendered in place. Verify: `bun run --cwd apps/web test src/components/thread-view.test.tsx`.
+## 0. Already satisfied by the first pass
 
-## 2. Pinned rail (REQ-914)
+- [x] 0.1 Commits render short, linked, with the full hash carried (`repo-link.ts`,
+      `commit-ref.tsx`) — AC-955. Verify: `bun run --cwd apps/web test src/lib/repo-link.test.ts`.
+- [x] 0.2 A run is numbered only where its node ran more than once — AC-954. Verify: a task with
+      one attempt per node shows no run numbers anywhere on the screen.
+- [x] 0.3 The rail states the task's baseline model binding once and marks only departures
+      (`bindingBaseline`) — AC-948 stays satisfied. Verify:
+      `bun run --cwd apps/web test src/lib/task-pipeline.test.ts`.
+- [x] 0.4 `apps/web` runs on vitest + jsdom + testing-library; the root `test` script runs both
+      suites. Verify: `bun run test`.
 
-- [x] 2.1 Add `apps/web/src/lib/task-pipeline.ts`: `buildPipelineNodes` (per-node state, runs,
-      current node, role, binding), `bindingBaseline`/`isBaselineBinding`, `shortModel`.
-      Verify: `bun run --cwd apps/web test src/lib/task-pipeline.test.ts`.
-- [x] 2.2 Add `apps/web/src/components/pipeline-rail.tsx` and `task-rail.tsx`: the node list
-      with live status, node activation revealing runs and commits, artifacts, and the spend
-      meters. Verify: click a node in the app; its runs appear and its chapter opens.
-- [x] 2.3 Delete `apps/web/src/components/model-bindings-panel.tsx`; the binding now shows on
-      the node that departs from the baseline. Verify: `grep -r model-bindings-panel apps/web`
-      returns nothing.
-- [x] 2.4 Rewrite `budget-panel.tsx` as the rail's spend meters, keeping REQ-1505's
-      incomplete-cost wording. Verify: `bun run --cwd apps/web test src/components/budget-panel.test.tsx`.
+## 1. The shell (REQ-920, REQ-901, REQ-907)
 
-## 3. Commits, attempts, and labels
+- [ ] 1.1 Collapse the header to one row: title, state as a sentence, the surface's own
+      repository line, and a labelled stream indicator at the far end. Verify:
+      `bun run --cwd apps/web test src/components/task-header.test.tsx` — the header renders one
+      row on every surface and the state sentence names what the task needs.
+- [ ] 1.2 Add the navigation column (Thread / Files n / Docs n / Guide, the last listed and marked
+      unavailable), marking the current surface and becoming a row below `62rem`. Verify:
+      `bun run --cwd apps/web test src/components/task-nav.test.tsx`.
+- [ ] 1.3 Route the surfaces: `/tasks/:id`, `/tasks/:id/files`, `/tasks/:id/docs`, with
+      `/tasks/:id/artifacts` and `/tasks/:id/diff` redirecting and
+      `/tasks/:id/artifacts/:artifactId` still opening one document — AC-961, AC-957. Verify:
+      `bun run --cwd apps/web test src/screens/task-routes.test.tsx`.
+- [ ] 1.4 Move `artifacts-screen.tsx` and `files-changed-screen.tsx` under the shell, dropping
+      their own headers and back-links; the diff keeps today's rendering (proposal Non-goals).
+      Verify: open both tabs; neither draws a second header and neither restates the repository
+      line.
+- [ ] 1.5 Delete the rail's artifact list and its `files changed →` link (`task-rail.tsx`); the
+      counts live on the tabs and nowhere else — REQ-920's one-place rule. Verify:
+      `grep -n "files changed" apps/web/src` returns nothing.
 
-- [x] 3.1 Add `apps/web/src/lib/repo-link.ts` (`repoLabel`, `commitUrl`, `shortCommit`) and
-      `components/commit-ref.tsx`. Verify: `bun run --cwd apps/web test src/lib/repo-link.test.ts`.
-- [x] 3.2 Number a run only where its node ran more than once — in the rail, the chapter title,
-      the run controls, and the composer's stage picker. Verify: a task with one attempt per
-      node shows no run numbers anywhere on the screen.
+## 2. The thread (REQ-919, REQ-912)
 
-## 4. The zone that needs a person (REQ-912, REQ-914)
-
-- [x] 4.1 Extract `gate-panel.tsx` (approve foremost, redirect/rework behind one disclosure)
-      and `run-controls.tsx` (`RunningStrip` with a two-step stop confirmation, `CleanupStrip`,
-      `RestartPanel`). Verify: open a task parked at a gate; approve is the only visible action.
-- [x] 4.2 Restyle `decision-card.tsx`: options as the direct actions, free text behind a
-      disclosure (open when there are no options), dismiss/discuss quiet.
-      Verify: `bun run --cwd apps/web test src/components/decision-card.test.tsx`.
-- [x] 4.3 Order the zone so a decision the task is stopped on precedes the run controls and a
-      merely-open one follows them. Verify: inspect a parked task and a running one.
-
-## 5. Screen assembly
-
-- [x] 5.1 Rewrite `apps/web/src/screens/task-screen.tsx` around header → action zone → thread →
-      composer, with the rail beside it; extract `task-composer.tsx` and
-      `conversation-message.tsx`. Verify: `bun run typecheck`.
-- [x] 5.2 Keep the thread pinned to its newest entry unless the owner has scrolled up.
+- [ ] 2.1 Reduce `buildThread` to the admission rule: questions, answers, comments, guide replies,
+      gate outcomes. Chapters, stage lifecycle entries and activity leave. Verify:
+      `bun run --cwd apps/web test src/lib/task-thread.test.ts` — a task with three stages and one
+      comment yields one entry.
+- [ ] 2.2 Render an answered question as at most two clamped lines with a control that opens the
+      whole exchange, carrying none of an open question's presentation — AC-958, AC-923. Verify:
+      `bun run --cwd apps/web test src/components/thread-view.test.tsx`.
+- [ ] 2.3 Make the column one scrolling region: the action zone's own `22vh / 62vh / 34vh`
+      container goes, and an open question sits directly above the input inside the same scroll —
+      REQ-919. Verify: at 720px viewport height with a question open, nothing on the screen
+      scrolls inside anything else.
+- [ ] 2.4 Keep the thread pinned to its newest entry unless the owner has scrolled up — AC-953.
       Verify: scroll into history and post a comment; the view stays where it was.
-- [x] 5.3 Cap the action zone so the thread keeps room at 720px viewport height (see 6.6 for
-      the final numbers). Verify: measured 137/256/322px of thread at 720/900/1000px.
-- [x] 5.4 Collapse the rail into one disclosure below `xl` and keep the page free of horizontal
-      scrolling (REQ-911). Verify: 420px-wide screenshot of a running task.
 
-## 6. Second pass, from the owner reading the deployed screen
+## 3. The rail and the run log (REQ-914, REQ-915)
 
-- [x] 6.1 Strip the duration, tokens, cost, and commit off chapter headers — the rail states
-      them for the same node. Verify: a chapter header's text is the stage name alone
-      (`thread-view.test.tsx`).
-- [x] 6.2 Render an open decision only where it is answered; keep the card in history once it
-      resolves. Verify: `bun run --cwd apps/web test` — "an open decision is not repeated".
-- [x] 6.3 Absorb a chapter opened by an event that precedes its node's stage row (`task.created`
-      at the entry node) into the run it precedes. Verify: `task-thread.test.ts`.
-- [x] 6.4 Stack several open questions: one answerable, the rest one line each
-      (`decision-stack.tsx`). Verify: `decision-stack.test.tsx`.
-- [x] 6.5 Count `blocked` as parked — it is the status the engine parks a task in when a
-      blocking decision is open, and it was excluded. Verify: a blocked task shows "The task is
-      stopped on this."
-- [x] 6.6 Give the action zone its own bottom edge and most of the column while the task is
-      stopped, so a clipped card never reads as the thread's first entry. Verify: a blocked task
-      at 940px viewport height.
-- [x] 6.7 Open an artifact in the thread's place (`artifact-reader.tsx`), not on its own screen.
-      Verify: click a rail artifact; the URL does not change and the rail stays.
+- [ ] 3.1 Add the fourth node state to `buildPipelineNodes`: stopped, carrying its facts and the
+      reason (attempt cap, orphaned run, exhausted budget) — AC-966. Verify:
+      `bun run --cwd apps/web test src/lib/task-pipeline.test.ts`.
+- [ ] 3.2 Fold nodes that have not run into one line naming how many. Verify: a task at its
+      kickoff gate shows three nodes and one folded line, not twelve rows.
+- [ ] 3.3 Add the run log as a layer over the column: per-run duration, cost, tokens, model and
+      commit in its header, the run's activity beneath it, and `Comment on this run` — AC-967,
+      AC-940, AC-938. Verify: `bun run --cwd apps/web test src/components/run-log.test.tsx`.
+- [ ] 3.4 Stop rendering `stage.activity` in the thread; it is the run log's alone — AC-940,
+      AC-959. Verify: `bun run --cwd apps/web test src/lib/task-thread.test.ts`.
 
-## 7. Test runner
+## 4. The console (REQ-921, REQ-906, REQ-914)
 
-- [x] 7.1 Move `apps/web` to vitest + jsdom + testing-library; keep `bun test` everywhere else;
-      root `test` script runs both and CI calls `bun run test`.
-      Verify: `bun run test` runs 561 bun tests and 100 vitest tests.
+- [ ] 4.1 Derive the destination from the task's state and render it as a sentence under the one
+      input — AC-962. Verify: `bun run --cwd apps/web test src/lib/task-console.test.ts` covering
+      all six states plus the no-destination case.
+- [ ] 4.2 Delete `ComposerMode` and the stage select from `task-composer.tsx`; `Ask guide` leaves
+      the console and the guide stays reachable from a question's `Discuss`. Verify:
+      `grep -rn "ComposerMode\|whole task" apps/web/src` returns nothing.
+- [ ] 4.3 Label the input by the open question and add the `1 of N` pager over the open set —
+      AC-964. Verify: `bun run --cwd apps/web test src/components/decision-stack.test.tsx`.
+- [ ] 4.4 Disable the input where the state has no destination, state why, and offer raising the
+      cap — AC-965. Verify: a task paused on an exhausted budget accepts no text.
+- [ ] 4.5 Keep the gate's own verbs beside the input at a gate, and the restart's guidance field
+      at a stopped node — REQ-905, REQ-914. Verify: open a task at each state; the verbs are the
+      state's own.
 
-## 8. Gate
+## 5. The writer (task-surface REQ-1008, agent-contracts REQ-102)
 
-- [x] 8.1 `bun run check && bun run typecheck && bun run --cwd apps/web test` all clean.
-- [ ] 8.2 `bun run ci` — the database-backed suites (`packages/db`, `apps/api`,
-      `apps/orchestrator`) need a running Postgres; run before merging.
+- [ ] 5.1 Teach the feedback endpoint to resolve the addressed node from the task's state and
+      store guidance targeted at it, falling back to commentary when there is none — AC-1046.
+      Verify: `bun test apps/api/test/app.test.ts`.
+- [ ] 5.2 Emit an event for both kinds so the text appears in the thread it was typed into —
+      AC-963. Verify: same command; the timeline carries the comment either way.
+- [ ] 5.3 Clear `consumedByStageId` in the transaction that records a stage ending anything but
+      accepted — AC-129. Verify: `bun test apps/orchestrator/test/engine.test.ts` — guidance
+      written before a failing attempt is rendered into the retry's ledger.
+- [ ] 5.4 Cover the ledger side: an intervention claimed by a stage that failed is pending again,
+      and one carried by an accepted run is not. Verify:
+      `bun test packages/runner/test/ledger.test.ts`.
+
+## 6. The phone (REQ-911)
+
+- [ ] 6.1 Keep the surface navigation at every width, collapse the rail into one disclosure, and
+      open the run log as a full-height layer with its own way back — AC-968. Verify: 420px-wide
+      screenshots of a running task and of an open run log.
+
+## 7. Gate
+
+- [ ] 7.1 `bun run check && bun run typecheck && bun run --cwd apps/web test` clean.
+- [ ] 7.2 `bun run ci` — the database-backed suites need a Postgres with connections to spare;
+      run before merging.
+- [ ] 7.3 Walk a live task through the six console states and confirm each destination line
+      matches where the text actually went.
