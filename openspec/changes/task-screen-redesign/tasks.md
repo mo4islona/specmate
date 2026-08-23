@@ -111,3 +111,33 @@ kept and reshaped. Only what pass 3 changes is listed here.
       matches where the text actually went. Two of the six are checked in a browser against a
       seeded task (a question open, and a gate); the other four are covered by
       `task-console.test.ts` only.
+
+## 8. Pass 3b — closing the gap to the drawing
+
+The first build of pass 3 landed the routes and the rules but drew a different screen: a nav
+column beside the app's own task list, a question as a card above a separate input, and a
+running stage reported in three places at once.
+
+- [x] 8.1 Turn the surface navigation into a row under the header and give the repository
+      context its trailing end — REQ-920. Verify: `bun run --cwd apps/web test` covers the row's
+      links and counts; `surfaceContext` covers AC-960.
+- [x] 8.2 Make the open question the console's own head, with the other open questions as a
+      pager and its options as direct actions above the input — REQ-912, AC-964. Verify:
+      `task-composer.test.tsx`.
+- [x] 8.3 Give the console the six states the drawing has: a tone, a destination line above or a
+      hint below, a verb of its own on the primary button, and the state's quiet ways out —
+      REQ-921. Verify: `task-console.test.ts`.
+- [x] 8.4 Move the running stage's activity and its `Stop` under the running node in the rail,
+      and the cleanup state under the node it happened to — REQ-914, AC-931.
+- [x] 8.5 Reduce the rail to the pipeline and the spend, with each node carrying its duration and
+      commit; move the harness gap, the plan size and the lineage beside the state — REQ-920.
+- [x] 8.6 Give the run log the drawing's shape: the run's facts in its header, the role that ran
+      it, and each line as time, action, target — REQ-914, REQ-915.
+- [x] 8.8 Read the thread as a chat: the side an entry sits on is who spoke, so no column is
+      reserved for a name and the owner's own turns carry no label. Only an entry with something
+      said gets a balloon; a launch or an approval stays one quiet line. The exact moment leaves
+      the screen for the entry's tooltip and an `sr-only` `<time>` — REQ-919. Verify:
+      `thread-view.test.tsx`.
+- [ ] 8.7 The Files surface still renders the pre-pass-3 list-detail panel. Drawing 4 — tree with
+      filter, stacked per-file cards, `Viewed` and `n / N viewed`, hunk expanders, unified/split —
+      is the change that amends REQ-916/AC-944 and is not this one.

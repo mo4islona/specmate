@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { StateTone, TaskStateSentence } from '../lib/task-state.ts'
 
 const TONE_TEXT: Record<StateTone, string> = {
@@ -23,20 +24,20 @@ const STREAM_DOT: Record<string, string> = {
 interface TaskHeaderProps {
   readonly title: string
   readonly state: TaskStateSentence
-  /** What the surface being shown is about — the repository, or the comparison. */
-  readonly context: string
+  /** What qualifies the state and nothing else — the harness gap, the plan size. */
+  readonly badges?: ReactNode
   readonly connection: string
 }
 
 /**
- * One row, four things. The state reads as a sentence because `BLOCKED` and
+ * One row. The state reads as a sentence because `BLOCKED` and
  * `HARNESS GAP: PARTIAL` were chips that had to be decoded; the trailing dot is
  * labelled because a task waiting on the owner is amber while its event stream
  * is perfectly healthy, and the two must not read as one claim.
  */
-export function TaskHeader({ title, state, context, connection }: TaskHeaderProps) {
+export function TaskHeader({ title, state, badges, connection }: TaskHeaderProps) {
   return (
-    <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-b border-border pb-3">
+    <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
       <h1 className="min-w-0 shrink-0 break-words text-lg font-semibold tracking-tight">{title}</h1>
 
       <p className={`flex min-w-0 items-baseline gap-1.5 text-[0.82rem] ${TONE_TEXT[state.tone]}`}>
@@ -50,7 +51,7 @@ export function TaskHeader({ title, state, context, connection }: TaskHeaderProp
         </span>
       </p>
 
-      <p className="min-w-0 truncate font-mono text-[0.68rem] text-muted">{context}</p>
+      {badges}
 
       <span
         className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest text-muted"

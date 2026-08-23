@@ -1,4 +1,7 @@
 import type { ModelBinding } from '@specmate/core'
+import type { ReactNode } from 'react'
+import { useNow } from '../hooks/use-now.ts'
+import { shortCommit } from '../lib/repo-link.ts'
 import {
   isBaselineBinding,
   type NodeState,
@@ -6,58 +9,47 @@ import {
   shortModel,
 } from '../lib/task-pipeline.ts'
 import { formatDuration, stageDuration } from '../lib/task-thread.ts'
-import { CommitRef } from './commit-ref.tsx'
+
+/** What the node the task stands on is doing, and the one verb it offers. */
+export interface RailSub {
+  readonly nodeKey: string
+  readonly detail: string | null
+  readonly tone?: 'muted' | 'danger'
+  readonly action?: ReactNode
+}
 
 interface PipelineRailProps {
   readonly nodes: readonly PipelineNodeView[]
   readonly baseline: ModelBinding | null
-  readonly repoUrl: string
   readonly selectedKey: string | null
   readonly onSelect: (key: string) => void
+  readonly sub?: RailSub | null
 }
 
 const DOT_CLASSES: Record<NodeState, string> = {
-  done: 'bg-phosphor/40',
+  done: 'bg-border-bright',
   running: 'bg-phosphor dot-live',
   awaiting: 'bg-amber dot-live',
   stopped: 'bg-danger',
   pending: 'border border-border-bright bg-ground',
 }
 
-const STATE_TEXT: Record<NodeState, string> = {
-  done: 'text-muted',
-  running: 'text-phosphor',
-  awaiting: 'text-amber',
-  stopped: 'text-danger',
+const NAME_CLASSES: Record<NodeState, string> = {
+  done: 'text-text',
+  running: 'font-medium text-phosphor',
+  awaiting: 'font-medium text-amber',
+  stopped: 'font-medium text-danger',
   pending: 'text-muted',
-}
-
-/**
- * A finished node trades its status word for the one number the owner asks of
- * it; a stopped node states the reason in the same slot, because a node that
- * quietly reverts to looking unstarted is the mush this pass removes.
- */
-function trailingLabel(node: PipelineNodeView): string {
-  if (node.state === 'stopped') return node.stoppedReason ?? 'stopped'
-  if (node.state === 'running') return 'running'
-  if (node.state === 'awaiting') return 'waiting on you'
-
-  if (node.state === 'done' && node.latest) {
-    const duration = stageDuration(node.latest)
-
-    return duration === null ? '' : formatDuration(duration)
-  }
-
-  return ''
 }
 
 export function PipelineRail({
   nodes,
   baseline,
-  repoUrl,
   selectedKey,
   onSelect,
+  sub = null,
 }: PipelineRailProps) {
+  const now = useNow()
   // Everything up to the last node that has something to say is drawn; the
   // unstarted tail is one line naming how many there are. Ten empty circles
   // were taking a column to report that nothing had happened in them.
@@ -74,7 +66,7 @@ export function PipelineRail({
         <h2 className="micro-label text-muted">Pipeline</h2>
         {baseline && (
           <p
-            className="font-mono text-[0.62rem] text-muted"
+            className="font-mono text-[0.59rem] text-muted"
             title="Model bound to every role that is not overridden"
           >
             {shortModel(baseline.model)} · {baseline.reasoningEffort}
@@ -83,99 +75,128 @@ export function PipelineRail({
       </div>
 
       <ol className="mt-3">
-        {told.map((node, index) => {
+        {told.map((node) => {
           const selected = selectedKey === node.key
-          const trailing = trailingLabel(node)
+          const overridden = !isBaselineBinding(node.binding, baseline)
 
           return (
-            <li key={node.key} className="relative pl-5">
-              {index < told.length - 1 && (
-                <span
-                  className="absolute left-[5px] top-3 h-full w-px bg-border"
-                  aria-hidden="true"
-                />
-              )}
-              <span
-                className={`absolute left-0.5 top-[0.55rem] h-2 w-2 rounded-full ${DOT_CLASSES[node.state]}`}
-                aria-hidden="true"
-              />
+            <li key={node.key}>
               <button
                 type="button"
                 onClick={() => onSelect(node.key)}
                 aria-pressed={selected}
-                className={`flex w-full items-baseline gap-2 py-1 text-left transition-colors ${
-                  selected ? 'text-text' : 'text-muted hover:text-text'
+                className={`grid w-full grid-cols-[0.75rem_minmax(0,1fr)_auto] items-baseline gap-x-2 py-1 text-left text-[0.79rem] transition-colors ${
+                  selected ? 'bg-phosphor/[0.07] px-2 -mx-2' : ''
                 }`}
               >
                 <span
-                  className={`min-w-0 flex-1 truncate text-[0.82rem] ${
-                    node.current ? 'font-medium text-text' : ''
-                  }`}
-                >
-                  {node.label}
+                  className={`mt-[0.3rem] h-[0.45rem] w-[0.45rem] rounded-full ${DOT_CLASSES[node.state]}`}
+                  aria-hidden="true"
+                />
+
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <span className={`truncate ${NAME_CLASSES[node.state]}`}>{node.label}</span>
+                  {overridden && node.binding && (
+                    <span className="shrink-0 border border-amber/40 px-1 font-mono text-[0.56rem] text-amber">
+                      {shortModel(node.binding.model)} · {node.binding.reasoningEffort}
+                    </span>
+                  )}
                 </span>
-                {node.runs.length > 1 && (
-                  <span className="shrink-0 font-mono text-[0.6rem] text-amber">
-                    ×{node.runs.length}
-                  </span>
-                )}
-                {trailing && (
-                  <span className={`shrink-0 font-mono text-[0.62rem] ${STATE_TEXT[node.state]}`}>
-                    {trailing}
-                  </span>
-                )}
+
+                <NodeFact node={node} now={now} />
               </button>
 
-              {selected && <NodeFacts node={node} baseline={baseline} repoUrl={repoUrl} />}
+              {sub?.nodeKey === node.key && (
+                <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] gap-x-2 pb-1.5">
+                  <span aria-hidden="true" />
+                  <div className="min-w-0">
+                    {sub.detail && (
+                      <p
+                        className={`mt-0.5 break-words font-mono text-[0.62rem] leading-5 ${
+                          sub.tone === 'danger' ? 'text-danger' : 'text-muted'
+                        }`}
+                        role="status"
+                      >
+                        {sub.detail}
+                      </p>
+                    )}
+                    {sub.action}
+                  </div>
+                </div>
+              )}
             </li>
           )
         })}
       </ol>
 
       {folded.length > 0 && (
-        <p className="mt-1 pl-5 font-mono text-[0.66rem] leading-5 text-muted">
-          →{' '}
-          {folded
-            .slice(0, 3)
-            .map((node) => node.label)
-            .join(', ')}
-          {folded.length > 3 && `, +${folded.length - 3} more`}
+        <p className="mt-1 grid grid-cols-[0.75rem_minmax(0,1fr)] gap-x-2 border-t border-border pt-1.5 text-[0.75rem] leading-5 text-muted">
+          <span className="font-mono" aria-hidden="true">
+            →
+          </span>
+          <span>{foldedLabel(folded)}</span>
         </p>
       )}
     </section>
   )
 }
 
-/** The one fact the rail keeps inline: which role, and the binding where it departs from the baseline. */
-function NodeFacts({
-  node,
-  baseline,
-  repoUrl,
-}: {
-  node: PipelineNodeView
-  baseline: ModelBinding | null
-  repoUrl: string
-}) {
-  const overridden = !isBaselineBinding(node.binding, baseline)
-  const commit = node.latest?.acceptedCommit
+/** The unstarted tail, named as far as it is worth naming and counted after that. */
+function foldedLabel(folded: readonly PipelineNodeView[]): string {
+  const named = folded
+    .slice(0, 3)
+    .map((node) => node.label)
+    .join(', ')
 
+  return folded.length > 3 ? `${named}, +${folded.length - 3} more` : named
+}
+
+/**
+ * A finished node trades its status word for the facts the owner asks of it; a
+ * stopped node states the reason in the same slot, because a node that quietly
+ * reverts to looking unstarted is the mush this pass removes.
+ */
+function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
+  const classes = `shrink-0 text-right font-mono text-[0.61rem] ${
+    node.state === 'stopped' ? 'text-danger' : 'text-muted'
+  }`
+
+  if (node.state === 'stopped') {
+    return <span className={classes}>{node.stoppedReason ?? 'stopped'}</span>
+  }
+  if (node.state === 'awaiting') {
+    return <span className={classes}>waiting on you</span>
+  }
+  if (node.state === 'running') {
+    const started = node.latest?.startedAt ? new Date(node.latest.startedAt).getTime() : null
+
+    return (
+      <span className={classes}>
+        {started === null ? 'running' : formatDuration(now - started)}
+        {node.runs.length > 1 && ` · attempt ${node.runs.length}`}
+      </span>
+    )
+  }
+  if (node.state !== 'done') {
+    return <span className={classes} />
+  }
+
+  const duration = node.latest ? stageDuration(node.latest) : null
+  const commit = node.latest?.acceptedCommit
+  const cost = node.latest?.telemetry?.costUsd ?? null
+
+  if (!duration && !commit) {
+    return <span className={classes}>{node.kind === 'gate' ? 'passed' : ''}</span>
+  }
+
+  // The hash reads here and is *linked* in the run log: an anchor inside the
+  // row's button would be both invalid markup and a second click target.
   return (
-    <div className="mb-2 space-y-1 pb-1 text-[0.7rem] leading-5">
-      {node.role && (
-        <p className="font-mono text-muted">
-          {node.role}
-          {overridden && node.binding && (
-            <span className="ml-1.5 border border-amber/40 px-1 py-0.5 text-[0.6rem] text-amber">
-              {shortModel(node.binding.model)} · {node.binding.reasoningEffort}
-            </span>
-          )}
-        </p>
-      )}
-      {commit && (
-        <p className="font-mono text-muted">
-          <CommitRef sha={commit} repoUrl={repoUrl} />
-        </p>
-      )}
-    </div>
+    <span className={classes} title={commit ?? undefined}>
+      {duration !== null && formatDuration(duration)}
+      {commit
+        ? `${duration !== null ? ' · ' : ''}${shortCommit(commit)}`
+        : cost !== null && ` · $${cost.toFixed(2)}`}
+    </span>
   )
 }

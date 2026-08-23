@@ -96,7 +96,19 @@ describe('consoleDestination (REQ-921)', () => {
     })
 
     expect(destination.kind).toBe('gate')
-    expect(destination.line).toBe('Spec gate · your call')
+    expect(destination.submit).toBe('Approve')
+    expect(destination.head).toEqual({ to: 'Spec gate', note: 'your call' })
+  })
+
+  test('a gate with a redirect edge counts what is left of it', () => {
+    const destination = consoleDestination({
+      ...BASE,
+      task: task({ status: 'human_spec_gate' }),
+      gateKey: 'human_spec_gate',
+      redirect: { used: 1, limit: 3 },
+    })
+
+    expect(destination.line).toBe('2 of 3 redirects left')
   })
 
   test('an interrupted stage makes the input guidance for the restart', () => {
@@ -107,7 +119,10 @@ describe('consoleDestination (REQ-921)', () => {
     })
 
     expect(destination.kind).toBe('restart')
-    expect(destination.line).toBe('Carried into the restart of implement')
+    expect(destination.submit).toBe('Restart')
+    expect(destination.head?.to).toBe('Implement')
+    // REQ-914: the loss is stated where it is about to happen, not in a panel.
+    expect(destination.line).toContain('uncommitted work is already gone')
   })
 
   test('nothing running still has a destination: the node that runs next', () => {
@@ -134,7 +149,8 @@ describe('consoleDestination (REQ-921)', () => {
 
     expect(destination.kind).toBe('nowhere')
     expect(destination.unavailable).toBe('The budget is spent.')
-    expect(destination.line).toBe('Nothing will run until the cap moves.')
+    expect(destination.line).toBe('Nothing will run until the cap moves')
+    expect(destination.head).toEqual({ to: 'nowhere', note: '$20.00 of $20.00 spent' })
   })
 
   test('a finished task takes no message', () => {
@@ -153,6 +169,6 @@ describe('consoleDestination (REQ-921)', () => {
     })
 
     expect(destination.kind).toBe('discussion')
-    expect(destination.line).toContain('costs a model call')
+    expect(destination.head?.note).toContain('costs a model call')
   })
 })

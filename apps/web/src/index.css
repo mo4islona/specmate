@@ -129,7 +129,21 @@ select {
   line-height: 1.4;
 }
 
+/* A way out of the state, not a verb of it: readable, and quieter than a button. */
+.link-quiet {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-cyan) 30%, transparent);
+  color: color-mix(in srgb, var(--color-cyan) 85%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+}
+
+.link-quiet:hover {
+  border-bottom-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
 .button-primary,
+.button-attention,
 .button-secondary,
 .button-danger {
   display: inline-flex;
@@ -160,6 +174,18 @@ select {
   background: color-mix(in srgb, var(--color-phosphor) 82%, white);
 }
 
+/* The primary verb of a state that is waiting on the owner: same weight as
+   `.button-primary`, in the colour the rest of the screen uses for "your turn". */
+.button-attention {
+  border-color: var(--color-amber);
+  background: var(--color-amber);
+  color: var(--color-ground);
+}
+
+.button-attention:hover {
+  background: color-mix(in srgb, var(--color-amber) 82%, white);
+}
+
 .button-secondary {
   border-color: var(--color-border-bright);
   background: var(--color-elevated);
@@ -182,6 +208,7 @@ select {
 }
 
 .button-primary:disabled,
+.button-attention:disabled,
 .button-secondary:disabled,
 .button-danger:disabled {
   cursor: not-allowed;
@@ -267,8 +294,14 @@ select {
   line-height: 1.75;
 }
 
+/* The block's own padding owns its edges. Leaving the last child's margin
+   standing is what made a one-line balloon sit low in its own bubble. */
 .artifact-document > :first-child {
   margin-top: 0;
+}
+
+.artifact-document > :last-child {
+  margin-bottom: 0;
 }
 
 .artifact-document h1,

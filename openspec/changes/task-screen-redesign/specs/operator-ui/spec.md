@@ -49,18 +49,24 @@ thing to say SHALL show that one entry, with no placeholder and no empty state o
 
 ### Requirement: REQ-920 — The task is one page, and its surfaces are tabs
 
-The task view SHALL present one header row and a navigation column beside its content. The
+The task view SHALL present one header row and a navigation row directly beneath it. The
 header SHALL carry the task's title, its state as a sentence stating what the task is doing or
-what it needs from the owner, one line of repository context, and an indicator of the event
-stream's own health, labelled so that it cannot be read as the state of the work. The header
+what it needs from the owner, what qualifies that state, and an indicator of the event
+stream's own health, labelled so that it cannot be read as the state of the work. One line of
+repository context SHALL sit at the trailing end of the navigation row. The header
 SHALL read the same on every one of the task's surfaces. The navigation SHALL list those
 surfaces — the thread, the changed files, and the documents — each carrying its count where one
-is known, and SHALL mark the surface being shown. Every surface SHALL be addressable by URL and
+is known, and SHALL mark the surface being shown. It SHALL stay one row at every width,
+scrolling sideways rather than wrapping the header into a second row, and MUST NOT take a
+column of its own beside the content: the client already carries a task list down its left
+edge, and two navigations for one screen is what this requirement exists to prevent. Every
+surface SHALL be addressable by URL and
 open directly at that address. A surface that is planned but not built SHALL be listed and
 plainly marked unavailable rather than omitted. No fact SHALL be stated in two places: a count
-carried by a tab MUST NOT also be listed in the pipeline rail, and a surface MUST NOT restate
-the repository context the header already carries. Below a narrow viewport the navigation SHALL
-become a row above the content and keep its counts.
+carried by a tab MUST NOT also be listed in the pipeline rail, a surface MUST NOT restate
+the repository context the header already carries, and what qualifies the state — a coverage
+gap, the declared plan size, the tasks this one descends from — SHALL sit with the state rather
+than in the rail, which carries the pipeline and the spend and nothing else.
 
 #### Scenario: AC-957 — Reading a document without losing the task
 
@@ -207,12 +213,15 @@ way back.
 
 ### Requirement: REQ-912 — Decisions are cards, not log lines
 
-An open decision SHALL appear in the task view as a card visually distinct from ordinary thread
+An open decision SHALL appear in the task view visually distinct from ordinary thread
 entries, rendering its question as markdown, offering its options as direct actions alongside a
 free-text answer and an entry to its scoped discussion, and stating plainly when the task is
-stopped on it. While the decision is open its card SHALL be presented where the owner acts —
-directly above the one input (REQ-921) — rather than inside the task's history, and a decision
-the task is stopped on SHALL be presented ahead of one that is merely open. The discussion SHALL
+stopped on it. While the decision is open it SHALL be presented as the head of the one input
+that answers it (REQ-921) rather than as a separate surface above that input or inside the
+task's history: the question and the field that answers it are one thing, and a border between
+them is a place for the question to scroll out of view. Where more than one decision is open,
+one SHALL be shown at a time and a decision the task is stopped on SHALL be shown ahead of one
+that is merely open; the rest MUST NOT be stacked as further surfaces on the screen. The discussion SHALL
 render as the decision's conversation rather than as unrelated task comments. Answering or
 dismissing SHALL happen only through an explicit control. Once resolved, the decision SHALL stop
 being a card: it SHALL take its place in the thread at the point it was raised, as its exchange

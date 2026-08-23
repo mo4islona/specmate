@@ -77,11 +77,16 @@ const ACTIVITY_VERBS: Record<string, string> = {
 
 /** REQ-915: a live `stage.activity` event reads as "Editing src/foo.ts", not raw tool/target keys. */
 export function stageActivityLabel(event: TimelineEvent): string {
-  const tool = payloadValue(event, 'tool') ?? 'Unknown tool'
-  const target = payloadValue(event, 'target')
-  const verb = ACTIVITY_VERBS[tool] ?? tool
+  const { kind, target } = stageActivityParts(event)
 
-  return target ? `${verb} ${target}` : verb
+  return target ? `${kind} ${target}` : kind
+}
+
+/** The run log gives the verb and its target a column each; everywhere else they read as one line. */
+export function stageActivityParts(event: TimelineEvent): { kind: string; target: string } {
+  const tool = payloadValue(event, 'tool') ?? 'Unknown tool'
+
+  return { kind: ACTIVITY_VERBS[tool] ?? tool, target: payloadValue(event, 'target') ?? '' }
 }
 
 /**
@@ -132,15 +137,18 @@ export function eventDetail(
   const decisionId = payloadValue(event, 'decisionId')
   const decision = decisionId ? decisionsById.get(decisionId) : undefined
 
+  // `task.created` carries the title, which the header of every surface already
+  // states — repeating it as the thread's first body is a line saying nothing.
+  if (event.type === 'task.created') return null
+
   if (event.type === 'decision.raised') {
     return decision?.promptMd ?? payloadValue(event, 'key') ?? 'A decision was raised.'
   }
+  // The words alone: who answered is the side the entry sits on and what they
+  // did is its verb, so a body that opens with "Answered by owner:" says the
+  // line's own label back to it (REQ-919).
   if (event.type === 'decision.answered' || event.type === 'decision.dismissed') {
-    const verb = event.type === 'decision.answered' ? 'Answered' : 'Dismissed'
-    const actor = payloadValue(event, 'actor')
-    const by = actor ? ` by ${actor}` : ''
-
-    return decision?.answerMd ? `${verb}${by}: ${decision.answerMd}` : `${verb}${by}.`
+    return decision?.answerMd ?? null
   }
 
   // REQ-1208: a refused question is only refused out loud if its key is here.
@@ -293,6 +301,12 @@ export interface FeedEntry {
   readonly author: FeedAuthor
   /** Rendered beside the author: "answered", "commented", "asked". */
   readonly verb: string
+  /**
+   * The same event with nobody attached — "Task launched", "Gate approved".
+   * An entry that carries no words is a marker on the timeline rather than a
+   * turn in the conversation, and reads better without a voice.
+   */
+  readonly title: string
   readonly label: string
   readonly body: string | null
   /** The node whose run log explains this line, where one does. */
@@ -374,6 +388,7 @@ export function buildFeed({ events, messages, stages, decisionsById }: FeedInput
       at: String(event.createdAt),
       author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
       verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
+      title: eventTitle(event),
       label: feedLabel(event, stage),
       body: eventDetail(event, decisionsById),
       nodeKey: stage?.nodeKey ?? payloadValue(event, 'nodeKey'),
@@ -387,6 +402,7 @@ export function buildFeed({ events, messages, stages, decisionsById }: FeedInput
       at: String(message.createdAt),
       author: message.role === 'owner' ? 'owner' : 'guide',
       verb: message.role === 'owner' ? 'asked' : 'answered',
+      title: message.role === 'owner' ? 'Message sent' : 'Guide replied',
       label: message.role === 'owner' ? 'You' : 'Guide',
       body: message.contentMd,
       nodeKey: null,
