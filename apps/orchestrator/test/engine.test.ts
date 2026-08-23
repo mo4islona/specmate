@@ -558,6 +558,33 @@ describeDb('conversation scheduling and interruption', () => {
     expect((await reload(db, explicit.task.id)).status).toBe('research')
   })
 
+  test('guidance survives the attempt it was written for — AC-129', async () => {
+    const { engine, stagesDispatcher } = makeEngine({ stageAttemptCap: 3 })
+    const { task, graph } = await seed({ at: 'implement' })
+    await db.insert(feedback).values({
+      taskId: task.id,
+      kind: 'intervention',
+      textMd: 'Keep the migration reversible.',
+      target: { graphId: graph.id, nodeKey: 'implement' },
+    })
+    stagesDispatcher.plan(() => failedExecution())
+
+    await engine.tick()
+    await engine.idle()
+
+    // The first attempt claimed it and failed; the claim goes back so the
+    // retry's ledger carries it instead of losing it silently.
+    const [afterFailure] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(afterFailure?.consumedByStageId).toBeNull()
+
+    stagesDispatcher.plan(() => okExecution('implementer'))
+    await engine.tick()
+    await engine.idle()
+
+    const [afterAcceptance] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(afterAcceptance?.consumedByStageId).not.toBeNull()
+  })
+
   test('restart refuses a stage later than the one that failed', async () => {
     const { engine } = makeEngine()
     const { task } = await seed({ at: 'implement', status: 'failed', resume: 'implement' })

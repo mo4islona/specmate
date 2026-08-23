@@ -1590,6 +1590,10 @@ export class Engine {
         .returning({ id: stages.id })
       if (completed.length === 0) return null
 
+      // Parked is not accepted: the node is stuck, not done, and the guidance
+      // written for it belongs to whatever runs it next.
+      if (decision.kind === 'park') await this.releaseGuidance(tx, row.id)
+
       await emitEvent(tx, {
         taskId: task.id,
         stageId: row.id,
@@ -1729,6 +1733,7 @@ export class Engine {
 
         return 'interrupted' as const
       }
+      await this.releaseGuidance(tx, row.id)
       await emitEvent(tx, {
         taskId: task.id,
         stageId: row.id,
@@ -1775,6 +1780,22 @@ export class Engine {
    * the streak either already meets it or has broken, so nothing past that
    * row can change the answer.
    */
+  /**
+   * A run claims the guidance written for its node when it starts, and the
+   * runner renders it only while that run is still going. A failed attempt
+   * therefore used to take the text with it: the retry inserts a fresh stage
+   * row, does not re-claim the stamped one, and nothing is shown again —
+   * exactly the case guidance exists for. The claim is released here so the
+   * next attempt reads it, and holds only once a run carrying it is accepted
+   * (AC-129).
+   */
+  private async releaseGuidance(tx: DbClient, stageId: string): Promise<void> {
+    await tx
+      .update(feedback)
+      .set({ consumedByStageId: null })
+      .where(eq(feedback.consumedByStageId, stageId))
+  }
+
   private async attemptHistory(
     db: DbClient,
     taskId: string,
@@ -1982,6 +2003,7 @@ export class Engine {
           updatedAt: new Date(),
         })
         .where(eq(stages.id, row.id))
+      await this.releaseGuidance(tx, row.id)
       await emitEvent(tx, {
         taskId: task.id,
         stageId: row.id,
@@ -2133,6 +2155,8 @@ export class Engine {
         throw new StageStopConflictError(options.stageId)
       const graph = await latestGraph(tx, task.id)
       if (!graph || graph.id !== options.graphId) throw new StageStopConflictError(options.stageId)
+
+      await this.releaseGuidance(tx, stage.id)
 
       await emitEvent(tx, {
         taskId: task.id,

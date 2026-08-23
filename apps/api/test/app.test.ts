@@ -1179,6 +1179,158 @@ describeDb('api', () => {
     })
   })
 
+  test('an unpinned comment becomes guidance for the node the task stands on — AC-1046', async () => {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `guidance-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Guidance fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/guidance-fixture',
+        status: 'implement',
+      })
+      .returning()
+    if (!task) throw new Error('task insert returned no row')
+    createdTaskIds.push(task.id)
+
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({
+        taskId: task.id,
+        dag: {
+          entry: 'implement',
+          nodes: [
+            { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+            { kind: 'stage', key: 'verify', role: 'verifier', binding: 'role_default' },
+          ],
+        },
+      })
+      .returning()
+    if (!graph) throw new Error('run graph insert returned no row')
+
+    const [running] = await db
+      .insert(stages)
+      .values({
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'implement',
+        role: 'implementer',
+        provider: 'claude-code',
+        status: 'running',
+        attempt: 0,
+      })
+      .returning()
+    if (!running) throw new Error('stage insert returned no row')
+
+    const sent = await app.request(`/api/v1/tasks/${task.id}/feedback`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ comment: 'Keep the migration reversible.' }),
+    })
+    expect(sent.status).toBe(201)
+
+    const [guidance] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(guidance).toMatchObject({
+      kind: 'intervention',
+      textMd: 'Keep the migration reversible.',
+      target: { graphId: graph.id, nodeKey: 'implement' },
+      consumedByStageId: null,
+    })
+
+    // The text has to come back into the thread it was typed into.
+    const [event] = await db.select().from(events).where(eq(events.taskId, task.id))
+    expect(event?.type).toBe('feedback.comment')
+    expect(event?.payload).toMatchObject({ nodeKey: 'implement', guidance: true })
+  })
+
+  test('with nothing running, guidance addresses the node that runs next', async () => {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `next-node-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Next node fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/next-node-fixture',
+        status: 'human_spec_gate',
+      })
+      .returning()
+    if (!task) throw new Error('task insert returned no row')
+    createdTaskIds.push(task.id)
+
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({
+        taskId: task.id,
+        dag: {
+          entry: 'research',
+          nodes: [
+            { kind: 'stage', key: 'research', role: 'researcher', binding: 'role_default' },
+            { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['research'] },
+            { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+          ],
+        },
+      })
+      .returning()
+    if (!graph) throw new Error('run graph insert returned no row')
+
+    await db.insert(stages).values({
+      taskId: task.id,
+      graphId: graph.id,
+      nodeKey: 'research',
+      role: 'researcher',
+      provider: 'claude-code',
+      status: 'succeeded',
+      attempt: 0,
+    })
+
+    const sent = await app.request(`/api/v1/tasks/${task.id}/feedback`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ comment: 'Watch the migration order.' }),
+    })
+    expect(sent.status).toBe(201)
+
+    const [guidance] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(guidance).toMatchObject({
+      kind: 'intervention',
+      target: { graphId: graph.id, nodeKey: 'implement' },
+    })
+  })
+
+  test('a finished task takes a note, not guidance no run will read', async () => {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `archived-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Archived fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/archived-fixture',
+        status: 'archived',
+      })
+      .returning()
+    if (!task) throw new Error('task insert returned no row')
+    createdTaskIds.push(task.id)
+
+    await db.insert(runGraphs).values({
+      taskId: task.id,
+      dag: {
+        entry: 'implement',
+        nodes: [{ kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' }],
+      },
+    })
+
+    const sent = await app.request(`/api/v1/tasks/${task.id}/feedback`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ comment: 'For the record.' }),
+    })
+    expect(sent.status).toBe(201)
+
+    const [note] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(note?.kind).toBe('comment')
+    expect(note?.target).toBeNull()
+  })
+
   test('delegates gate actions and rejects actions away from a gate', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
 

@@ -346,6 +346,43 @@ export function createApp({
     return task
   }
 
+  /**
+   * The node an unpinned comment is addressed to (REQ-1008): the one running
+   * now, or the next one that has yet to run. Derived here rather than asked of
+   * the caller — a destination the owner picks from a list is the control this
+   * change removed, and the client's own reading of the state must not be what
+   * decides where the text lands.
+   */
+  async function addressedNode(
+    task: Awaited<ReturnType<typeof requireTask>>,
+  ): Promise<{ graphId: string; nodeKey: string } | null> {
+    if (isTerminal(task.status)) return null
+
+    const [graph] = await db
+      .select()
+      .from(runGraphs)
+      .where(eq(runGraphs.taskId, task.id))
+      .orderBy(desc(runGraphs.version))
+      .limit(1)
+    if (!graph) return null
+
+    const [running] = await db
+      .select({ nodeKey: stages.nodeKey })
+      .from(stages)
+      .where(and(eq(stages.taskId, task.id), eq(stages.status, 'running')))
+      .limit(1)
+    if (running) return { graphId: graph.id, nodeKey: running.nodeKey }
+
+    const run = await db
+      .select({ nodeKey: stages.nodeKey })
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+    const started = new Set(run.map((row) => row.nodeKey))
+    const next = graph.dag.nodes.find((node) => node.kind === 'stage' && !started.has(node.key))
+
+    return next ? { graphId: graph.id, nodeKey: next.key } : null
+  }
+
   async function requireDecisionTaskId(decisionId: string): Promise<string> {
     const [row] = await db
       .select({ taskId: decisions.taskId })
@@ -983,6 +1020,11 @@ export function createApp({
         throw new ApiError('not_found', 'stage was not found for this task', { status: 404 })
       }
 
+      // A comment pinned to a stage is commentary on what that stage did; an
+      // unpinned one is addressed to whatever the task's state points at, and
+      // that is the only form any agent ever reads (REQ-1008).
+      const addressed = pinnedStage ? null : await addressedNode(task)
+
       const result = await db.transaction(async (tx) => {
         const [comment] = await tx
           .insert(feedback)
@@ -991,8 +1033,11 @@ export function createApp({
             stageId: pinnedStage?.id,
             role: pinnedStage?.role,
             provider: pinnedStage?.provider,
-            kind: 'comment',
+            kind: addressed ? 'intervention' : 'comment',
             textMd: input.comment,
+            ...(addressed && {
+              target: { graphId: addressed.graphId, nodeKey: addressed.nodeKey },
+            }),
           })
           .returning()
         if (!comment) {
@@ -1009,7 +1054,10 @@ export function createApp({
               feedbackId: comment.id,
               comment: comment.textMd,
               stageId: pinnedStage?.id ?? null,
-              nodeKey: pinnedStage?.nodeKey ?? null,
+              nodeKey: pinnedStage?.nodeKey ?? addressed?.nodeKey ?? null,
+              // The thread states where the text went; it can only do that if
+              // the event says whether it went anywhere at all.
+              guidance: addressed !== null,
             },
           })
           .returning()
