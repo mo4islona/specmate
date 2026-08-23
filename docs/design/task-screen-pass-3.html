@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Task screen — pass 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --ground: #07100c;
+  --surface: #0b1711;
+  --elevated: #112219;
+  --text: #d8f3df;
+  --muted: #7f9b88;
+  --phosphor: #74f49a;
+  --amber: #f2bd5a;
+  --danger: #ff6f6f;
+  --cyan: #65cbd4;
+  --border: #1f3929;
+  --border-bright: #37654a;
+  --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --sans: "Inter", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(to right, color-mix(in srgb, var(--border) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--border) 18%, transparent) 1px, transparent 1px),
+    var(--ground);
+  background-size: 4rem 4rem;
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+.page { max-width: 94rem; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+
+/* ── page furniture ───────────────────────────────────────────── */
+
+.micro { font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.15em; line-height: 1.25; text-transform: uppercase; }
+.muted { color: var(--muted); }
+.amber { color: var(--amber); }
+.phos  { color: var(--phosphor); }
+.cyan  { color: var(--cyan); }
+.dang  { color: var(--danger); }
+
+.doc-title { font-size: 1.9rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.doc-lede { max-width: 48rem; margin: 0.9rem 0 0; color: var(--muted); font-size: 0.95rem; line-height: 1.7; }
+.doc-lede strong { color: var(--text); font-weight: 600; }
+
+.rule { height: 1px; background: var(--border); border: 0; margin: 3.25rem 0; }
+
+.caption { margin: 0 0 1rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.9rem; }
+.caption .n { font-family: var(--mono); font-size: 0.68rem; font-weight: 700; color: var(--ground); background: var(--phosphor); padding: 0.1rem 0.45rem; }
+.caption h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.caption p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+/* ── the artboard ─────────────────────────────────────────────── */
+
+.screen { border: 1px solid var(--border-bright); background: var(--ground); padding: 1.1rem 1.35rem 1.5rem; overflow: hidden; }
+
+/* Three columns: where you are, what you are reading, what the machine is
+   doing. The nav column is why the header is one row and stays one row when a
+   fourth tab arrives. */
+.app { display: grid; gap: 1.6rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 62rem) {
+  .app { grid-template-columns: 8rem minmax(0, 1fr) 17rem; }
+  .app.no-rail { grid-template-columns: 8rem minmax(0, 1fr); }
+  .rail { border-left: 1px solid var(--border); padding-left: 1.4rem; }
+}
+
+/* ── compact header: one row, and no tabs on it ────────────────── */
+
+.head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.55rem; margin-bottom: 1.1rem;
+}
+.head h1 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+.head .state { display: inline-flex; align-items: center; gap: 0.42rem; font-size: 0.79rem; }
+.head .repo { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+.head .sp { flex: 1 1 1.5rem; }
+/* Reads as "the stream is up", never as "the task is fine" — which is why it
+   sits away from the state sentence. */
+.stream { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+/* ── the nav column ───────────────────────────────────────────── */
+
+.nav { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; align-self: start; }
+@media (max-width: 61.99rem) { .nav { flex-direction: row; flex-wrap: wrap; gap: 0.1rem 0.4rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem } }
+.nav a {
+  display: flex; align-items: baseline; gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted);
+  padding: 0.4rem 0.5rem; border-left: 2px solid transparent;
+  text-decoration: none; cursor: default;
+}
+@media (max-width: 61.99rem) { .nav a { border-left: 0; border-bottom: 2px solid transparent } }
+.nav a .c { color: color-mix(in srgb, var(--muted) 65%, transparent); font-size: 0.6rem; }
+.nav a.on { color: var(--phosphor); border-left-color: var(--phosphor); background: color-mix(in srgb, var(--phosphor) 6%, transparent); }
+@media (max-width: 61.99rem) { .nav a.on { border-left-color: transparent; border-bottom-color: var(--phosphor) } }
+.nav a.soon { color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.nav a.soon .c { font-size: 0.55rem; letter-spacing: 0.08em; }
+.nav a:hover { color: var(--text); }
+.nav .sep { height: 1px; background: var(--border); margin: 0.55rem 0.5rem; }
+@media (max-width: 61.99rem) { .nav .sep { display: none } }
+
+.dot { width: 0.45rem; height: 0.45rem; border-radius: 999px; flex: none; display: inline-block; }
+.dot-amber { background: var(--amber); }
+.dot-phos  { background: var(--phosphor); }
+.dot-done  { background: var(--border-bright); }
+.dot-dang  { background: var(--danger); }
+.breathe { animation: breath 1.8s ease-in-out infinite; }
+@keyframes breath { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
+
+/* ── the feed ─────────────────────────────────────────────────── */
+
+.col { display: flex; flex-direction: column; min-width: 0; }
+.feed { min-height: 14rem; }
+.feed > .micro { display: block; margin-bottom: 0.8rem; }
+.feed ol { list-style: none; margin: 0; padding: 0; }
+
+.line { display: grid; grid-template-columns: 3.2rem 8.5rem minmax(0, 1fr); gap: 0.9rem; align-items: baseline; padding: 0.4rem 0; font-size: 0.82rem; }
+@media (max-width: 40rem) { .line { grid-template-columns: 3.2rem minmax(0, 1fr) } .line .who, .line .what { grid-column: 2 } }
+.line time { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+.line .who { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
+.line .who.you { color: var(--phosphor); }
+.line .what { color: var(--text); min-width: 0; }
+.line .what.dim { color: var(--muted); }
+.line a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent); }
+
+.turn { padding: 0.5rem 0; }
+.turn .said { grid-column: 3; margin: 0.28rem 0 0; color: var(--text); font-size: 0.85rem; line-height: 1.65; }
+@media (max-width: 40rem) { .turn .said { grid-column: 2 } }
+.turn .said.quoted { color: var(--muted); }
+.turn .more { font-family: var(--mono); font-size: 0.62rem; color: var(--cyan); margin-left: 0.4rem; }
+
+/* Shown only when the console has scrolled below the fold — a jump, not a
+   permanent label. `.feed-up` is its mirror: the feed scrolls, nothing ages out
+   of it, so a scrolled feed always has something above. */
+.feed-jump { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; padding: 0.4rem 0; font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.06em; color: var(--amber); text-transform: uppercase; }
+.feed-up { display: flex; align-items: center; gap: 0.6rem; padding: 0 0 0.5rem; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--muted); }
+.feed-up::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* ── the console: the one input ───────────────────────────────── */
+
+.console { border: 1px solid var(--border-bright); background: var(--surface); margin-top: 1.1rem; }
+.console.asking { border-color: color-mix(in srgb, var(--amber) 60%, var(--border)); border-left-width: 2px; border-left-color: var(--amber); background: color-mix(in srgb, var(--amber) 3%, var(--surface)); }
+.console.running { border-left-width: 2px; border-left-color: var(--phosphor); }
+.console.stopped { border-left-width: 2px; border-left-color: var(--danger); }
+.console.spent { border-left-width: 2px; border-left-color: var(--border-bright); opacity: 0.82; }
+
+.console-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 0.6rem 0.9rem; }
+.pager { display: flex; align-items: center; gap: 0.4rem; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+.pager b { width: 1.1rem; height: 1.1rem; display: grid; place-items: center; font-weight: 600; font-size: 0.6rem; border: 1px solid var(--border-bright); color: var(--muted); }
+.pager b.on { background: var(--amber); border-color: var(--amber); color: var(--ground); }
+
+.console-q { margin: 0; padding: 0.85rem 0.9rem 0; font-size: 0.92rem; line-height: 1.7; }
+.console-row { display: flex; gap: 0.7rem; padding: 0.8rem 0.9rem; }
+@media (max-width: 40rem) { .console-row { flex-direction: column } }
+.console-row textarea { flex: 1; min-width: 0; min-height: 3.2rem; resize: vertical; border: 1px solid var(--border-bright); border-radius: 2px; background: var(--ground); color: var(--text); font: inherit; font-size: 0.86rem; padding: 0.58rem 0.7rem; }
+.console-row textarea::placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); }
+.console-row textarea[disabled] { background: color-mix(in srgb, var(--ground) 70%, var(--surface)); border-style: dashed; color: var(--muted); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2.4rem; padding: 0.5rem 0.85rem; border: 1px solid; font-family: var(--mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; cursor: default; }
+.btn-primary { border-color: var(--amber); background: var(--amber); color: var(--ground); flex: none; min-width: 6.5rem; }
+.btn-primary.go { border-color: var(--phosphor); background: var(--phosphor); }
+.btn-primary[disabled] { border-color: var(--border-bright); background: transparent; color: var(--muted); }
+.btn-ghost { display: inline-flex; align-items: center; min-height: 1.9rem; padding: 0.28rem 0.6rem; border: 1px solid transparent; color: var(--muted); font-family: var(--mono); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; cursor: default; }
+.btn-ghost:hover { border-color: var(--border-bright); color: var(--text); }
+
+/* One footer per console: quiet verbs left, the single destination sentence
+   right. Never a second copy of the destination in a header above it. */
+.console-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; border-top: 1px solid var(--border); padding: 0.45rem 0.7rem; }
+.console-foot .spacer { flex: 1 1 1rem; }
+.console-foot .hint { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+.console-foot .hint b { color: color-mix(in srgb, var(--text) 80%, transparent); font-weight: 400; }
+.act { font-family: var(--mono); font-size: 0.62rem; color: color-mix(in srgb, var(--cyan) 85%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--cyan) 30%, transparent); }
+
+/* Only states with no destination sentence of their own keep a header: a gate
+   names the gate whose verbs those are. */
+.dest { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.dest .arrow { color: var(--muted); }
+.dest .to { color: var(--phosphor); font-weight: 600; }
+.dest .to.amber { color: var(--amber); }
+.dest .to.dang { color: var(--danger); }
+.dest .to.plain { color: var(--muted); }
+
+.states { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.states .lbl { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.4rem; }
+
+/* ── the rail ─────────────────────────────────────────────────── */
+
+.rail { min-width: 0; display: flex; flex-direction: column; gap: 1.7rem; }
+.rail .head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.rail .head-row .micro { margin: 0 0 0.6rem; }
+.rail > section > .micro { display: block; margin-bottom: 0.6rem; }
+
+.node { display: grid; grid-template-columns: 0.75rem minmax(0, 1fr) auto; gap: 0.55rem; align-items: baseline; padding: 0.3rem 0; font-size: 0.79rem; color: var(--muted); }
+.node .dot { margin-top: 0.32rem; }
+.node.done .name { color: var(--text); }
+.node.now { color: var(--amber); }
+.node.now .name { color: var(--amber); font-weight: 500; }
+.node.live .name { color: var(--phosphor); font-weight: 500; }
+.node.stop .name { color: var(--danger); font-weight: 500; }
+.node.stop .fact { color: var(--danger); }
+.node .fact { font-family: var(--mono); font-size: 0.61rem; color: var(--muted); text-align: right; }
+.node.sel { background: color-mix(in srgb, var(--phosphor) 7%, transparent); box-shadow: -0.45rem 0 0 color-mix(in srgb, var(--phosphor) 7%, transparent), 0.45rem 0 0 color-mix(in srgb, var(--phosphor) 7%, transparent); }
+
+.node-sub { display: grid; grid-template-columns: 0.75rem minmax(0, 1fr); gap: 0.55rem; padding: 0 0 0.4rem; }
+.node-sub p { margin: 0.1rem 0 0.45rem; font-family: var(--mono); font-size: 0.62rem; color: var(--muted); overflow-wrap: anywhere; }
+
+.node-rest { display: grid; grid-template-columns: 0.75rem minmax(0, 1fr); gap: 0.55rem; align-items: baseline; margin-top: 0.3rem; padding: 0.38rem 0; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }
+.node-rest .chev { font-family: var(--mono); font-size: 0.7rem; }
+
+.meter { margin-top: 0.6rem; }
+.meter-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: 0.77rem; }
+.meter-row .v { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
+.bar { height: 2px; background: var(--border); margin-top: 0.32rem; }
+.bar i { display: block; height: 100%; background: var(--phosphor); }
+.bar i.warn { background: var(--danger); }
+
+/* ── the run log ──────────────────────────────────────────────── */
+
+.log { border: 1px solid var(--border); background: var(--surface); }
+.log-head { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 0.65rem 0.9rem; }
+.log-facts { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); margin: 0.25rem 0 0; }
+.log ol { list-style: none; margin: 0; padding: 0.5rem 0.9rem 0.8rem; }
+.log li { display: grid; grid-template-columns: 4.2rem 8rem minmax(0, 1fr); gap: 0.85rem; align-items: baseline; padding: 0.18rem 0; font-family: var(--mono); font-size: 0.69rem; color: var(--muted); }
+@media (max-width: 40rem) { .log li { grid-template-columns: 4.2rem minmax(0, 1fr) } .log li .t { grid-column: 2 } }
+.log li .t { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.log li.ok .k { color: var(--phosphor); }
+.log li.ask .k { color: var(--amber); }
+.log-foot { display: flex; align-items: center; gap: 0.5rem; border-top: 1px solid var(--border); padding: 0.45rem 0.7rem; }
+
+/* ── FILES: the GitHub-shaped diff view ───────────────────────── */
+
+.files-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; border: 1px solid var(--border); background: var(--surface); padding: 0.5rem 0.7rem; margin-bottom: 0.9rem; }
+.filter { display: flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border-bright); background: var(--ground); padding: 0.32rem 0.55rem; min-width: 13rem; color: color-mix(in srgb, var(--muted) 80%, transparent); font-size: 0.77rem; }
+.files-bar .sp { flex: 1 1 1rem; }
+.tally { font-family: var(--mono); font-size: 0.65rem; color: var(--muted); }
+.viewed-of { display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--mono); font-size: 0.65rem; color: var(--muted); }
+.viewed-of .bar { width: 3.5rem; margin: 0; }
+.select { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--border-bright); background: var(--elevated); padding: 0.3rem 0.55rem; font-family: var(--mono); font-size: 0.64rem; color: var(--text); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.files-grid { display: grid; gap: 1.1rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 62rem) { .files-grid { grid-template-columns: 15.5rem minmax(0, 1fr) } }
+
+.tree { font-size: 0.77rem; align-self: start; }
+@media (min-width: 62rem) { .tree { border-right: 1px solid var(--border); padding-right: 1rem } }
+.tree .row { display: flex; align-items: center; gap: 0.42rem; padding: 0.16rem 0; color: var(--muted); min-width: 0; }
+.tree .row.dir { color: var(--text); font-family: var(--mono); font-size: 0.7rem; }
+.tree .row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-family: var(--mono); font-size: 0.7rem; }
+.tree .row.on { color: var(--phosphor); }
+.tree .row .st { font-family: var(--mono); font-size: 0.58rem; flex: none; }
+.tree .row .mk { flex: none; font-family: var(--mono); font-size: 0.62rem; width: 0.8rem; text-align: center; }
+.tree .row .mk.a { color: var(--phosphor); }
+.tree .row .mk.m { color: var(--amber); }
+
+.fcard { border: 1px solid var(--border); background: var(--surface); margin-bottom: 0.85rem; }
+.fcard-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.7rem; border-bottom: 1px solid var(--border); background: var(--elevated); padding: 0.45rem 0.65rem; }
+.fcard.shut .fcard-head { border-bottom: 0; }
+.fcard-head .chev { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); width: 0.8rem; flex: none; }
+.fpath { font-family: var(--mono); font-size: 0.73rem; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.fcard-head .sp { flex: 1 1 0.5rem; }
+.stat { font-family: var(--mono); font-size: 0.63rem; display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
+.blocks { display: inline-flex; gap: 2px; }
+.blocks i { width: 0.42rem; height: 0.42rem; display: block; background: var(--border); }
+.blocks i.a { background: var(--phosphor); }
+.blocks i.d { background: var(--danger); }
+.viewed { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--mono); font-size: 0.63rem; color: var(--muted); flex: none; }
+.box { width: 0.78rem; height: 0.78rem; border: 1px solid var(--border-bright); display: inline-grid; place-items: center; font-size: 0.58rem; line-height: 1; flex: none; }
+.box.on { background: var(--phosphor); border-color: var(--phosphor); color: var(--ground); }
+.icn { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); flex: none; }
+
+.diff { font-family: var(--mono); font-size: 0.715rem; line-height: 1.62; overflow-x: auto; }
+.dl { display: grid; grid-template-columns: 2.9rem 2.9rem 1rem minmax(0, 1fr); white-space: pre; min-width: 0; }
+.dl .ln { color: color-mix(in srgb, var(--muted) 62%, transparent); text-align: right; padding-right: 0.55rem; user-select: none; }
+.dl .sg { text-align: center; color: var(--muted); }
+.dl .cd { padding-right: 1rem; color: var(--text); }
+.dl.add { background: color-mix(in srgb, var(--phosphor) 9%, transparent); }
+.dl.add .sg { color: var(--phosphor); }
+.dl.del { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.dl.del .sg { color: var(--danger); }
+.dh { display: grid; grid-template-columns: 5.8rem 1rem minmax(0, 1fr); background: color-mix(in srgb, var(--cyan) 7%, transparent); color: var(--cyan); font-size: 0.7rem; white-space: pre; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.dh .ex { text-align: center; color: var(--muted); background: color-mix(in srgb, var(--cyan) 5%, transparent); user-select: none; }
+.dl.more .cd { color: var(--muted); }
+
+.sy-k { color: var(--amber); }
+.sy-s { color: var(--phosphor); }
+.sy-t { color: var(--cyan); }
+.sy-c { color: var(--muted); font-style: italic; }
+
+/* ── DOCS ─────────────────────────────────────────────────────── */
+
+.docs-grid { display: grid; gap: 1.1rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 62rem) { .docs-grid { grid-template-columns: 14rem minmax(0, 1fr) } .doclist { border-right: 1px solid var(--border); padding-right: 1rem } }
+.doclist section { margin-bottom: 1.05rem; }
+.doclist .micro { display: block; margin-bottom: 0.35rem; }
+.doclist .row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; padding: 0.22rem 0 0.22rem 0.55rem; border-left: 2px solid transparent; font-size: 0.79rem; color: var(--muted); }
+.doclist .row.on { border-left-color: var(--phosphor); color: var(--phosphor); background: color-mix(in srgb, var(--phosphor) 6%, transparent); }
+.doclist .row .when { font-family: var(--mono); font-size: 0.58rem; }
+
+.docpane { border: 1px solid var(--border); background: var(--surface); min-width: 0; }
+.docpane-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; border-bottom: 1px solid var(--border); background: var(--elevated); padding: 0.45rem 0.75rem; }
+.docpane-head .sp { flex: 1 1 0.5rem; }
+.docbody { padding: 1.1rem 1.35rem 1.5rem; color: var(--text); font-size: 0.9rem; line-height: 1.75; min-width: 0; }
+.docbody h2 { margin: 0 0 0.6em; font-size: 1.3rem; font-weight: 650; }
+.docbody h3 { margin: 1.5em 0 0.55em; font-size: 1.02rem; font-weight: 650; color: var(--phosphor); }
+.docbody p { margin: 0.85em 0; }
+.docbody ul { margin: 0.85em 0; padding-left: 1.4rem; list-style: square; }
+.docbody li { margin: 0.3em 0; }
+.docbody code { border: 1px solid var(--border); background: var(--ground); padding: 0.1em 0.35em; color: var(--phosphor); font-family: var(--mono); font-size: 0.85em; }
+.docbody strong { font-weight: 650; }
+
+/* ── the closing table ────────────────────────────────────────── */
+
+.moved { border-collapse: collapse; width: 100%; margin-top: 1.1rem; font-size: 0.85rem; }
+.moved th, .moved td { border: 1px solid var(--border); padding: 0.55rem 0.75rem; text-align: left; vertical-align: top; }
+.moved th { background: var(--elevated); font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.moved td:first-child { color: var(--muted); }
+.moved .to { color: var(--text); }
+.moved code { font-family: var(--mono); font-size: 0.85em; color: var(--phosphor); }
+.wrap-x { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="doc-title">Task screen — pass 3</h1>
+  <p class="doc-lede">
+    Three rules. <strong>The column is the conversation, the rail is the machine</strong> — stage
+    lifecycle, tool calls and commits leave the feed and live behind a pipeline node.
+    <strong>One input, at the bottom</strong>, labelled by whatever is being asked of you — no mode
+    to set, no target to pick, no second field. <strong>Files and Docs are tabs on this task, not
+    separate pages</strong> — a nav column on the left, so the header stays one row and a fourth tab
+    costs nothing.
+  </p>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 1 -->
+  <div class="caption">
+    <span class="n">1</span>
+    <h2>Thread — waiting on you</h2>
+    <p>The state the screenshot was in. Header is one row; where you are moved to the left column.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-amber breathe"></span><span class="amber">Waiting on you</span> <span class="muted">— 4 questions from the kickoff brief</span></span>
+      <span class="repo">mo4islona/specmate · main</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app">
+      <nav class="nav">
+        <a class="on" href="#1">Thread</a>
+        <a href="#4">Files <span class="c">12</span></a>
+        <a href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div class="col">
+        <div class="feed">
+          <span class="micro muted">Conversation</span>
+          <ol>
+            <li class="line">
+              <time>15:12</time><span class="who you">You</span>
+              <span class="what">Launched this task on <span style="font-family:var(--mono);font-size:0.86em">main</span>.</span>
+            </li>
+            <li class="line">
+              <time>15:38</time><span class="who">Planning</span>
+              <span class="what dim">Wrote a plan — <a href="#5">proposal.md</a></span>
+            </li>
+            <li class="line turn">
+              <time>15:41</time><span class="who">Kickoff gate</span><span class="what dim">asked</span>
+              <p class="said quoted">Harness coverage for the area this task touches is <strong style="color:var(--text)">partial</strong>. Task intake is covered unevenly, and the gap falls exactly where this change lands.<span class="more">read the whole thing →</span></p>
+            </li>
+            <li class="line turn">
+              <time>15:46</time><span class="who you">You</span><span class="what dim">answered</span>
+              <p class="said">Build the harness first</p>
+            </li>
+            <li class="line">
+              <time>15:46</time><span class="who">Kickoff brief</span>
+              <span class="what dim">Raised 4 questions</span>
+            </li>
+          </ol>
+          <div class="feed-jump">↓ answering below</div>
+        </div>
+
+        <div class="console asking">
+          <div class="console-head">
+            <span class="micro amber">Kickoff brief · question 1 of 4</span>
+            <span class="pager"><span>‹</span><b class="on">1</b><b>2</b><b>3</b><b>4</b><span>›</span></span>
+          </div>
+          <p class="console-q">Should intake collapse to a single free-text field, with repo, base branch and budget inferred by the planner and confirmed at the kickoff gate?</p>
+          <div class="console-row">
+            <textarea placeholder="Answer…"></textarea>
+            <span class="btn btn-primary">Answer</span>
+          </div>
+          <div class="console-foot">
+            <span class="btn-ghost">Dismiss</span><span class="btn-ghost">Discuss</span>
+            <span class="spacer"></span>
+            <span class="hint">Unblocks <b>Kickoff brief</b> · 3 questions after this one</span>
+            <span class="act">just comment instead</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <section>
+          <div class="head-row"><span class="micro muted">Pipeline</span><span class="micro muted" style="font-size:0.59rem">opus-5 · max</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Planning</span><span class="fact">5m 21s · $0.91</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Kickoff brief</span><span class="fact">1m 36s · 04965d0</span></div>
+          <div class="node now"><span class="dot dot-amber breathe"></span><span class="name">Kickoff gate</span><span class="fact">waiting on you</span></div>
+          <div class="node-rest"><span class="chev">→</span><span>Research, Spec review, Spec gate, <span class="muted">+6 more</span></span></div>
+        </section>
+        <section>
+          <span class="micro muted">Spend</span>
+          <div class="meter"><div class="meter-row"><span>Cost</span><span class="v">$2.57 of $20.00</span></div><div class="bar"><i style="width:13%"></i></div></div>
+          <div class="meter"><div class="meter-row"><span>Agent-minutes</span><span class="v">7.0 of 180</span></div><div class="bar"><i style="width:4%"></i></div></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 2 -->
+  <div class="caption">
+    <span class="n">2</span>
+    <h2>Thread — where the stages went</h2>
+    <p>Clicking <em>Kickoff brief</em> in the rail opens its run log over the feed. Everything the thread used to carry inline, plus the one place a comment gets pinned to an older stage.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-amber breathe"></span><span class="amber">Waiting on you</span> <span class="muted">— 4 questions from the kickoff brief</span></span>
+      <span class="repo">mo4islona/specmate · main</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app">
+      <nav class="nav">
+        <a class="on" href="#2">Thread</a>
+        <a href="#4">Files <span class="c">12</span></a>
+        <a href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div class="col">
+        <div class="log">
+          <div class="log-head">
+            <div>
+              <span class="micro" style="color:var(--text)">Kickoff brief · run log</span>
+              <p class="log-facts">1m 36s · $1.66 · 24.1k tokens · opus-5 · <span class="cyan">04965d0</span></p>
+            </div>
+            <span class="btn-ghost">✕ close</span>
+          </div>
+          <ol>
+            <li class="ok"><span class="k">15:44:31</span><span class="k">Stage started</span><span class="t"></span></li>
+            <li><span class="k">15:44:33</span><span class="k">Reading</span><span class="t">openspec/changes/task-intake/proposal.md</span></li>
+            <li><span class="k">15:44:41</span><span class="k">Searching</span><span class="t">apps/api/test/app.test.ts</span></li>
+            <li><span class="k">15:44:52</span><span class="k">Reading</span><span class="t">packages/core/src/state.ts</span></li>
+            <li><span class="k">15:45:18</span><span class="k">Writing</span><span class="t">openspec/changes/task-intake/design.md</span></li>
+            <li class="ask"><span class="k">15:45:47</span><span class="k">Question</span><span class="t">Should intake collapse to a single free-text field…</span></li>
+            <li class="ask"><span class="k">15:45:48</span><span class="k">Question</span><span class="t">Should task type be inferred and stored with a default…</span></li>
+            <li class="ask"><span class="k">15:45:49</span><span class="k">Question</span><span class="t">Does the single field create a draft task immediately…</span></li>
+            <li class="ask"><span class="k">15:45:51</span><span class="k">Question</span><span class="t">Should repos-as-projects be split into its own change…</span></li>
+            <li class="ok"><span class="k">15:46:02</span><span class="k">Stage accepted</span><span class="t cyan">04965d0</span></li>
+          </ol>
+          <div class="log-foot">
+            <span class="btn-ghost">💬 Comment on this run</span>
+            <span class="spacer" style="flex:1"></span>
+            <span class="hint" style="font-family:var(--mono);font-size:0.62rem;color:var(--muted)">pinned here, not picked from a list</span>
+          </div>
+        </div>
+
+        <div class="console asking">
+          <div class="console-head">
+            <span class="micro amber">Kickoff brief · question 1 of 4</span>
+            <span class="pager"><span>‹</span><b class="on">1</b><b>2</b><b>3</b><b>4</b><span>›</span></span>
+          </div>
+          <p class="console-q">Should intake collapse to a single free-text field, with repo, base branch and budget inferred by the planner and confirmed at the kickoff gate?</p>
+          <div class="console-row"><textarea placeholder="Answer…"></textarea><span class="btn btn-primary">Answer</span></div>
+          <div class="console-foot">
+            <span class="btn-ghost">Dismiss</span><span class="btn-ghost">Discuss</span>
+            <span class="spacer"></span>
+            <span class="hint">Unblocks <b>Kickoff brief</b> · 3 questions after this one</span>
+            <span class="act">just comment instead</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <section>
+          <div class="head-row"><span class="micro muted">Pipeline</span><span class="micro muted" style="font-size:0.59rem">opus-5 · max</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Planning</span><span class="fact">5m 21s · $0.91</span></div>
+          <div class="node done sel"><span class="dot dot-phos"></span><span class="name" style="color:var(--phosphor)">Kickoff brief</span><span class="fact">1m 36s · 04965d0</span></div>
+          <div class="node now"><span class="dot dot-amber breathe"></span><span class="name">Kickoff gate</span><span class="fact">waiting on you</span></div>
+          <div class="node-rest"><span class="chev">→</span><span>Research, Spec review, Spec gate, <span class="muted">+6 more</span></span></div>
+        </section>
+        <section>
+          <span class="micro muted">Spend</span>
+          <div class="meter"><div class="meter-row"><span>Cost</span><span class="v">$2.57 of $20.00</span></div><div class="bar"><i style="width:13%"></i></div></div>
+          <div class="meter"><div class="meter-row"><span>Agent-minutes</span><span class="v">7.0 of 180</span></div><div class="bar"><i style="width:4%"></i></div></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 3 -->
+  <div class="caption">
+    <span class="n">3</span>
+    <h2>Thread — running, nothing needs you</h2>
+    <p>The console drops back to a plain message box. The live stage reports in the rail, not in the feed. The feed scrolls; nothing has aged out of it.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-phos breathe"></span><span class="phos">Implementing</span> <span class="muted">— 4m 12s, editing packages/core/src/state.ts</span></span>
+      <span class="repo">mo4islona/specmate · main</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app">
+      <nav class="nav">
+        <a class="on" href="#3">Thread</a>
+        <a href="#4">Files <span class="c">12</span></a>
+        <a href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div class="col">
+        <div class="feed">
+          <span class="micro muted">Conversation</span>
+          <div class="feed-up">↑ 3 earlier lines · scroll up</div>
+          <ol>
+            <li class="line turn">
+              <time>15:46</time><span class="who you">You</span><span class="what dim">answered</span>
+              <p class="said">Build the harness first</p>
+            </li>
+            <li class="line turn">
+              <time>15:52</time><span class="who you">You</span><span class="what dim">answered 4 kickoff-brief questions</span>
+              <p class="said quoted">One field; planner infers the rest · default task type · draft immediately · repos-as-projects splits out<span class="more">see all four →</span></p>
+            </li>
+            <li class="line">
+              <time>16:03</time><span class="who">Spec gate</span><span class="what dim">Approved by you → implement</span>
+            </li>
+            <li class="line turn">
+              <time>16:11</time><span class="who you">You</span><span class="what dim">commented</span>
+              <p class="said">Keep the migration reversible — I want to roll intake back in one deploy.</p>
+            </li>
+          </ol>
+        </div>
+
+        <div class="console running">
+          <div class="console-row"><textarea placeholder="Ask Implement something, or steer it…"></textarea><span class="btn btn-primary go">Send</span></div>
+          <div class="console-foot">
+            <span class="hint">Picked up by <b>Implement</b> on its next run · ⌘↵ to send</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <section>
+          <div class="head-row"><span class="micro muted">Pipeline</span><span class="micro muted" style="font-size:0.59rem">opus-5 · max</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Planning</span><span class="fact">5m 21s</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Kickoff brief</span><span class="fact">1m 36s</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Kickoff gate</span><span class="fact">approved</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Research</span><span class="fact">3m 04s</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Spec review</span><span class="fact">2m 11s</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Spec gate</span><span class="fact">approved</span></div>
+          <div class="node live"><span class="dot dot-phos breathe"></span><span class="name">Implement</span><span class="fact">4m 12s · attempt 2</span></div>
+          <div class="node-sub">
+            <span></span>
+            <div>
+              <p>Editing packages/core/src/state.ts</p>
+              <span class="btn-ghost" style="padding-left:0">■ Stop</span>
+            </div>
+          </div>
+          <div class="node-rest"><span class="chev">→</span><span>Verify, Code review, <span class="muted">+3 more</span></span></div>
+        </section>
+        <section>
+          <span class="micro muted">Spend</span>
+          <div class="meter"><div class="meter-row"><span>Cost</span><span class="v">$8.14 of $20.00</span></div><div class="bar"><i style="width:41%"></i></div></div>
+          <div class="meter"><div class="meter-row"><span>Agent-minutes</span><span class="v">31.0 of 180</span></div><div class="bar"><i style="width:17%"></i></div></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 4 -->
+  <div class="caption">
+    <span class="n">4</span>
+    <h2>Files — the PR diff, in your palette</h2>
+    <p>Same nav column, no pipeline rail: the diff takes the width. Tree, filter, stacked per-file cards, <em>Viewed</em>, hunk expanders.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-amber breathe"></span><span class="amber">Waiting on you</span> <span class="muted">— 4 questions from the kickoff brief</span></span>
+      <span class="repo">main…feat/task-screen-redesign · 4 commits</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app no-rail">
+      <nav class="nav">
+        <a href="#1">Thread</a>
+        <a class="on" href="#4">Files <span class="c">12</span></a>
+        <a href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div style="min-width:0">
+        <div class="files-bar">
+          <span class="filter">🔍 Filter files…</span>
+          <span class="tally">12 files &nbsp;<span class="phos">+1353</span> <span class="dang">−532</span></span>
+          <span class="sp"></span>
+          <span class="viewed-of">3 / 12 viewed <span class="bar"><i style="width:25%"></i></span></span>
+          <span class="select">Unified ⌄</span>
+        </div>
+
+        <div class="files-grid">
+          <div class="tree">
+            <div class="row dir">▾ <span class="nm">apps/web</span></div>
+            <div class="row dir" style="padding-left:0.8rem">▾ <span class="nm">src/components</span></div>
+            <div class="row on" style="padding-left:1.7rem"><span class="mk a">+</span><span class="nm">commit-ref.tsx</span><span class="st phos">+37</span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk a">+</span><span class="nm">conversation-message.tsx</span><span class="st phos">+68</span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk a">+</span><span class="nm">decision-stack.tsx</span><span class="st phos">+84</span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk m">±</span><span class="nm">pipeline-rail.tsx</span><span class="st"><span class="phos">+178</span> <span class="dang">−41</span></span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk m">±</span><span class="nm">thread-view.tsx</span><span class="st"><span class="phos">+283</span> <span class="dang">−190</span></span></div>
+            <div class="row dir" style="padding-left:0.8rem">▾ <span class="nm">src/lib</span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk m">±</span><span class="nm">task-thread.ts</span><span class="st"><span class="phos">+212</span> <span class="dang">−64</span></span></div>
+            <div class="row dir" style="padding-left:0.8rem">▾ <span class="nm">src/screens</span></div>
+            <div class="row" style="padding-left:1.7rem"><span class="mk m">±</span><span class="nm">task-screen.tsx</span><span class="st"><span class="phos">+146</span> <span class="dang">−233</span></span></div>
+            <div class="row" style="padding-left:0.8rem"><span class="mk m">±</span><span class="nm">src/index.css</span><span class="st"><span class="phos">+31</span> <span class="dang">−4</span></span></div>
+            <div class="row dir">▾ <span class="nm">openspec/changes/task-screen-redesign</span></div>
+            <div class="row" style="padding-left:0.8rem"><span class="mk a">+</span><span class="nm">design.md</span><span class="st phos">+105</span></div>
+            <div class="row" style="padding-left:0.8rem"><span class="mk a">+</span><span class="nm">proposal.md</span><span class="st phos">+62</span></div>
+            <div class="row" style="padding-left:0.8rem"><span class="mk a">+</span><span class="nm">tasks.md</span><span class="st phos">+48</span></div>
+          </div>
+
+          <div>
+            <!-- file 1: added -->
+            <div class="fcard">
+              <div class="fcard-head">
+                <span class="chev">▾</span>
+                <span class="fpath">apps/web/src/components/commit-ref.tsx</span>
+                <span class="icn">⧉</span>
+                <span class="sp"></span>
+                <span class="stat"><span class="phos">+37</span><span class="blocks"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i></span></span>
+                <span class="icn">💬</span>
+                <span class="viewed"><span class="box"></span>Viewed</span>
+              </div>
+              <div class="diff">
+                <div class="dh"><span class="ex">···</span><span></span><span>@@ -0,0 +1,37 @@</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">1</span><span class="sg">+</span><span class="cd"><span class="sy-k">import</span> { commitUrl, shortCommit } <span class="sy-k">from</span> <span class="sy-s">'../lib/repo-link.ts'</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">2</span><span class="sg">+</span><span class="cd"> </span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">3</span><span class="sg">+</span><span class="cd"><span class="sy-k">interface</span> <span class="sy-t">CommitRefProps</span> {</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">4</span><span class="sg">+</span><span class="cd">  <span class="sy-k">readonly</span> sha: <span class="sy-t">string</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">5</span><span class="sg">+</span><span class="cd">  <span class="sy-k">readonly</span> repoUrl: <span class="sy-t">string</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">6</span><span class="sg">+</span><span class="cd">  <span class="sy-k">readonly</span> className?: <span class="sy-t">string</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">7</span><span class="sg">+</span><span class="cd">}</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">8</span><span class="sg">+</span><span class="cd"> </span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">9</span><span class="sg">+</span><span class="cd"><span class="sy-c">/**</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">10</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * A 40-character hash tells the owner nothing; seven of it plus a way to open</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">11</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * the commit tells them everything they wanted from it. The full hash stays on</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">12</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * the element's title for copying.</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">13</span><span class="sg">+</span><span class="cd"><span class="sy-c"> */</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">14</span><span class="sg">+</span><span class="cd"><span class="sy-k">export function</span> CommitRef({ sha, repoUrl, className = <span class="sy-s">''</span> }: <span class="sy-t">CommitRefProps</span>) {</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">15</span><span class="sg">+</span><span class="cd">  <span class="sy-k">const</span> href = commitUrl(repoUrl, sha)</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">16</span><span class="sg">+</span><span class="cd">  <span class="sy-k">const</span> classes = <span class="sy-s">`font-mono text-[0.68rem] text-muted ${className}`</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">17</span><span class="sg">+</span><span class="cd"> </span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">18</span><span class="sg">+</span><span class="cd">  <span class="sy-k">if</span> (!href) {</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">19</span><span class="sg">+</span><span class="cd">    <span class="sy-k">return</span> (</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">20</span><span class="sg">+</span><span class="cd">      &lt;<span class="sy-t">span</span> className={classes} title={sha}&gt;</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">21</span><span class="sg">+</span><span class="cd">        {shortCommit(sha)}</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">22</span><span class="sg">+</span><span class="cd">      &lt;/<span class="sy-t">span</span>&gt;</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">23</span><span class="sg">+</span><span class="cd">    )</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">24</span><span class="sg">+</span><span class="cd">  }</span></div>
+                <div class="dh"><span class="ex">···</span><span></span><span>13 more lines</span></div>
+              </div>
+            </div>
+
+            <!-- file 2: modified -->
+            <div class="fcard">
+              <div class="fcard-head">
+                <span class="chev">▾</span>
+                <span class="fpath">apps/web/src/lib/task-thread.ts</span>
+                <span class="icn">⧉</span>
+                <span class="sp"></span>
+                <span class="stat"><span class="phos">+212</span> <span class="dang">−64</span><span class="blocks"><i class="a"></i><i class="a"></i><i class="a"></i><i class="d"></i><i></i></span></span>
+                <span class="icn">💬</span>
+                <span class="viewed"><span class="box"></span>Viewed</span>
+              </div>
+              <div class="diff">
+                <div class="dh"><span class="ex">···</span><span></span><span>@@ -36,10 +36,22 @@ export const EVENT_TITLES: Record&lt;string, string&gt; = {</span></div>
+                <div class="dl"><span class="ln">36</span><span class="ln">36</span><span class="sg"> </span><span class="cd">}</span></div>
+                <div class="dl"><span class="ln">37</span><span class="ln">37</span><span class="sg"> </span><span class="cd"> </span></div>
+                <div class="dl del"><span class="ln">38</span><span class="ln"></span><span class="sg">−</span><span class="cd"><span class="sy-k">const</span> SILENT_EVENTS = <span class="sy-k">new</span> <span class="sy-t">Set</span>([<span class="sy-s">'stage.dispatched'</span>])</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">38</span><span class="sg">+</span><span class="cd"><span class="sy-c">/**</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">39</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * Events the thread never gives a line of its own: the chapter each one opens</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">40</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * or closes already says it, or the conversation query renders the message</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">41</span><span class="sg">+</span><span class="cd"><span class="sy-c"> * itself.</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">42</span><span class="sg">+</span><span class="cd"><span class="sy-c"> */</span></span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">43</span><span class="sg">+</span><span class="cd"><span class="sy-k">const</span> SILENT_EVENTS: <span class="sy-t">ReadonlySet</span>&lt;<span class="sy-t">string</span>&gt; = <span class="sy-k">new</span> <span class="sy-t">Set</span>([</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">44</span><span class="sg">+</span><span class="cd">  <span class="sy-s">'stage.dispatched'</span>,</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">45</span><span class="sg">+</span><span class="cd">  <span class="sy-s">'task.transitioned'</span>,</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">46</span><span class="sg">+</span><span class="cd">  <span class="sy-s">'conversation.created'</span>,</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">47</span><span class="sg">+</span><span class="cd">  <span class="sy-s">'conversation.message.created'</span>,</span></div>
+                <div class="dl add"><span class="ln"></span><span class="ln">48</span><span class="sg">+</span><span class="cd">])</span></div>
+                <div class="dl"><span class="ln">39</span><span class="ln">49</span><span class="sg"> </span><span class="cd"> </span></div>
+                <div class="dl"><span class="ln">40</span><span class="ln">50</span><span class="sg"> </span><span class="cd"><span class="sy-k">export function</span> payloadValue(event: <span class="sy-t">TimelineEvent</span>, key: <span class="sy-t">string</span>) {</span></div>
+                <div class="dl"><span class="ln">41</span><span class="ln">51</span><span class="sg"> </span><span class="cd">  <span class="sy-k">const</span> value = event.payload[key]</span></div>
+                <div class="dh"><span class="ex">···</span><span></span><span>7 more hunks</span></div>
+              </div>
+            </div>
+
+            <!-- file 3: collapsed -->
+            <div class="fcard shut">
+              <div class="fcard-head">
+                <span class="chev">▸</span>
+                <span class="fpath">apps/web/src/components/thread-view.tsx</span>
+                <span class="icn">⧉</span>
+                <span class="sp"></span>
+                <span class="stat"><span class="phos">+283</span> <span class="dang">−190</span><span class="blocks"><i class="a"></i><i class="a"></i><i class="a"></i><i class="d"></i><i class="d"></i></span></span>
+                <span class="icn">💬</span>
+                <span class="viewed"><span class="box"></span>Viewed</span>
+              </div>
+            </div>
+
+            <!-- file 4: collapsed, viewed -->
+            <div class="fcard shut">
+              <div class="fcard-head">
+                <span class="chev">▸</span>
+                <span class="fpath" style="color:var(--muted)">openspec/changes/task-screen-redesign/design.md</span>
+                <span class="icn">⧉</span>
+                <span class="sp"></span>
+                <span class="stat"><span class="phos">+105</span><span class="blocks"><i class="a"></i><i class="a"></i><i class="a"></i><i></i><i></i></span></span>
+                <span class="icn">💬</span>
+                <span class="viewed" style="color:var(--phosphor)"><span class="box on">✓</span>Viewed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 5 -->
+  <div class="caption">
+    <span class="n">5</span>
+    <h2>Docs — the same shape, for what the task wrote</h2>
+    <p>Was a separate page plus a duplicate list in the rail. Now one tab, one list, one reader.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-amber breathe"></span><span class="amber">Waiting on you</span> <span class="muted">— 4 questions from the kickoff brief</span></span>
+      <span class="repo">mo4islona/specmate · main</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app no-rail">
+      <nav class="nav">
+        <a href="#1">Thread</a>
+        <a href="#4">Files <span class="c">12</span></a>
+        <a class="on" href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div class="docs-grid">
+        <div class="doclist">
+          <section>
+            <span class="micro muted">Proposal</span>
+            <div class="row"><span>proposal.md</span><span class="when">15:38</span></div>
+          </section>
+          <section>
+            <span class="micro muted">Design</span>
+            <div class="row on"><span>design.md</span><span class="when">15:46</span></div>
+          </section>
+          <section>
+            <span class="micro muted">Spec</span>
+            <div class="row"><span>operator-ui/spec.md</span><span class="when">15:45</span></div>
+          </section>
+          <section>
+            <span class="micro muted">Tasks</span>
+            <div class="row"><span>tasks.md</span><span class="when">15:46</span></div>
+          </section>
+          <section>
+            <span class="micro muted">Decision log</span>
+            <div class="row"><span>decisions.md</span><span class="when">15:46</span></div>
+          </section>
+        </div>
+
+        <div class="docpane">
+          <div class="docpane-head">
+            <span class="fpath">openspec/changes/task-screen-redesign/design.md</span>
+            <span class="sp"></span>
+            <span class="micro muted">snapshot 15:46</span>
+            <span class="btn-ghost">Diff ⌄</span>
+            <span class="btn-ghost">💬 Comment</span>
+          </div>
+          <div class="docbody">
+            <h2>Design</h2>
+            <p>The task view reads five sources on every render: the task detail, the event window, the conversation's messages and actions, the decision rows, and the artifact index. Before this change all five were rendered as sibling panels down one column, each with its own border, uppercase label, and heading — which is why nothing on the screen looked more important than anything else.</p>
+            <h3>Decisions</h3>
+            <p><strong>Chapters are derived from <code>stageId</code> plus the state timeline, not from a new field.</strong> <code>buildThread</code> walks entries in ledger order, carrying the task's state as it goes.</p>
+            <ul>
+              <li>An entry belongs to a stage when it names one.</li>
+              <li>Failing that, when it falls inside a stage's <code>[startedAt, finishedAt]</code> window.</li>
+              <li>Everything else falls to the state the task was in.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 6 -->
+  <div class="caption">
+    <span class="n">6</span>
+    <h2>When something stops</h2>
+    <p>The state the rail had no colour for. A stopped node keeps its facts and states why, instead of quietly reverting to looking unstarted.</p>
+  </div>
+
+  <div class="screen">
+    <div class="head">
+      <h1>Launch work</h1>
+      <span class="state"><span class="dot dot-dang"></span><span class="dang">Stopped</span> <span class="muted">— Implement failed 3 times, attempt cap reached</span></span>
+      <span class="repo">mo4islona/specmate · main</span>
+      <span class="sp"></span>
+      <span class="stream"><span class="dot dot-phos"></span>stream</span>
+    </div>
+
+    <div class="app">
+      <nav class="nav">
+        <a class="on" href="#6">Thread</a>
+        <a href="#4">Files <span class="c">12</span></a>
+        <a href="#5">Docs <span class="c">5</span></a>
+        <span class="sep"></span>
+        <a class="soon" href="#6">Guide <span class="c">soon</span></a>
+      </nav>
+
+      <div class="col">
+        <div class="feed">
+          <span class="micro muted">Conversation</span>
+          <div class="feed-up">↑ 9 earlier lines · scroll up</div>
+          <ol>
+            <li class="line turn">
+              <time>16:11</time><span class="who you">You</span><span class="what dim">commented</span>
+              <p class="said">Keep the migration reversible — I want to roll intake back in one deploy.</p>
+            </li>
+            <li class="line">
+              <time>16:29</time><span class="who">Implement</span>
+              <span class="what dim">Attempt 2 failed — <a href="#6">run log</a></span>
+            </li>
+            <li class="line">
+              <time>16:41</time><span class="who">Implement</span>
+              <span class="what dim">Attempt 3 failed, cap reached — <a href="#6">run log</a></span>
+            </li>
+          </ol>
+        </div>
+
+        <div class="console stopped">
+          <div class="console-head">
+            <span class="dest"><span class="arrow">→</span><span class="to dang">Implement</span><span class="muted">· stopped after 3 attempts</span></span>
+          </div>
+          <div class="console-row"><textarea placeholder="What should it do differently this time…"></textarea><span class="btn btn-primary">Restart</span></div>
+          <div class="console-foot">
+            <span class="hint">Carried into the restart as <b>guidance</b> · the one path that reaches an agent today</span>
+            <span class="spacer"></span>
+            <span class="act">restart without guidance</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <section>
+          <div class="head-row"><span class="micro muted">Pipeline</span><span class="micro muted" style="font-size:0.59rem">opus-5 · max</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Spec review</span><span class="fact">2m 11s</span></div>
+          <div class="node done"><span class="dot dot-done"></span><span class="name">Spec gate</span><span class="fact">approved</span></div>
+          <div class="node stop"><span class="dot dot-dang"></span><span class="name">Implement</span><span class="fact">attempt 3 · cap reached</span></div>
+          <div class="node-sub">
+            <span></span>
+            <div>
+              <p class="dang">Verify failed: 4 tests, 2 type errors</p>
+              <span class="btn-ghost" style="padding-left:0">↻ Restart</span>
+            </div>
+          </div>
+          <div class="node-rest"><span class="chev">→</span><span>Verify, Code review, <span class="muted">+3 more</span></span></div>
+        </section>
+        <section>
+          <span class="micro muted">Spend</span>
+          <div class="meter"><div class="meter-row"><span>Cost</span><span class="v">$17.90 of $20.00</span></div><div class="bar"><i class="warn" style="width:90%"></i></div></div>
+          <div class="meter"><div class="meter-row"><span>Agent-minutes</span><span class="v">88.0 of 180</span></div><div class="bar"><i style="width:49%"></i></div></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <!-- ═══════════════════════════════════════════════════════ 7 -->
+  <div class="caption">
+    <span class="n">7</span>
+    <h2>The console — six states, never a chooser</h2>
+    <p>No mode toggle, no <code style="font-family:var(--mono);font-size:0.85em;color:var(--phosphor)">whole task ⌄</code>, no <em>send somewhere else</em>. The task's own state picks the destination; one line says where the text lands.</p>
+  </div>
+
+  <div class="screen">
+    <div class="states">
+
+      <div>
+        <p class="lbl">A stage is running — the default, and the one you asked for</p>
+        <div class="console running">
+          <div class="console-row"><textarea placeholder="Ask Implement something, or steer it…"></textarea><span class="btn btn-primary go">Send</span></div>
+          <div class="console-foot">
+            <span class="hint">Picked up by <b>Implement</b> on its next run · ⌘↵ to send</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="lbl">A question is open — the field is the answer</p>
+        <div class="console asking">
+          <div class="console-head">
+            <span class="micro amber">Kickoff brief · question 1 of 4</span>
+            <span class="pager"><span>‹</span><b class="on">1</b><b>2</b><b>3</b><b>4</b><span>›</span></span>
+          </div>
+          <p class="console-q">Should intake collapse to a single free-text field, with repo, base branch and budget inferred by the planner and confirmed at the kickoff gate?</p>
+          <div class="console-row"><textarea placeholder="Answer…"></textarea><span class="btn btn-primary">Answer</span></div>
+          <div class="console-foot">
+            <span class="btn-ghost">Dismiss</span><span class="btn-ghost">Discuss</span>
+            <span class="spacer"></span>
+            <span class="hint">Unblocks <b>Kickoff brief</b> · 3 questions after this one</span>
+            <span class="act">just comment instead</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="lbl">At a gate — the field is the comment, the verbs are the gate's own</p>
+        <div class="console asking">
+          <div class="console-head">
+            <span class="dest"><span class="arrow">→</span><span class="to amber">Spec gate</span><span class="muted">· your call</span></span>
+          </div>
+          <div class="console-row"><textarea placeholder="Say why, if it needs saying…"></textarea><span class="btn btn-primary">Approve</span></div>
+          <div class="console-foot">
+            <span class="btn-ghost">Rework ⌄</span><span class="btn-ghost">Redirect</span>
+            <span class="spacer"></span><span class="hint">2 of 3 redirects left</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="lbl">Nothing running, nothing asked — it still has a destination</p>
+        <div class="console">
+          <div class="console-row"><textarea placeholder="Anything Research should know…"></textarea><span class="btn btn-primary go">Send</span></div>
+          <div class="console-foot">
+            <span class="hint">Picked up by <b>Research</b> when it starts · nothing runs now</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="lbl">Stopped or interrupted — the one state where typed text already reaches an agent</p>
+        <div class="console stopped">
+          <div class="console-head">
+            <span class="dest"><span class="arrow">→</span><span class="to dang">Implement</span><span class="muted">· stopped after 3 attempts</span></span>
+          </div>
+          <div class="console-row"><textarea placeholder="What should it do differently this time…"></textarea><span class="btn btn-primary">Restart</span></div>
+          <div class="console-foot">
+            <span class="hint">Carried into the restart as <b>guidance</b></span>
+            <span class="spacer"></span>
+            <span class="act">restart without guidance</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="lbl">Paused on an exhausted budget — no destination, and it says so</p>
+        <div class="console spent">
+          <div class="console-head">
+            <span class="dest"><span class="arrow">→</span><span class="to plain">nowhere</span><span class="muted">· $20.00 of $20.00 spent</span></span>
+          </div>
+          <div class="console-row"><textarea placeholder="Raise the cap to send anything" disabled></textarea><span class="btn btn-primary" disabled>Send</span></div>
+          <div class="console-foot">
+            <span class="hint">Nothing will run until the cap moves</span>
+            <span class="spacer"></span>
+            <span class="act">raise the cap</span>
+            <span class="act">archive the task</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="rule" />
+
+  <h2 style="margin:0;font-size:1.05rem;font-weight:600">What moved where</h2>
+  <div class="wrap-x">
+  <table class="moved">
+    <thead><tr><th>Was</th><th>Is</th></tr></thead>
+    <tbody>
+      <tr><td>Header: title, two chips, repo line, three links — four stacked rows</td><td class="to">One row: title, state as a sentence, repo, stream. Roughly half the height, and it stays one row as tabs are added.</td></tr>
+      <tr><td><code>/tasks/:id/artifacts</code> and <code>/tasks/:id/diff</code> as separate screens, each re-drawing its own big header and back-link</td><td class="to">Tabs in a nav column on the left. Same header, same state, no page to come back from — and room for <em>Guide</em> when it lands.</td></tr>
+      <tr><td>Rail carries an artifact list and a <em>files changed →</em> link that duplicate those screens</td><td class="to">Rail is pipeline + spend only. The counts live on the tabs.</td></tr>
+      <tr><td>Files: one file at a time in a list-detail panel, unified text, no review state</td><td class="to">GitHub shape — tree with filter, stacked per-file cards, <code>+N −N</code> with the block bar, per-file collapse, <em>Viewed</em> and <code>n / N viewed</code>, hunk expanders, unified/split toggle.</td></tr>
+      <tr><td>Chapter headers per stage in the feed, each opening and closing</td><td class="to">Gone from the feed. A stage is a rail node; clicking it opens its run log.</td></tr>
+      <tr><td><em>Stage started / accepted / failed</em>, tool activity, commits, durations, tokens</td><td class="to">In the run log, under the node they belong to.</td></tr>
+      <tr><td>An answered question as a bordered card with a <code>QUESTION</code> label and an <code>ANSWERED BY OWNER</code> footer</td><td class="to">Two lines of dialogue, no border, clamped, with <em>read the whole thing →</em>.</td></tr>
+      <tr><td>Action zone with its own <code>62vh</code> scroll above a second scrolling thread</td><td class="to">One scrolling column. Nothing can hide above a nested fold.</td></tr>
+      <tr><td>Two text inputs — an answer field at the top, a composer at the bottom</td><td class="to">One input, at the bottom, labelled by whatever is being asked of you.</td></tr>
+      <tr><td>Composer asks for two decisions before you can type: <code>COMMENT / ASK GUIDE</code>, then <code>whole task ⌄</code></td><td class="to">Neither. The task's state picks the destination and one line states it. <em>Ask guide</em> leaves the console entirely — it is a mode, and it becomes its own tab in a later pass.</td></tr>
+      <tr><td>The stage dropdown changes nothing an agent ever reads — every comment is written <code>kind:'comment'</code>, and the runner only reads <code>intervention / redirect / rework</code></td><td class="to">What you type is guidance for a node, and the console says which node and when it gets picked up.</td></tr>
+      <tr><td>Pinning a comment to an older stage means finding it in a dropdown</td><td class="to">You never pick a target: you type where the target already is — <em>Comment</em> in that stage's run log, <code>💬</code> on a file or a document.</td></tr>
+      <tr><td>An escape hatch — <em>send somewhere else</em> — beside the destination line</td><td class="to">Gone. A link that retargets can only open a list of targets, which is the same dropdown in a quieter costume.</td></tr>
+      <tr><td>One expanded question plus three amber one-line rows</td><td class="to">One question and a <code>1 of 4</code> pager.</td></tr>
+      <tr><td>12 pipeline rows, 10 of them unstarted empty circles</td><td class="to">Done and current carry their facts; the unstarted fold into one line.</td></tr>
+      <tr><td>A failed or capped node with no colour of its own</td><td class="to">A fourth node state: stopped keeps its facts and says why, and the console turns into the restart.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="doc-lede" style="margin-top:1.5rem">
+    <strong>One caveat the console must not lie about.</strong> A stage assembles its prompt once, at
+    dispatch — <code>executor.ts</code> loads the ledger a single time per run — so text typed while
+    <em>Implement</em> is running reaches <em>Implement</em> on its <em>next</em> run, not mid-flight.
+    That is what the wording here says. Reaching a live agent needs a channel that does not exist yet,
+    and is its own change. Worse, an intervention claimed by a run that then fails is not re-claimed by
+    the retry and stops being rendered at all — so the writer this design needs comes with a one-line
+    fix to the claim, not without it.
+  </p>
+
+  <p class="doc-lede">
+    Open questions worth a yes/no: does <strong>Files drop the pipeline rail</strong> (it does here — the
+    diff needs the width), does the per-file <strong>💬 comment</strong> post into the thread anchored
+    to that path, and which fix for the lost-on-retry intervention — never stamp until a run is
+    accepted, or clear the stamp whenever a stage ends unaccepted?
+  </p>
+
+</div>
+</body>
+</html>
