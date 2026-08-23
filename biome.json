@@ -14,7 +14,9 @@
       "!openspec",
       "!.claude",
       "!.agents",
-      "!.github/**/*.md"
+      "!.github/**/*.md",
+      "!docs/design",
+      "!logo"
     ]
   },
   "formatter": {
