@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { ConversationMessage, DecisionItem, TaskDetail, TimelineEvent } from './api-client.ts'
 import {
-  buildThread,
+  buildFeed,
   countGateRedirects,
   EVENT_TITLES,
   eventDetail,
@@ -258,207 +258,138 @@ describe('labels and numbers', () => {
   })
 })
 
-describe('buildThread', () => {
-  const research = stage({ id: 'stage-research', nodeKey: 'research' })
+describe('buildFeed (REQ-919)', () => {
+  const emptyDecisions = new Map<string, DecisionItem>()
 
-  test('a stage-scoped event lands in that stage’s chapter', () => {
-    const chapters = buildThread({
+  test('a stage that started, worked and was accepted leaves no line behind', () => {
+    const run = stage({ id: 'stage-1', nodeKey: 'research' })
+    const feed = buildFeed({
       events: [
+        timelineEvent({ seq: 1, type: 'stage.dispatched', stageId: run.id }),
         timelineEvent({
-          seq: 1,
-          type: 'stage.completed',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:05:00.000Z',
+          seq: 2,
+          type: 'stage.activity',
+          stageId: run.id,
+          payload: { tool: 'Read' },
         }),
+        timelineEvent({ seq: 3, type: 'stage.completed', stageId: run.id }),
+        timelineEvent({ seq: 4, type: 'task.transitioned', payload: { to: 'spec_review' } }),
       ],
-      stages: [research],
       messages: [],
-      entryState: 'research',
+      stages: [run],
+      decisionsById: emptyDecisions,
     })
 
-    expect(chapters).toHaveLength(1)
-    expect(chapters[0]?.kind).toBe('stage')
-    expect(chapters[0]?.nodeKey).toBe('research')
-    expect(chapters[0]?.entries).toHaveLength(1)
+    expect(feed).toEqual([])
   })
 
-  test('a comment posted mid-run joins the run it is about instead of splitting the thread', () => {
-    const chapters = buildThread({
+  test('what a person said or was asked earns a line, in the order it happened', () => {
+    const answered = decisionItem({
+      id: 'decision-1',
+      status: 'answered',
+      answerMd: 'The whole repository.',
+    })
+    const feed = buildFeed({
       events: [
-        timelineEvent({
-          seq: 1,
-          type: 'feedback.comment',
-          createdAt: '2026-08-16T10:02:00.000Z',
-          payload: { comment: 'Check the migration too' },
-        }),
+        timelineEvent({ seq: 1, type: 'task.created', createdAt: '2026-08-16T10:00:00.000Z' }),
         timelineEvent({
           seq: 2,
-          type: 'stage.completed',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:05:00.000Z',
-        }),
-      ],
-      stages: [research],
-      messages: [conversationMessage()],
-      entryState: 'research',
-    })
-
-    expect(chapters).toHaveLength(1)
-    expect(chapters[0]?.entries.map((entry) => entry.kind)).toEqual(['event', 'message', 'event'])
-  })
-
-  test('gate work becomes the gate’s own chapter, and re-entering a node opens a new one', () => {
-    const second = stage({
-      id: 'stage-research-2',
-      nodeKey: 'research',
-      attempt: 1,
-      startedAt: '2026-08-16T10:07:00.000Z',
-      finishedAt: null,
-      status: 'running',
-    })
-    const chapters = buildThread({
-      events: [
-        timelineEvent({
-          seq: 1,
-          type: 'stage.completed',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:05:00.000Z',
-        }),
-        timelineEvent({
-          seq: 2,
-          type: 'task.transitioned',
-          createdAt: '2026-08-16T10:05:00.000Z',
-          payload: { from: 'research', to: 'human_spec_gate' },
+          type: 'decision.answered',
+          payload: { decisionId: answered.id, actor: 'evgeny' },
+          createdAt: '2026-08-16T10:04:00.000Z',
         }),
         timelineEvent({
           seq: 3,
-          type: 'gate.reworked',
+          type: 'feedback.comment',
+          payload: { comment: 'Keep the migration reversible.' },
           createdAt: '2026-08-16T10:06:00.000Z',
-          payload: { gate: 'human_spec_gate', to: 'research', comment: 'Missed the API' },
-        }),
-        timelineEvent({
-          seq: 4,
-          type: 'task.transitioned',
-          createdAt: '2026-08-16T10:06:30.000Z',
-          payload: { from: 'human_spec_gate', to: 'research' },
-        }),
-        timelineEvent({
-          seq: 5,
-          type: 'stage.activity',
-          stageId: second.id,
-          createdAt: '2026-08-16T10:08:00.000Z',
-          payload: { tool: 'Read', target: 'src/api.ts' },
         }),
       ],
-      stages: [research, second],
-      messages: [],
-      entryState: 'research',
+      messages: [conversationMessage({ createdAt: '2026-08-16T10:02:00.000Z' })],
+      stages: [],
+      decisionsById: new Map([[answered.id, answered]]),
     })
 
-    expect(chapters.map((chapter) => `${chapter.kind}:${chapter.nodeKey}`)).toEqual([
-      'stage:research',
-      'gate:human_spec_gate',
-      'stage:research',
+    expect(feed.map((entry) => entry.verb)).toEqual([
+      'launched this task',
+      'asked',
+      'answered',
+      'commented',
     ])
-    expect(chapters[1]?.entries).toHaveLength(1)
-    expect(chapters[2]?.stage?.attempt).toBe(1)
   })
 
-  test('transitions and dispatches leave no line of their own — the chapter they open says it', () => {
-    const chapters = buildThread({
+  test('an open question is not in the feed; it lives above the input (AC-956)', () => {
+    const open = decisionItem({ id: 'decision-1', status: 'open' })
+    const feed = buildFeed({
       events: [
-        timelineEvent({
-          seq: 1,
-          type: 'stage.dispatched',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:00:00.000Z',
-        }),
-        timelineEvent({
-          seq: 2,
-          type: 'task.transitioned',
-          createdAt: '2026-08-16T10:05:00.000Z',
-          payload: { from: 'research', to: 'spec_review' },
-        }),
+        timelineEvent({ seq: 1, type: 'decision.raised', payload: { decisionId: open.id } }),
       ],
-      stages: [research],
       messages: [],
-      entryState: 'research',
+      stages: [],
+      decisionsById: new Map([[open.id, open]]),
     })
 
-    expect(chapters.flatMap((chapter) => chapter.entries)).toHaveLength(0)
+    expect(feed).toEqual([])
   })
 
-  test('parking opens the gate’s chapter instead of trailing the stage that ran into it', () => {
-    const chapters = buildThread({
+  test('a resolved question carries its decision so the whole exchange can be opened (AC-958)', () => {
+    const answered = decisionItem({ id: 'd1', status: 'answered', answerMd: 'One field.' })
+    const [entry] = buildFeed({
       events: [
-        timelineEvent({
-          seq: 1,
-          type: 'stage.completed',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:05:00.000Z',
-        }),
-        timelineEvent({
-          seq: 2,
-          type: 'task.parked',
-          createdAt: '2026-08-16T10:05:00.000Z',
-          payload: { from: 'research', to: 'human_spec_gate' },
-        }),
+        timelineEvent({ seq: 1, type: 'decision.answered', payload: { decisionId: answered.id } }),
       ],
-      stages: [research],
       messages: [],
-      entryState: 'research',
+      stages: [],
+      decisionsById: new Map([[answered.id, answered]]),
     })
 
-    expect(chapters.map((chapter) => chapter.nodeKey)).toEqual(['research', 'human_spec_gate'])
-    expect(chapters[1]?.entries).toHaveLength(1)
+    expect(entry?.decisionId).toBe('d1')
+    expect(entry?.body).toContain('One field.')
   })
 
-  test('an entry stamped exactly at a stage’s finish belongs to that stage', () => {
-    const chapters = buildThread({
+  test('a failure that was retried into an acceptance is the machine’s business', () => {
+    const failed = stage({ id: 'stage-1', nodeKey: 'implement', attempt: 0, status: 'failed' })
+    const succeeded = stage({
+      id: 'stage-2',
+      nodeKey: 'implement',
+      attempt: 1,
+      status: 'succeeded',
+    })
+    const feed = buildFeed({
+      events: [timelineEvent({ seq: 1, type: 'stage.failed', stageId: failed.id })],
+      messages: [],
+      stages: [failed, succeeded],
+      decisionsById: emptyDecisions,
+    })
+
+    expect(feed).toEqual([])
+  })
+
+  test('a failure that is still the last word at its node is addressed to the owner', () => {
+    const failed = stage({ id: 'stage-1', nodeKey: 'implement', attempt: 2, status: 'failed' })
+    const [entry] = buildFeed({
+      events: [timelineEvent({ seq: 1, type: 'stage.failed', stageId: failed.id })],
+      messages: [],
+      stages: [failed],
+      decisionsById: emptyDecisions,
+    })
+
+    expect(entry?.label).toBe('Implement')
+    expect(entry?.verb).toBe('failed')
+    expect(entry?.nodeKey).toBe('implement')
+  })
+
+  test('the guide answers as itself, the owner as themselves', () => {
+    const feed = buildFeed({
       events: [],
-      stages: [research],
-      messages: [conversationMessage({ createdAt: '2026-08-16T10:05:00.000Z' })],
-      entryState: 'research',
-    })
-
-    expect(chapters).toHaveLength(1)
-    expect(chapters[0]?.entries).toHaveLength(1)
-  })
-
-  test('an event that lands on a node before its stage row starts joins the run it precedes', () => {
-    const chapters = buildThread({
-      events: [
-        timelineEvent({
-          seq: 1,
-          type: 'task.created',
-          createdAt: '2026-08-16T09:59:00.000Z',
-          payload: { title: 'Harness: launch work' },
-        }),
-        timelineEvent({
-          seq: 2,
-          type: 'stage.completed',
-          stageId: research.id,
-          createdAt: '2026-08-16T10:05:00.000Z',
-        }),
+      messages: [
+        conversationMessage({ id: 'm1', role: 'owner', createdAt: '2026-08-16T10:00:00.000Z' }),
+        conversationMessage({ id: 'm2', role: 'assistant', createdAt: '2026-08-16T10:00:30.000Z' }),
       ],
-      stages: [research],
-      messages: [],
-      entryState: 'research',
+      stages: [],
+      decisionsById: emptyDecisions,
     })
 
-    expect(chapters).toHaveLength(1)
-    expect(chapters[0]?.kind).toBe('stage')
-    expect(chapters[0]?.entries.map((entry) => entry.id)).toEqual(['event-1', 'event-2'])
-  })
-
-  test('a stage whose events fell outside the event window still gets its chapter', () => {
-    const chapters = buildThread({
-      events: [],
-      stages: [research],
-      messages: [],
-      entryState: 'research',
-    })
-
-    expect(chapters.map((chapter) => chapter.nodeKey)).toEqual(['research'])
+    expect(feed.map((entry) => entry.author)).toEqual(['owner', 'guide'])
   })
 })

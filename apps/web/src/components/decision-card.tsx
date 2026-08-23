@@ -26,6 +26,12 @@ export interface DecisionCardProps {
   readonly error?: string
   /** History rendering: the question and its outcome, clamped, with nothing to act on. */
   readonly compact?: boolean
+  /**
+   * The one input at the foot of the thread is this question's answer field
+   * (REQ-921), so the card must not grow a second one. Options stay: they are
+   * direct actions, not a text input.
+   */
+  readonly answerInConsole?: boolean
 }
 
 /**
@@ -49,6 +55,7 @@ export function DecisionCard({
   busy = false,
   error,
   compact = false,
+  answerInConsole = false,
 }: DecisionCardProps) {
   const [text, setText] = useState('')
   const [raiseValues, setRaiseValues] = useState<Record<string, string>>({})
@@ -145,7 +152,7 @@ export function DecisionCard({
         </div>
       )}
 
-      {isOpen && !isBudgetDecision && (
+      {isOpen && !isBudgetDecision && !answerInConsole && (
         <details className="mt-3" open={decision.options.length === 0}>
           <summary className="cursor-pointer font-mono text-[0.66rem] uppercase tracking-widest text-muted hover:text-text">
             Answer in your own words…

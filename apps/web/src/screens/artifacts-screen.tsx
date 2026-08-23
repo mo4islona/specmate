@@ -44,18 +44,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
   const grouped = groupArtifacts(artifacts.data.artifacts)
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col justify-between gap-4 border-b border-border pb-6 sm:flex-row sm:items-end">
-        <div>
-          <p className="micro-label text-cyan">Artifact reader</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Task documents</h1>
-          <p className="mt-3 text-sm text-muted">Stored snapshots from the task change folder.</p>
-        </div>
-        <Link href={`/tasks/${taskId}`} className="button-secondary self-start sm:self-auto">
-          ← Task timeline
-        </Link>
-      </header>
-
+    <div className="min-h-0 min-w-0 flex-1">
       <ListDetailPanel
         selectedId={artifactId}
         isPending={artifact.isPending}
@@ -73,7 +62,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                   {rows.map((row) => (
                     <li key={row.id}>
                       <Link
-                        href={`/tasks/${taskId}/artifacts/${row.id}`}
+                        href={`/tasks/${taskId}/docs/${row.id}`}
                         className={`block min-w-0 border-l-2 px-2 py-2 text-sm transition-colors ${
                           artifactId === row.id
                             ? 'border-phosphor bg-phosphor/8 text-text'

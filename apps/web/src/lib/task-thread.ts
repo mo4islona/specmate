@@ -38,30 +38,6 @@ export const EVENT_TITLES: Record<string, string> = {
   'conversation.action.applied': 'Action applied',
 }
 
-/**
- * Events the thread never gives a line of its own: the chapter each one opens
- * or closes already says it, or the conversation query renders the message
- * itself. Dropping them here is what keeps the thread readable as a chat
- * rather than as the raw ledger.
- */
-const SILENT_EVENTS: ReadonlySet<string> = new Set([
-  'stage.dispatched',
-  'task.transitioned',
-  'conversation.created',
-  'conversation.message.created',
-  'conversation.response.completed',
-  'conversation.response.failed',
-  'task.environment_pinned',
-  'task.environment_repinned',
-])
-
-/** The events that actually move a task between nodes; every other event reads the state, never writes it. */
-const STATE_MOVERS: ReadonlySet<string> = new Set([
-  'task.transitioned',
-  'task.parked',
-  'task.failed',
-])
-
 export function payloadValue(event: TimelineEvent, key: string): string | null {
   const value = event.payload[key]
 
@@ -282,207 +258,154 @@ export function stageTokens(stage: Stage): number | null {
   return Object.values(tokens).reduce((total, value) => total + value, 0)
 }
 
-// ─── the thread ───────────────────────────────────────────────────────────────
+// ─── the feed ─────────────────────────────────────────────────────────────────
 
-export type ThreadEntry =
-  | {
-      readonly kind: 'event'
-      readonly id: string
-      readonly at: string
-      readonly event: TimelineEvent
-    }
-  | {
-      readonly kind: 'message'
-      readonly id: string
-      readonly at: string
-      readonly message: ConversationMessage
-    }
+/**
+ * What earns a line: something a person said, something asked of them, or an
+ * outcome that needs them. Stated as an allow-set rather than a deny-set on
+ * purpose — the thread stays five to fifteen lines only if a new event type has
+ * to be let in deliberately (REQ-919).
+ */
+const FEED_EVENTS: ReadonlySet<string> = new Set([
+  'task.created',
+  'task.published',
+  'task.cancelled',
+  'task.failed',
+  'task.budget_raised',
+  'gate.approved',
+  'gate.redirected',
+  'gate.reworked',
+  'feedback.comment',
+  'decision.answered',
+  'decision.dismissed',
+  'decision.refused',
+  'decision.inherited',
+  'coverage_waiver.recorded',
+  'stage.failed',
+])
 
-export type ChapterKind = 'stage' | 'gate' | 'task'
+/** Whose line it is. The machine's own name is the node, never "system". */
+export type FeedAuthor = 'owner' | 'guide' | 'task'
 
-export interface ThreadChapter {
+export interface FeedEntry {
   readonly id: string
-  readonly kind: ChapterKind
-  /** The pipeline node this chapter covers — a stage, a gate, or an engine-owned state. */
-  readonly nodeKey: string
-  readonly stage: Stage | null
-  /** How many times this node ran in total: a run number means nothing when there was only one. */
-  readonly runs: number
-  readonly entries: ThreadEntry[]
+  readonly at: string
+  readonly author: FeedAuthor
+  /** Rendered beside the author: "answered", "commented", "asked". */
+  readonly verb: string
+  readonly label: string
+  readonly body: string | null
+  /** The node whose run log explains this line, where one does. */
+  readonly nodeKey: string | null
+  /** Set when the line is a resolved question, so its whole exchange can be opened. */
+  readonly decisionId: string | null
 }
 
-interface ThreadInput {
+const OWNER_EVENTS: ReadonlySet<string> = new Set([
+  'task.created',
+  'task.budget_raised',
+  'gate.approved',
+  'gate.redirected',
+  'gate.reworked',
+  'feedback.comment',
+  'decision.answered',
+  'decision.dismissed',
+])
+
+const EVENT_VERBS: Record<string, string> = {
+  'task.created': 'launched this task',
+  'task.published': 'published a pull request',
+  'task.cancelled': 'was cancelled',
+  'task.failed': 'stopped',
+  'task.budget_raised': 'raised the budget',
+  'gate.approved': 'approved',
+  'gate.redirected': 'redirected',
+  'gate.reworked': 'sent back for rework',
+  'feedback.comment': 'commented',
+  'decision.answered': 'answered',
+  'decision.dismissed': 'dismissed',
+  'decision.refused': 'declined to ask',
+  'decision.inherited': 'inherited an answer',
+  'coverage_waiver.recorded': 'accepted the coverage gap',
+  'stage.failed': 'failed',
+}
+
+interface FeedInput {
   readonly events: readonly TimelineEvent[]
-  readonly stages: readonly Stage[]
   readonly messages: readonly ConversationMessage[]
-  /** Where the task stood before the oldest event in the window — the graph's entry node. */
-  readonly entryState: string
-}
-
-function entryTime(entry: ThreadEntry): number {
-  return millis(entry.at) ?? 0
-}
-
-/** Events written in the same millisecond still have an order: the ledger's own sequence. */
-function entryOrder(entry: ThreadEntry): number {
-  return entry.kind === 'event' ? entry.event.seq : Number.MAX_SAFE_INTEGER
+  readonly stages: readonly Stage[]
+  readonly decisionsById: Map<string, DecisionItem>
 }
 
 /**
- * Splits the ledger into per-stage chapters so the thread reads as a
- * conversation with one agent at a time instead of one unbroken log.
- *
- * An entry belongs to a stage when it names that stage, or when it happened
- * while that stage was the running one — an owner comment posted mid-run
- * belongs inside the run it is about, not in a chapter of its own. Everything
- * else falls to the state the task was in at that moment, which is what makes
- * a gate's approvals and comments read as the gate's own chapter.
+ * A stage failure earns a line only when it is still the last word at its node.
+ * A run that failed and was retried into an acceptance is the machine's own
+ * business; one that stopped the task is addressed to the owner.
  */
-export function buildThread({
-  events,
-  stages,
-  messages,
-  entryState,
-}: ThreadInput): ThreadChapter[] {
-  const stagesById = new Map(stages.map((stage) => [stage.id, stage]))
-  const windows = stages
-    .flatMap((stage) => {
-      const from = millis(stage.startedAt)
+function stillFailing(event: TimelineEvent, stages: readonly Stage[]): boolean {
+  const failed = stages.find((stage) => stage.id === event.stageId)
+  if (!failed) return false
 
-      return from === null
-        ? []
-        : [{ stage, from, to: millis(stage.finishedAt) ?? Number.MAX_SAFE_INTEGER }]
+  return !stages.some(
+    (stage) =>
+      stage.nodeKey === failed.nodeKey &&
+      stage.attempt > failed.attempt &&
+      stage.status === 'succeeded',
+  )
+}
+
+export function buildFeed({ events, messages, stages, decisionsById }: FeedInput): FeedEntry[] {
+  const entries: FeedEntry[] = []
+
+  for (const event of events) {
+    if (!FEED_EVENTS.has(event.type)) continue
+    if (event.type === 'stage.failed' && !stillFailing(event, stages)) continue
+
+    // An open question lives above the input, never also in the feed (AC-956);
+    // a resolved one reads here as the exchange it turned into.
+    const decisionId = payloadValue(event, 'decisionId')
+    const decision = decisionId ? decisionsById.get(decisionId) : undefined
+    if (decision && decision.status === 'open') continue
+
+    const stage = stages.find((row) => row.id === event.stageId)
+
+    entries.push({
+      id: `event-${event.seq}`,
+      at: String(event.createdAt),
+      author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
+      verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
+      label: feedLabel(event, stage),
+      body: eventDetail(event, decisionsById),
+      nodeKey: stage?.nodeKey ?? payloadValue(event, 'nodeKey'),
+      decisionId: decision ? decision.id : null,
     })
-    .sort((left, right) => left.from - right.from)
-
-  const entries: ThreadEntry[] = [
-    ...events.map(
-      (event): ThreadEntry => ({
-        kind: 'event',
-        id: `event-${event.seq}`,
-        at: String(event.createdAt),
-        event,
-      }),
-    ),
-    ...messages.map(
-      (message): ThreadEntry => ({
-        kind: 'message',
-        id: `message-${message.id}`,
-        at: String(message.createdAt),
-        message,
-      }),
-    ),
-  ].sort(
-    (left, right) => entryTime(left) - entryTime(right) || entryOrder(left) - entryOrder(right),
-  )
-
-  // The event window holds only the tail of a long task, so the opening state
-  // is read off the oldest transition that still carries one rather than
-  // assumed to be the graph's entry.
-  const firstFrom = events
-    .map((event) => payloadValue(event, 'from'))
-    .find((from): from is string => from !== null)
-
-  let state = firstFrom ?? entryState
-  let epoch = 0
-  const chapters: ThreadChapter[] = []
-  const byId = new Map<string, ThreadChapter>()
-
-  const runCount = (nodeKey: string) =>
-    stages.filter((candidate) => candidate.nodeKey === nodeKey).length
-
-  const open = (id: string, kind: ChapterKind, nodeKey: string, stage: Stage | null) => {
-    const existing = byId.get(id)
-    if (existing) return existing
-
-    const chapter: ThreadChapter = {
-      id,
-      kind,
-      nodeKey,
-      stage,
-      runs: stage ? runCount(nodeKey) : 1,
-      entries: [],
-    }
-    byId.set(id, chapter)
-    chapters.push(chapter)
-
-    return chapter
   }
 
-  for (const entry of entries) {
-    // A move is read before the entry is placed, so "Parked for you" opens the
-    // gate's chapter instead of closing the stage that ran into it.
-    if (entry.kind === 'event') {
-      const to = payloadValue(entry.event, 'to')
-      const moves = STATE_MOVERS.has(entry.event.type)
-      if (moves && to && to !== state) {
-        state = to
-        epoch += 1
-      }
-    }
-
-    // A silent event opens no chapter of its own: a transition that only moves
-    // the task between two stages would otherwise leave an empty one behind.
-    if (entry.kind === 'event' && SILENT_EVENTS.has(entry.event.type)) continue
-
-    const stageId = entry.kind === 'event' ? entry.event.stageId : entry.message.stageId
-    const named = stageId ? stagesById.get(stageId) : undefined
-    const at = entryTime(entry)
-    // Inclusive at both ends: an event stamped exactly when its stage finished
-    // is that stage's, not the beginning of a chapter of its own.
-    const running = windows.find(
-      (window) => window.from <= at && at <= window.to && window.stage.nodeKey === state,
-    )
-    const stage = named ?? running?.stage
-
-    const chapter = stage
-      ? open(`stage:${stage.id}`, 'stage', stage.nodeKey, stage)
-      : open(`state:${state}:${epoch}`, state.includes('gate') ? 'gate' : 'task', state, null)
-
-    chapter.entries.push(entry)
+  for (const message of messages) {
+    entries.push({
+      id: `message-${message.id}`,
+      at: String(message.createdAt),
+      author: message.role === 'owner' ? 'owner' : 'guide',
+      verb: message.role === 'owner' ? 'asked' : 'answered',
+      label: message.role === 'owner' ? 'You' : 'Guide',
+      body: message.contentMd,
+      nodeKey: null,
+      decisionId: null,
+    })
   }
 
-  // A stage that has started but whose events fell outside the window still
-  // gets its chapter, so the pipeline and the thread never disagree about
-  // which stages this task ran.
-  for (const { stage } of windows) {
-    open(`stage:${stage.id}`, 'stage', stage.nodeKey, stage)
-  }
-
-  return absorbPreStageChapters(
-    chapters.sort((left, right) => chapterStart(left) - chapterStart(right)),
+  return entries.sort(
+    (left, right) =>
+      (millis(left.at) ?? 0) - (millis(right.at) ?? 0) || left.id.localeCompare(right.id),
   )
 }
 
-/**
- * An event can land on a node before that node's stage row starts — `task.created`
- * arrives at the entry node with no stage behind it yet. Left alone it opens a
- * second chapter for a node the very next chapter also names. It belongs to the
- * run it precedes.
- */
-function absorbPreStageChapters(chapters: readonly ThreadChapter[]): ThreadChapter[] {
-  const kept: ThreadChapter[] = []
+/** Who the line is from: the owner, or the node that produced it. */
+function feedLabel(event: TimelineEvent, stage: Stage | undefined): string {
+  if (OWNER_EVENTS.has(event.type)) return 'You'
+  if (stage) return nodeLabel(stage.nodeKey)
 
-  for (const [index, chapter] of chapters.entries()) {
-    const next = chapters[index + 1]
-    const absorbedByNext =
-      chapter.kind !== 'stage' && next?.kind === 'stage' && next.nodeKey === chapter.nodeKey
+  const gate = payloadValue(event, 'gate') ?? payloadValue(event, 'nodeKey')
 
-    if (absorbedByNext && next) {
-      next.entries.unshift(...chapter.entries)
-      continue
-    }
-
-    kept.push(chapter)
-  }
-
-  return kept
-}
-
-function chapterStart(chapter: ThreadChapter): number {
-  const stageStart = chapter.stage ? millis(chapter.stage.startedAt) : null
-
-  return (
-    stageStart ?? (chapter.entries[0] ? entryTime(chapter.entries[0]) : Number.MAX_SAFE_INTEGER)
-  )
+  return gate ? nodeLabel(gate) : 'Task'
 }

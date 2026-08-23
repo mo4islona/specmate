@@ -6,7 +6,14 @@ type Stage = TaskDetail['stages'][number]
 type ModelBindings = TaskDetail['task']['modelBindings']
 type PinnedNode = NonNullable<TaskDetail['graph']>['dag']['nodes'][number]
 
-export type NodeState = 'done' | 'running' | 'failed' | 'stopped' | 'awaiting' | 'pending'
+/**
+ * Four states the owner reads, plus the one they do not: `pending` nodes carry
+ * no information and fold into a single line. `stopped` is the state the first
+ * pass had no colour for — a failed attempt, a spent attempt cap, a run the
+ * sweeper found orphaned — and a node in it keeps its facts rather than
+ * reverting to looking unstarted.
+ */
+export type NodeState = 'done' | 'running' | 'stopped' | 'awaiting' | 'pending'
 
 export interface PipelineNodeView {
   readonly key: string
@@ -15,6 +22,8 @@ export interface PipelineNodeView {
   readonly role: string | null
   readonly binding: ModelBinding | null
   readonly state: NodeState
+  /** Why it stopped, in the slot a finished node states its duration in. */
+  readonly stoppedReason: string | null
   /** Where the task stands right now — its status, or what it resumes into when parked. */
   readonly current: boolean
   /** Every attempt at this node, oldest first. */
@@ -25,7 +34,7 @@ export interface PipelineNodeView {
 const STAGE_STATE: Record<string, NodeState> = {
   running: 'running',
   succeeded: 'done',
-  failed: 'failed',
+  failed: 'stopped',
   interrupted: 'stopped',
   waiting_human: 'awaiting',
   skipped: 'done',
@@ -59,6 +68,7 @@ export function buildPipelineNodes({
     const latest = runs.at(-1) ?? null
     const current = currentIndex === index
     const role = node.kind === 'stage' ? node.role : null
+    const state = nodeState({ node, latest, current, passed: currentIndex > index })
 
     return {
       key: node.key,
@@ -66,12 +76,31 @@ export function buildPipelineNodes({
       label: nodeLabel(node.key),
       role,
       binding: role ? (modelBindings[role] ?? null) : null,
-      state: nodeState({ node, latest, current, passed: currentIndex > index }),
+      state,
+      stoppedReason: state === 'stopped' ? stoppedReason(runs) : null,
       current,
       runs,
       latest,
     }
   })
+}
+
+/**
+ * What the client can honestly say about a stop. The attempt cap is an
+ * orchestrator setting the client never sees, so a capped node is described by
+ * what it did — failed, this many times — rather than by the bound it hit.
+ */
+function stoppedReason(runs: readonly Stage[]): string | null {
+  const latest = runs.at(-1)
+  if (!latest) return null
+
+  if (latest.status === 'interrupted') {
+    return latest.interruptionCleanupStatus === 'failed' ? 'stopped · cleanup failed' : 'stopped'
+  }
+
+  const attempts = runs.filter((run) => run.status === 'failed').length
+
+  return attempts > 1 ? `failed ${attempts} times` : 'failed'
 }
 
 function nodeState(input: {

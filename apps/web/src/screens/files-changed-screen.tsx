@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'wouter'
 import { DiffViewer } from '../components/diff-viewer.tsx'
 import { ListDetailPanel } from '../components/list-detail-panel.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
@@ -54,20 +53,7 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
   const rows = files.data.files
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col justify-between gap-4 border-b border-border pb-6 sm:flex-row sm:items-end">
-        <div>
-          <p className="micro-label text-cyan">Files changed</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Task code diff</h1>
-          <p className="mt-3 text-sm text-muted">
-            Product-code changes committed on this task's branch, base to current head.
-          </p>
-        </div>
-        <Link href={`/tasks/${taskId}`} className="button-secondary self-start sm:self-auto">
-          ← Task timeline
-        </Link>
-      </header>
-
+    <div className="min-h-0 min-w-0 flex-1 space-y-4">
       {rows.length === 0 && (
         <div className="panel grid min-h-48 place-items-center p-8 text-center">
           <p className="text-sm text-muted">No product-code changes have been committed yet.</p>
