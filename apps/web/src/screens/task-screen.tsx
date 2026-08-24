@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { DecisionOptions } from '../components/decision-options.tsx'
+import { FileDiffDrawer } from '../components/file-diff-drawer.tsx'
 import { GateVerbs } from '../components/gate-panel.tsx'
 import { StopControl } from '../components/run-controls.tsx'
 import { StepDocuments } from '../components/step-documents.tsx'
@@ -98,6 +99,9 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   // running task on the node it is running, and only a deliberate pick pins it
   // to an older one.
   const [readingNode, setReadingNode] = useState<string | null>(null)
+  // The file whose whole diff is open over the surface — REQ-916's layer, opened
+  // from a path the record named.
+  const [openFile, setOpenFile] = useState<string | null>(null)
   // Which of the open questions the console is showing. Reset by its own pager,
   // and clamped below in case the one being answered resolves out from under it.
   const [questionIndex, setQuestionIndex] = useState(0)
@@ -564,7 +568,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               `pb-8` is what the console's fade needs to land on — over empty
               space rather than over the last line of the record. */}
           <div className="flex min-h-full flex-col justify-end px-4 pb-8">
-            <ThreadView entries={feed} live={live} />
+            <ThreadView entries={feed} live={live} taskId={taskId} onOpenFile={setOpenFile} />
 
             {/* What the step produced, at the end of the step. An approval with
                 nothing to read is an approval of nothing. */}
@@ -725,6 +729,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
           />
         </div>
       </aside>
+
+      <FileDiffDrawer taskId={taskId} path={openFile} onClose={() => setOpenFile(null)} />
     </div>
   )
 }

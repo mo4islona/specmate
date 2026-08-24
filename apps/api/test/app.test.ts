@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -119,14 +119,14 @@ describeDb('api conversations', () => {
     return task.id
   }
 
-  test('health and authenticated task routes keep their structured boundary', async () => {
+  it('health and authenticated task routes keep their structured boundary', async () => {
     expect((await app.request('/healthz')).status).toBe(200)
     const missing = await app.request('/api/v1/tasks')
     expect(missing.status).toBe(401)
     expect(await missing.json()).toMatchObject({ code: 'unauthenticated' })
   })
 
-  test('creates, posts to, and hydrates one ordered conversation', async () => {
+  it('creates, posts to, and hydrates one ordered conversation', async () => {
     const taskId = await createTask()
     const created = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
       method: 'POST',
@@ -161,7 +161,7 @@ describeDb('api conversations', () => {
     })
   })
 
-  test('rejects empty messages and terminal posts without changing the transcript', async () => {
+  it('rejects empty messages and terminal posts without changing the transcript', async () => {
     const taskId = await createTask()
     const created = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
       method: 'POST',
@@ -196,7 +196,7 @@ describeDb('api conversations', () => {
     expect(await terminal.json()).toMatchObject({ code: 'conflict' })
   })
 
-  test('replays the same conversation and message pair for a repeated idempotency key', async () => {
+  it('replays the same conversation and message pair for a repeated idempotency key', async () => {
     const taskId = await createTask()
     const openKey = crypto.randomUUID()
     const first = await app.request(`/api/v1/tasks/${taskId}/conversations`, {
@@ -249,7 +249,7 @@ describeDb('api conversations', () => {
     expect(await hydrated.json()).toMatchObject({ messages: [{ sequence: 1 }, { sequence: 2 }] })
   })
 
-  test('stops directly, blocks early restart, and idempotently stores restart guidance', async () => {
+  it('stops directly, blocks early restart, and idempotently stores restart guidance', async () => {
     const slug = `api-stop-${crypto.randomUUID().slice(0, 8)}`
     const { task, graph } = await createOrchestratedTask(db, {
       slug,
@@ -322,7 +322,7 @@ describeDb('api conversations', () => {
     ).toHaveLength(1)
   })
 
-  test('confirms only an action belonging to the addressed conversation', async () => {
+  it('confirms only an action belonging to the addressed conversation', async () => {
     const taskId = await createTask()
     const [conversation] = await db.insert(conversations).values({ taskId }).returning()
     assert(conversation)
@@ -424,7 +424,7 @@ describeDb('api', () => {
     }
   })
 
-  test('launches on the request alone, deriving the name from it — AC-1001, AC-1056', async () => {
+  it('launches on the request alone, deriving the name from it — AC-1001, AC-1056', async () => {
     const created = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
@@ -446,7 +446,7 @@ describeDb('api', () => {
     expect(body.task.baseBranch).toBeNull()
   })
 
-  test('refuses a launch carrying no request — AC-1002', async () => {
+  it('refuses a launch carrying no request — AC-1002', async () => {
     const titleOnly = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
@@ -474,7 +474,7 @@ describeDb('api', () => {
     expect(await blank.json()).toMatchObject({ code: 'validation' })
   })
 
-  test('rejects a description under 20,000 characters that exceeds 20,000 bytes in UTF-8', async () => {
+  it('rejects a description under 20,000 characters that exceeds 20,000 bytes in UTF-8', async () => {
     const response = await app.request('/api/v1/tasks', {
       method: 'POST',
       headers: auth,
@@ -523,19 +523,19 @@ describeDb('api', () => {
       })
     })
 
-    test('a URL written in the request is the repository — AC-1047', async () => {
+    it('a URL written in the request is the repository — AC-1047', async () => {
       const response = await launch({ description: `Fix the redirect in ${alpha}, it loops.` })
       expect(response.status).toBe(201)
       expect((await launched(response)).task.repoUrl).toBe(alpha)
     })
 
-    test('a repository the system knows, named in the request — AC-1048', async () => {
+    it('a repository the system knows, named in the request — AC-1048', async () => {
       const response = await launch({ description: `Tidy the alpha-${tag} logging` })
       expect(response.status).toBe(201)
       expect((await launched(response)).task.repoUrl).toBe(alpha)
     })
 
-    test('two known repositories named at once is a question — AC-1050', async () => {
+    it('two known repositories named at once is a question — AC-1050', async () => {
       const seeded = await launch({ description: `Add a health check to ${beta}` })
       expect(seeded.status).toBe(201)
       await launched(seeded)
@@ -552,7 +552,7 @@ describeDb('api', () => {
       expect(body.candidates.sort()).toEqual([alpha, beta].sort())
     })
 
-    test('nothing to resolve is a rejection carrying the candidates — AC-1049', async () => {
+    it('nothing to resolve is a rejection carrying the candidates — AC-1049', async () => {
       const response = await launch({ description: 'Make the retry backoff configurable.' })
 
       expect(response.status).toBe(400)
@@ -561,7 +561,7 @@ describeDb('api', () => {
       expect(body.candidates).toContain(alpha)
     })
 
-    test('the list names what ran and what is default — AC-1051, AC-1053', async () => {
+    it('the list names what ran and what is default — AC-1051, AC-1053', async () => {
       const set = await app.request('/api/v1/settings/default-repository', {
         method: 'PUT',
         headers: auth,
@@ -583,13 +583,13 @@ describeDb('api', () => {
       })
     })
 
-    test('the default carries a request that names nothing — AC-1052', async () => {
+    it('the default carries a request that names nothing — AC-1052', async () => {
       const response = await launch({ description: 'Make the retry backoff configurable.' })
       expect(response.status).toBe(201)
       expect((await launched(response)).task.repoUrl).toBe(unused)
     })
 
-    test('a default that is not a repository URL is refused — AC-1054', async () => {
+    it('a default that is not a repository URL is refused — AC-1054', async () => {
       const response = await app.request('/api/v1/settings/default-repository', {
         method: 'PUT',
         headers: auth,
@@ -681,7 +681,7 @@ describeDb('api', () => {
       await db.delete(coverageWaivers).where(eq(coverageWaivers.repoUrl, repoUrl))
     })
 
-    test('lists repositories with the waiver in force, and revokes one — AC-1043, AC-1044', async () => {
+    it('lists repositories with the waiver in force, and revokes one — AC-1043, AC-1044', async () => {
       const created = await app.request('/api/v1/tasks', {
         method: 'POST',
         headers: auth,
@@ -718,7 +718,7 @@ describeDb('api', () => {
       )
     })
 
-    test('revoking what a repository does not have is a structured not-found — AC-1045', async () => {
+    it('revoking what a repository does not have is a structured not-found — AC-1045', async () => {
       const response = await app.request(
         `/api/v1/repositories/${crypto.randomUUID()}/coverage-waiver`,
         { method: 'DELETE', headers: auth },
@@ -734,6 +734,120 @@ describeDb('api', () => {
     reasoningEffort: string
   }
 
+  describe("an activity event's patch — REQ-1018", () => {
+    const edit = {
+      path: 'src/a.ts',
+      additions: 2,
+      deletions: 1,
+      preview: '@@ -1,2 +1,3 @@\n-one\n+ONE\n+two',
+      patch: '@@ -1,2 +1,3 @@\n-one\n+ONE\n+two\n context',
+      truncated: true,
+      anchored: true,
+    }
+
+    async function taskWithActivity(payload: Record<string, unknown>): Promise<{
+      taskId: string
+      seq: number
+    }> {
+      const [task] = await db
+        .insert(tasks)
+        .values({
+          slug: `activity-${crypto.randomUUID().slice(0, 8)}`,
+          title: 'Activity fixture',
+          type: 'feature',
+          repoUrl: 'https://github.com/example/activity-fixture',
+        })
+        .returning()
+      if (!task) throw new Error('task insert returned no row')
+      createdTaskIds.push(task.id)
+
+      const [event] = await db
+        .insert(events)
+        .values({ taskId: task.id, type: 'stage.activity', payload })
+        .returning()
+      if (!event) throw new Error('event insert returned no row')
+
+      return { taskId: task.id, seq: event.seq }
+    }
+
+    it('the timeline carries the preview and not the patch — AC-1057', async () => {
+      const { taskId } = await taskWithActivity({
+        attempt: 1,
+        tool: 'Edit',
+        target: 'src/a.ts',
+        edit,
+      })
+
+      const response = await app.request(`/api/v1/tasks/${taskId}/events`, { headers: auth })
+      expect(response.status).toBe(200)
+
+      const body = (await response.json()) as {
+        events: { payload: { edit?: Record<string, unknown> } }[]
+      }
+      const activity = body.events.at(-1)
+      expect(activity?.payload.edit).toMatchObject({
+        path: 'src/a.ts',
+        additions: 2,
+        deletions: 1,
+        preview: edit.preview,
+        truncated: true,
+      })
+      expect(activity?.payload.edit).not.toHaveProperty('patch')
+    })
+
+    it('one event answers with its whole patch — AC-1058', async () => {
+      const { taskId, seq } = await taskWithActivity({
+        attempt: 1,
+        tool: 'Edit',
+        target: 'src/a.ts',
+        edit,
+      })
+
+      const response = await app.request(`/api/v1/tasks/${taskId}/events/${seq}/patch`, {
+        headers: auth,
+      })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ seq, patch: edit.patch })
+    })
+
+    it('an event that recorded no edit answers without one — AC-1059', async () => {
+      const { taskId, seq } = await taskWithActivity({
+        attempt: 1,
+        tool: 'Bash',
+        target: 'bun test',
+      })
+
+      const response = await app.request(`/api/v1/tasks/${taskId}/events/${seq}/patch`, {
+        headers: auth,
+      })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ seq, patch: null })
+    })
+
+    it("another task's event is not this task's to read", async () => {
+      const { seq } = await taskWithActivity({ attempt: 1, tool: 'Edit', target: 'src/a.ts', edit })
+      const { taskId: otherTaskId } = await taskWithActivity({
+        attempt: 1,
+        tool: 'Read',
+        target: 'b',
+      })
+
+      const response = await app.request(`/api/v1/tasks/${otherTaskId}/events/${seq}/patch`, {
+        headers: auth,
+      })
+      expect(response.status).toBe(404)
+    })
+
+    it('a cursor that is not a positive integer is rejected', async () => {
+      const { taskId } = await taskWithActivity({ attempt: 1, tool: 'Read', target: 'b' })
+
+      const response = await app.request(`/api/v1/tasks/${taskId}/events/nope/patch`, {
+        headers: auth,
+      })
+      expect(response.status).toBe(400)
+    })
+  })
+
   describe('model defaults — REQ-1014, REQ-1001, REQ-917', () => {
     let originalDefaults: Awaited<ReturnType<typeof getModelDefaults>>
 
@@ -745,7 +859,7 @@ describeDb('api', () => {
       await updateModelDefaults(db, originalDefaults)
     })
 
-    test('reads the current default model and reasoning effort for every role — AC-1040', async () => {
+    it('reads the current default model and reasoning effort for every role — AC-1040', async () => {
       const response = await app.request('/api/v1/settings/model-defaults', { headers: auth })
 
       expect(response.status).toBe(200)
@@ -753,7 +867,7 @@ describeDb('api', () => {
       expect(body.modelDefaults.researcher).toEqual(originalDefaults.researcher)
     })
 
-    test('updates one role, a later read reflects it, and a task created afterward without an override for that role uses it — AC-1041', async () => {
+    it('updates one role, a later read reflects it, and a task created afterward without an override for that role uses it — AC-1041', async () => {
       const updated = await app.request('/api/v1/settings/model-defaults', {
         method: 'PUT',
         headers: auth,
@@ -787,7 +901,7 @@ describeDb('api', () => {
       expect(createdBody.task.modelBindings.reviewer?.model).toBe('claude-sonnet-5')
     })
 
-    test("updates one role's reasoning effort only, leaving that role's model untouched — AC-1041", async () => {
+    it("updates one role's reasoning effort only, leaving that role's model untouched — AC-1041", async () => {
       const modelBefore = (await getModelDefaults(db)).implementer.model
       const updated = await app.request('/api/v1/settings/model-defaults', {
         method: 'PUT',
@@ -803,7 +917,7 @@ describeDb('api', () => {
       })
     })
 
-    test('rejects an update naming a model outside the known catalog, leaving the stored default unchanged — AC-1042', async () => {
+    it('rejects an update naming a model outside the known catalog, leaving the stored default unchanged — AC-1042', async () => {
       const before = await getModelDefaults(db)
       const rejected = await app.request('/api/v1/settings/model-defaults', {
         method: 'PUT',
@@ -817,7 +931,7 @@ describeDb('api', () => {
       expect(unchanged.implementer).toEqual(before.implementer)
     })
 
-    test('rejects an update naming a reasoning effort outside the known levels, leaving the stored default unchanged — AC-1042', async () => {
+    it('rejects an update naming a reasoning effort outside the known levels, leaving the stored default unchanged — AC-1042', async () => {
       const before = await getModelDefaults(db)
       const rejected = await app.request('/api/v1/settings/model-defaults', {
         method: 'PUT',
@@ -831,7 +945,7 @@ describeDb('api', () => {
       expect(unchanged.implementer).toEqual(before.implementer)
     })
 
-    test('resetting sends the full shipped defaults and every role returns to them in one save — AC-949', async () => {
+    it('resetting sends the full shipped defaults and every role returns to them in one save — AC-949', async () => {
       await app.request('/api/v1/settings/model-defaults', {
         method: 'PUT',
         headers: auth,
@@ -852,7 +966,7 @@ describeDb('api', () => {
       expect(body.modelDefaults).toEqual(DEFAULT_MODEL_BINDINGS)
     })
 
-    test('launching with a model override reflects it for that role and current defaults elsewhere — AC-1038', async () => {
+    it('launching with a model override reflects it for that role and current defaults elsewhere — AC-1038', async () => {
       const created = await app.request('/api/v1/tasks', {
         method: 'POST',
         headers: auth,
@@ -874,7 +988,7 @@ describeDb('api', () => {
       expect(body.task.modelBindings.researcher).toEqual(currentDefaults.researcher)
     })
 
-    test('launching with a reasoning-effort-only override inherits the current default model for that role — AC-1038', async () => {
+    it('launching with a reasoning-effort-only override inherits the current default model for that role — AC-1038', async () => {
       const currentDefaults = await getModelDefaults(db)
       const created = await app.request('/api/v1/tasks', {
         method: 'POST',
@@ -898,7 +1012,7 @@ describeDb('api', () => {
       })
     })
 
-    test('rejects a task launched with a model override naming an unknown model, creating no task — AC-1039', async () => {
+    it('rejects a task launched with a model override naming an unknown model, creating no task — AC-1039', async () => {
       const rejected = await app.request('/api/v1/tasks', {
         method: 'POST',
         headers: auth,
@@ -915,7 +1029,7 @@ describeDb('api', () => {
       expect(await rejected.json()).toMatchObject({ code: 'validation' })
     })
 
-    test('rejects a task launched with a reasoning-effort override naming an unknown level, creating no task — AC-1039', async () => {
+    it('rejects a task launched with a reasoning-effort override naming an unknown level, creating no task — AC-1039', async () => {
       const rejected = await app.request('/api/v1/tasks', {
         method: 'POST',
         headers: auth,
@@ -933,7 +1047,7 @@ describeDb('api', () => {
     })
   })
 
-  test('task detail reports spend against budget, with cost marked incomplete rather than zero when telemetry is missing — REQ-1505, AC-1512, AC-1513', async () => {
+  it('task detail reports spend against budget, with cost marked incomplete rather than zero when telemetry is missing — REQ-1505, AC-1512, AC-1513', async () => {
     const { task, graph } = await createOrchestratedTask(db, {
       slug: `spend-${crypto.randomUUID().slice(0, 8)}`,
       title: 'Spend fixture',
@@ -980,7 +1094,7 @@ describeDb('api', () => {
     expect(body.spend).toEqual({ costUsd: 2, costComplete: false, agentMinutes: 3 })
   })
 
-  test('task detail carries the pull request the task opened, so the screen can link it', async () => {
+  it('task detail carries the pull request the task opened, so the screen can link it', async () => {
     const { task } = await createOrchestratedTask(db, {
       slug: `pr-${crypto.randomUUID().slice(0, 8)}`,
       title: 'Pull request fixture',
@@ -1009,7 +1123,7 @@ describeDb('api', () => {
     expect(body.pullRequest?.url).toMatch(/\/pull\/\d+$/)
   })
 
-  test('aggregates gate, failure, and stall attention without healthy tasks', async () => {
+  it('aggregates gate, failure, and stall attention without healthy tasks', async () => {
     const rollback = new Error('rollback attention fixture')
 
     try {
@@ -1227,7 +1341,7 @@ describeDb('api', () => {
     }
   })
 
-  test('stage.activity does not reset the stall clock', async () => {
+  it('stage.activity does not reset the stall clock', async () => {
     const rollback = new Error('rollback activity-stall fixture')
 
     try {
@@ -1297,7 +1411,7 @@ describeDb('api', () => {
     }
   })
 
-  test('requires bearer auth for streams and ignores query-string credentials', async () => {
+  it('requires bearer auth for streams and ignores query-string credentials', async () => {
     const missing = await app.request('/api/v1/events/stream')
     expect(missing.status).toBe(401)
     expect(await missing.json()).toMatchObject({
@@ -1313,7 +1427,7 @@ describeDb('api', () => {
     })
   })
 
-  test('records task and stage-pinned comments with timeline events', async () => {
+  it('records task and stage-pinned comments with timeline events', async () => {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -1404,7 +1518,7 @@ describeDb('api', () => {
     })
   })
 
-  test('an unpinned comment becomes guidance for the node the task stands on — AC-1046', async () => {
+  it('an unpinned comment becomes guidance for the node the task stands on — AC-1046', async () => {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -1470,7 +1584,7 @@ describeDb('api', () => {
     expect(event?.payload).toMatchObject({ nodeKey: 'implement', guidance: true })
   })
 
-  test('with nothing running, guidance addresses the node that runs next', async () => {
+  it('with nothing running, guidance addresses the node that runs next', async () => {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -1526,7 +1640,7 @@ describeDb('api', () => {
     })
   })
 
-  test('a finished task takes a note, not guidance no run will read', async () => {
+  it('a finished task takes a note, not guidance no run will read', async () => {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -1562,7 +1676,7 @@ describeDb('api', () => {
     expect(note?.target).toBeNull()
   })
 
-  test('delegates gate actions and rejects actions away from a gate', async () => {
+  it('delegates gate actions and rejects actions away from a gate', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
 
     async function seedAt(status: TaskState, label: string) {
@@ -1666,7 +1780,7 @@ describeDb('api', () => {
     expect(unchanged?.status).toBe('specify')
   })
 
-  test('a redirect past the kickoff cap is refused as a conflict, leaving the task at its gate', async () => {
+  it('a redirect past the kickoff cap is refused as a conflict, leaving the task at its gate', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
     const [task] = await db
       .insert(tasks)
@@ -1705,7 +1819,7 @@ describeDb('api', () => {
     expect(unchanged?.status).toBe('human_kickoff_gate')
   })
 
-  test('lists a task’s decisions and answers or dismisses them through their own endpoints', async () => {
+  it('lists a task’s decisions and answers or dismisses them through their own endpoints', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
     const [task] = await db
       .insert(tasks)
@@ -1810,7 +1924,7 @@ describeDb('api', () => {
     expect(open).toMatchObject({ status: 'open', conversationId: conversation.id })
   })
 
-  test('lists decisions in a deterministic order even when several share the same createdAt', async () => {
+  it('lists decisions in a deterministic order even when several share the same createdAt', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
     const [task] = await db
       .insert(tasks)
@@ -1872,7 +1986,7 @@ describeDb('api', () => {
     expect(secondDecisions.map((d) => d.id)).toEqual(expectedOrder)
   })
 
-  test('answering the last blocker of a task with no recorded resume state surfaces a stable conflict code, not a bare 500', async () => {
+  it('answering the last blocker of a task with no recorded resume state surfaces a stable conflict code, not a bare 500', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
     const [task] = await db
       .insert(tasks)
@@ -1911,7 +2025,7 @@ describeDb('api', () => {
     expect(await response.json()).toMatchObject({ code: 'conflict', detail: expect.any(String) })
   })
 
-  test('a confirmed answer_decision conversation action resumes the task exactly like the direct control', async () => {
+  it('a confirmed answer_decision conversation action resumes the task exactly like the direct control', async () => {
     const dag = instantiateDefinition(PIPELINE_CATALOG.feature)
     const [task] = await db
       .insert(tasks)
@@ -1984,7 +2098,7 @@ describeDb('api', () => {
     expect(resolved).toMatchObject({ status: 'answered', answerMd: 'The whole repository.' })
   })
 
-  test('replays and follows conversation events from the last delivered sequence', async () => {
+  it('replays and follows conversation events from the last delivered sequence', async () => {
     const [task] = await db
       .insert(tasks)
       .values({
@@ -2172,7 +2286,7 @@ describeDb('api task diff', () => {
     return task.id
   }
 
-  test('lists changed files with status and line counts (AC-1034)', async () => {
+  it('lists changed files with status and line counts (AC-1034)', async () => {
     const slug = `diff-files-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
@@ -2188,12 +2302,23 @@ describeDb('api task diff', () => {
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
     expect(response.status).toBe(200)
+    // The change folder is grouped, not withheld (AC-1060): its schema marker is
+    // committed by provisioning, so it is one of the files this branch adds.
     expect(await response.json()).toEqual({
-      files: [{ path: 'src/added.ts', status: 'added', additions: 1, deletions: 0 }],
+      files: expect.arrayContaining([
+        { path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
+        {
+          path: `openspec/changes/${slug}/.openspec.yaml`,
+          status: 'added',
+          group: 'spec',
+          additions: 1,
+          deletions: 0,
+        },
+      ]),
     })
   })
 
-  test('returns an empty list before any product-code commit exists (AC-1035)', async () => {
+  it('returns an empty list before any product-code commit exists (AC-1035)', async () => {
     const slug = `diff-empty-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
@@ -2204,7 +2329,7 @@ describeDb('api task diff', () => {
     expect(await response.json()).toEqual({ files: [] })
   })
 
-  test('returns one file unified diff by path (AC-1036)', async () => {
+  it('returns one file unified diff by path (AC-1036)', async () => {
     const slug = `diff-file-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
@@ -2226,7 +2351,7 @@ describeDb('api task diff', () => {
     expect(body.diff).toContain('+extra line')
   })
 
-  test('reads the same diff after the workspace has been released (AC-1037)', async () => {
+  it('reads the same diff after the workspace has been released (AC-1037)', async () => {
     const slug = `diff-released-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
@@ -2243,11 +2368,13 @@ describeDb('api task diff', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      files: [{ path: 'README.md', status: 'modified', additions: 1, deletions: 0 }],
+      files: expect.arrayContaining([
+        { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
+      ]),
     })
   })
 
-  test('reports a resolvable-but-missing branch as not-found, not a crash (2.4)', async () => {
+  it('reports a resolvable-but-missing branch as not-found, not a crash (2.4)', async () => {
     const taskId = await createDiffTask(`diff-missing-${crypto.randomUUID().slice(0, 8)}`)
 
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
@@ -2256,7 +2383,7 @@ describeDb('api task diff', () => {
     expect(await response.json()).toMatchObject({ code: 'not_found' })
   })
 
-  test('requires a path query parameter for the one-file diff', async () => {
+  it('requires a path query parameter for the one-file diff', async () => {
     const taskId = await createDiffTask(`diff-noquery-${crypto.randomUUID().slice(0, 8)}`)
 
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/file`, { headers: auth })
@@ -2265,7 +2392,7 @@ describeDb('api task diff', () => {
     expect(await response.json()).toMatchObject({ code: 'validation' })
   })
 
-  test('treats the path query parameter as one literal file, not a git pathspec (regression)', async () => {
+  it('treats the path query parameter as one literal file, not a git pathspec (regression)', async () => {
     const slug = `diff-pathspec-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
@@ -2285,7 +2412,7 @@ describeDb('api task diff', () => {
     expect(await response.json()).toEqual({ path: '.', diff: '' })
   })
 
-  test('reports a task branch with no common history as not-found, not a crash', async () => {
+  it('reports a task branch with no common history as not-found, not a crash', async () => {
     const slug = `diff-unrelated-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
     const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })

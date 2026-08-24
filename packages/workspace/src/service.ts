@@ -41,6 +41,8 @@ export interface DiffTaskRef {
   readonly repoUrl: string
   /** Null until provisioning pinned it — a task with no branch has no diff either. */
   readonly baseBranch: string | null
+  /** Null until planning named the change; the folder then stands under the slug. */
+  readonly changeName?: string | null
 }
 
 export class TaskNotFoundError extends Error {
@@ -86,7 +88,10 @@ export class WorkspaceService {
   async provision(request: TaskProvisionRequest): Promise<Workspace> {
     const task = await this.loadTask(request.taskId)
     this.assertMatchesTask(request, task)
-    const workspace = await this.manager.provision(request)
+    // The folder's name is the task's, not the caller's: a dispatcher holding a
+    // snapshot from before planning declared one would re-provision under the
+    // provisional name and split the task's work across two folders.
+    const workspace = await this.manager.provision({ ...request, changeName: task.changeName })
     // What a task with no base of its own actually ran against, pinned on first
     // provision so publish and the diff read a branch rather than a convention.
     if (task.baseBranch === null) {
@@ -169,6 +174,11 @@ export class WorkspaceService {
     return this.manager.headCommit(workspace)
   }
 
+  /** REQ-705: the folder converges before the declaring stage's output is committed. */
+  renameChangeFolder(workspace: Workspace, changeName: string): Promise<Workspace> {
+    return this.manager.renameChangeFolder(workspace, changeName)
+  }
+
   /**
    * Reads straight from the shared mirror rather than `workspace.path`, so
    * this works for a task whose per-task worktree has already been released
@@ -182,13 +192,13 @@ export class WorkspaceService {
   async diffFiles(task: DiffTaskRef): Promise<DiffFile[]> {
     const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
 
-    return taskFilesChanged(this.git, range, changeDir(task.slug))
+    return taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
   }
 
   async diffFile(task: DiffTaskRef, path: string): Promise<string> {
     const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
 
-    return taskFileDiff(this.git, range, path, changeDir(task.slug))
+    return taskFileDiff(this.git, range, path)
   }
 
   async release(taskId: string): Promise<void> {

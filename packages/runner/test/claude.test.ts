@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { StageActivity, StageJob } from '@specmate/core'
@@ -54,7 +54,7 @@ function job(harness: Harness, overrides: Partial<StageJob> = {}): StageJob {
 }
 
 describe('provider invocation', () => {
-  test('withholds the shell from a role that may not modify product code', () => {
+  it('withholds the shell from a role that may not modify product code', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     const claude = provider('ok', harness)
 
@@ -63,7 +63,7 @@ describe('provider invocation', () => {
     expect(claude.argv('implementer', 'claude-opus-5', 'high')).not.toContain('--disallowedTools')
   })
 
-  test('runs the model and reasoning effort it is given, not the process-level config', () => {
+  it('runs the model and reasoning effort it is given, not the process-level config', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     // The provider's config defaults to claude-opus-5; passing a different
     // model here and seeing it win is what proves argv() isn't reading config.
@@ -75,14 +75,14 @@ describe('provider invocation', () => {
     expect(argv[argv.indexOf('--output-format') + 1]).toBe('stream-json')
   })
 
-  test('pairs --output-format stream-json with --verbose, which the CLI requires under -p', () => {
+  it('pairs --output-format stream-json with --verbose, which the CLI requires under -p', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     const argv = provider('ok', harness).argv('researcher', 'claude-opus-5', 'high')
 
     expect(argv).toContain('--verbose')
   })
 
-  test('delivers the prompt on stdin and keeps it in the scratch directory', async () => {
+  it('delivers the prompt on stdin and keeps it in the scratch directory', async () => {
     const harness = await makeHarness('stdin')
     const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
     const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
@@ -95,7 +95,7 @@ describe('provider invocation', () => {
     expect(await readFile(join(kept, 'prompt.md'), 'utf8')).toBe('PROMPT-BODY-MARKER')
   })
 
-  test('parses the result and folds in the provider’s telemetry', async () => {
+  it('parses the result and folds in the provider’s telemetry', async () => {
     const harness = await makeHarness('telemetry')
     const claude = provider('ok', harness)
 
@@ -106,7 +106,7 @@ describe('provider invocation', () => {
     expect(outcome.result.usage.cost_usd).toBe(0.42)
   })
 
-  test('does not fail a good stage on a garbled telemetry envelope', async () => {
+  it('does not fail a good stage on a garbled telemetry envelope', async () => {
     const harness = await makeHarness('garbled')
     const claude = provider('garbled-telemetry', harness)
 
@@ -116,7 +116,7 @@ describe('provider invocation', () => {
     expect(outcome.result.usage.input_tokens).toBeUndefined()
   })
 
-  test('retains the log of a failed run', async () => {
+  it('retains the log of a failed run', async () => {
     const harness = await makeHarness('failed-log')
     const claude = provider('nonzero-exit', harness)
 
@@ -132,7 +132,7 @@ describe('provider invocation', () => {
     expect(await readFile(log, 'utf8')).toContain('stub failed on purpose')
   })
 
-  test('reports a run that left no result', async () => {
+  it('reports a run that left no result', async () => {
     const harness = await makeHarness('no-result')
     const claude = provider('no-result', harness)
 
@@ -141,7 +141,7 @@ describe('provider invocation', () => {
     expect(error.failure).toBe('no_result')
   })
 
-  test('reports a malformed result by naming the problem', async () => {
+  it('reports a malformed result by naming the problem', async () => {
     const harness = await makeHarness('malformed')
     const claude = provider('invalid-result', harness)
 
@@ -151,7 +151,7 @@ describe('provider invocation', () => {
     expect(error.message).toMatch(/JSON|invalid/i)
   })
 
-  test('does not accept an earlier attempt’s result as this attempt’s', async () => {
+  it('does not accept an earlier attempt’s result as this attempt’s', async () => {
     const harness = await makeHarness('stale')
     const stale = JSON.stringify({ schema_version: 1, role: 'researcher', status: 'ok' })
     await writeFile(join(harness.workspace.path, RESULT_FILE), stale)
@@ -162,7 +162,7 @@ describe('provider invocation', () => {
     expect(error.failure).toBe('no_result')
   })
 
-  test('reports a run killed by its deadline as timed out', async () => {
+  it('reports a run killed by its deadline as timed out', async () => {
     const harness = await makeHarness('timeout')
     const claude = provider('hang', harness)
 
@@ -178,7 +178,7 @@ describe('provider invocation', () => {
    * the flag was right all along the day a stage ran cold, and what went missing
    * was the session on its way to this call.
    */
-  test('forks the session its job carries', async () => {
+  it('forks the session its job carries', async () => {
     const harness = await makeHarness('resume-argv')
     const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
     const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
@@ -190,7 +190,7 @@ describe('provider invocation', () => {
     expect(seen.argv).toContain('--fork-session')
   })
 
-  test('starts cold when the node it continues left no session', async () => {
+  it('starts cold when the node it continues left no session', async () => {
     const harness = await makeHarness('resume-argv-cold')
     const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
     const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
@@ -202,7 +202,7 @@ describe('provider invocation', () => {
     expect(seen.argv).not.toContain('--fork-session')
   })
 
-  test('holds a first pass to what its role owes', async () => {
+  it('holds a first pass to what its role owes', async () => {
     const harness = await makeHarness('plan-owed')
     const claude = provider('continuation', harness)
 
@@ -219,7 +219,7 @@ describe('provider invocation', () => {
    * session the provider never gave back is still a continuation — the prompt it
    * was handed asks for no plan, so demanding one fails a run that did as it was told.
    */
-  test('asks a continuation for no plan, session or no session', async () => {
+  it('asks a continuation for no plan, session or no session', async () => {
     const harness = await makeHarness('plan-not-owed')
     const claude = provider('continuation', harness)
 
@@ -232,7 +232,7 @@ describe('provider invocation', () => {
 })
 
 describe('telemetry parsing', () => {
-  test('reads a transcript array whose last entry is the result', () => {
+  it('reads a transcript array whose last entry is the result', () => {
     const stdout = JSON.stringify([
       { type: 'assistant' },
       { type: 'result', total_cost_usd: 1.5, usage: { input_tokens: 10, output_tokens: 20 } },
@@ -245,12 +245,12 @@ describe('telemetry parsing', () => {
     })
   })
 
-  test('returns nothing for output that is not JSON', () => {
+  it('returns nothing for output that is not JSON', () => {
     expect(readTelemetry('welcome to the CLI')).toEqual({})
     expect(readTelemetry('')).toEqual({})
   })
 
-  test('reads a stream-json transcript, taking the last result-shaped line and ignoring the rest', () => {
+  it('reads a stream-json transcript, taking the last result-shaped line and ignoring the rest', () => {
     const stdout = [
       JSON.stringify({ type: 'system', subtype: 'init' }),
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }),
@@ -269,7 +269,7 @@ describe('telemetry parsing', () => {
     })
   })
 
-  test('the stage record carries the served model, token kinds, cost, and the raw envelope', () => {
+  it('the stage record carries the served model, token kinds, cost, and the raw envelope', () => {
     const envelope = {
       type: 'result',
       total_cost_usd: 1.5,
@@ -285,7 +285,7 @@ describe('telemetry parsing', () => {
     })
   })
 
-  test('the model that served the run is the one that did the work, not the first key', () => {
+  it('the model that served the run is the one that did the work, not the first key', () => {
     const envelope = {
       type: 'result',
       total_cost_usd: 1.5052,
@@ -300,7 +300,7 @@ describe('telemetry parsing', () => {
     expect(readStageTelemetry(JSON.stringify(envelope))?.model).toBe('claude-opus-5')
   })
 
-  test('a per-model envelope without costs ranks on output tokens', () => {
+  it('a per-model envelope without costs ranks on output tokens', () => {
     const envelope = {
       type: 'result',
       usage: { input_tokens: 40, output_tokens: 900 },
@@ -313,7 +313,7 @@ describe('telemetry parsing', () => {
     expect(readStageTelemetry(JSON.stringify(envelope))?.model).toBe('claude-opus-5')
   })
 
-  test('an unreadable envelope reads as absent, never as zero', () => {
+  it('an unreadable envelope reads as absent, never as zero', () => {
     expect(readStageTelemetry('not json at all')).toBeNull()
     expect(readStageTelemetry(JSON.stringify({ type: 'result' }))).toEqual({
       model: null,
@@ -323,7 +323,7 @@ describe('telemetry parsing', () => {
     })
   })
 
-  test('a successful run surfaces its telemetry on the outcome', async () => {
+  it('a successful run surfaces its telemetry on the outcome', async () => {
     const harness = await makeHarness('outcome-telemetry')
     const claude = provider('ok', harness)
 
@@ -334,7 +334,7 @@ describe('telemetry parsing', () => {
     expect(outcome.telemetry?.costUsd).toBe(0.42)
   })
 
-  test('a garbled envelope leaves the outcome telemetry null and the stage standing', async () => {
+  it('a garbled envelope leaves the outcome telemetry null and the stage standing', async () => {
     const harness = await makeHarness('null-telemetry')
     const claude = provider('garbled-telemetry', harness)
 
@@ -344,7 +344,7 @@ describe('telemetry parsing', () => {
     expect(outcome.telemetry).toBeNull()
   })
 
-  test('labels every stage container with task, node, and attempt', () => {
+  it('labels every stage container with task, node, and attempt', () => {
     const labels = stageContainerLabels(
       job({ workspace: { slug: 'x' } } as Harness, { node: 'specify', attempt: 2 }),
     )
@@ -358,7 +358,7 @@ describe('telemetry parsing', () => {
 })
 
 describe('activity line parsing', () => {
-  test('a file-editing tool use names the tool and the file (AC-226)', () => {
+  it('a file-editing tool use names the tool and the file (AC-226)', () => {
     const line = JSON.stringify({
       type: 'assistant',
       message: {
@@ -367,10 +367,12 @@ describe('activity line parsing', () => {
       },
     })
 
-    expect(parseActivityLine(line)).toEqual([{ tool: 'Edit', target: 'a.ts' }])
+    expect(parseActivityLine(line)).toEqual([
+      { tool: 'Edit', target: 'a.ts', input: { file_path: 'a.ts' } },
+    ])
   })
 
-  test('one assistant turn can report more than one tool use', () => {
+  it('one assistant turn can report more than one tool use', () => {
     const line = JSON.stringify({
       type: 'assistant',
       message: {
@@ -384,21 +386,21 @@ describe('activity line parsing', () => {
     })
 
     expect(parseActivityLine(line)).toEqual([
-      { tool: 'Read', target: 'a.ts' },
-      { tool: 'Bash', target: 'bun test' },
+      { tool: 'Read', target: 'a.ts', input: { file_path: 'a.ts' } },
+      { tool: 'Bash', target: 'bun test', input: { command: 'bun test' } },
     ])
   })
 
-  test('a tool use with no known target field reads as the tool alone', () => {
+  it('a tool use with no known target field reads as the tool alone', () => {
     const line = JSON.stringify({
       type: 'assistant',
       message: { role: 'assistant', content: [{ type: 'tool_use', name: 'TodoWrite', input: {} }] },
     })
 
-    expect(parseActivityLine(line)).toEqual([{ tool: 'TodoWrite', target: '' }])
+    expect(parseActivityLine(line)).toEqual([{ tool: 'TodoWrite', target: '', input: {} }])
   })
 
-  test('unrecognized CLI output produces no activity (AC-227)', () => {
+  it('unrecognized CLI output produces no activity (AC-227)', () => {
     const shapes = [
       JSON.stringify({ type: 'system', subtype: 'init' }),
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }),
@@ -419,7 +421,7 @@ describe('activity line parsing', () => {
 })
 
 describe('live activity', () => {
-  test('collects each recognized tool use, attributed via the job callback, in order', async () => {
+  it('collects each recognized tool use, attributed via the job callback, in order', async () => {
     const harness = await makeHarness('activity')
     const claude = provider('activity', harness)
     const seen: StageActivity[] = []
@@ -435,7 +437,7 @@ describe('live activity', () => {
     ])
   })
 
-  test('a run with no onActivity callback runs exactly as before', async () => {
+  it('a run with no onActivity callback runs exactly as before', async () => {
     const harness = await makeHarness('activity-no-callback')
     const claude = provider('activity', harness)
 
@@ -444,7 +446,7 @@ describe('live activity', () => {
     expect(outcome.result.status).toBe('ok')
   })
 
-  test('unparseable streaming output leaves the stage standing, without activity (AC-228)', async () => {
+  it('unparseable streaming output leaves the stage standing, without activity (AC-228)', async () => {
     const harness = await makeHarness('activity-garbled')
     const claude = provider('activity-garbled', harness)
     const seen: StageActivity[] = []

@@ -1,6 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import type { ReactElement } from 'react'
+import { describe, expect, it } from 'vitest'
 import type { LineEntry, TurnEntry } from '../lib/task-thread.ts'
 import { ThreadView } from './thread-view.tsx'
 
@@ -29,8 +31,17 @@ function line(overrides: Partial<LineEntry> = {}): LineEntry {
     target: 'packages/core/src/state.ts',
     tone: 'plain',
     live: false,
+    seq: 2,
+    edit: null,
     ...overrides,
   }
+}
+
+/** An edit block reads its whole patch through a query; nothing here asks it to. */
+function renderWithClient(element: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+  return render(<QueryClientProvider client={client}>{element}</QueryClientProvider>)
 }
 
 const LONG_ANSWER =
@@ -38,8 +49,8 @@ const LONG_ANSWER =
   'each of them confirmed at the kickoff gate before anything runs, so nothing is guessed silently.'
 
 describe('ThreadView (REQ-919, REQ-915)', () => {
-  test('the owner’s side carries no name, and the moment is not on the screen', () => {
-    render(<ThreadView entries={[turn()]} />)
+  it('the owner’s side carries no name, and the moment is not on the screen', () => {
+    render(<ThreadView entries={[turn()]} taskId="task-1" />)
 
     expect(screen.getByText('Keep the migration reversible.')).not.toBeNull()
     // The side says whose turn it is; the label would be the same word twice.
@@ -47,17 +58,21 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByRole('listitem').getAttribute('title')).toMatch(/\d/)
   })
 
-  test('a node speaks under its own name', () => {
+  it('a node speaks under its own name', () => {
     render(
-      <ThreadView entries={[turn({ author: 'task', label: 'Kickoff gate', verb: 'asked' })]} />,
+      <ThreadView
+        taskId="task-1"
+        entries={[turn({ author: 'task', label: 'Kickoff gate', verb: 'asked' })]}
+      />,
     )
 
     expect(screen.getByText('Kickoff gate')).not.toBeNull()
   })
 
-  test('an entry with nothing said is a neutral marker with the time on it', () => {
+  it('an entry with nothing said is a neutral marker with the time on it', () => {
     render(
       <ThreadView
+        taskId="task-1"
         entries={[turn({ body: null, verb: 'launched this task', title: 'Task launched' })]}
       />,
     )
@@ -69,17 +84,20 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByRole('listitem').querySelector('[data-balloon]')).toBeNull()
   })
 
-  test('a plain comment is the balloon, with no verb repeating what it already is', () => {
-    render(<ThreadView entries={[turn()]} />)
+  it('a plain comment is the balloon, with no verb repeating what it already is', () => {
+    render(<ThreadView entries={[turn()]} taskId="task-1" />)
 
     expect(screen.getByRole('listitem').querySelector('[data-balloon]')).not.toBeNull()
     expect(screen.queryByText('commented')).toBeNull()
   })
 
-  test('an answered question is clamped until the owner opens it (AC-958)', async () => {
+  it('an answered question is clamped until the owner opens it (AC-958)', async () => {
     const user = userEvent.setup()
     render(
-      <ThreadView entries={[turn({ decisionId: 'd1', verb: 'answered', body: LONG_ANSWER })]} />,
+      <ThreadView
+        taskId="task-1"
+        entries={[turn({ decisionId: 'd1', verb: 'answered', body: LONG_ANSWER })]}
+      />,
     )
 
     const body = screen.getByText(LONG_ANSWER).closest('div')
@@ -89,16 +107,19 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByText(LONG_ANSWER).closest('div')?.className).not.toContain('line-clamp-2')
   })
 
-  test('an exchange that already fits is not offered a control that opens nothing', () => {
+  it('an exchange that already fits is not offered a control that opens nothing', () => {
     render(
-      <ThreadView entries={[turn({ decisionId: 'd1', verb: 'answered', body: 'One field.' })]} />,
+      <ThreadView
+        taskId="task-1"
+        entries={[turn({ decisionId: 'd1', verb: 'answered', body: 'One field.' })]}
+      />,
     )
 
     expect(screen.queryByRole('button', { name: /read the whole thing/i })).toBeNull()
   })
 
-  test('a tool use reads as the verb and its object, with the moment off the screen', () => {
-    render(<ThreadView entries={[line()]} />)
+  it('a tool use reads as the verb and its object, with the moment off the screen', () => {
+    render(<ThreadView entries={[line()]} taskId="task-1" />)
 
     expect(screen.getByText('Edited')).not.toBeNull()
     expect(screen.getByText('(packages/core/src/state.ts)')).not.toBeNull()
@@ -107,9 +128,38 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByRole('listitem').getAttribute('title')).toMatch(/\d/)
   })
 
-  test('something that happened to the run is a sentence with its particulars beneath it', () => {
+  it('a tool use that changed a file shows what it changed — AC-992', () => {
+    const edit = {
+      path: 'openspec/changes/pie-charts/proposal.md',
+      additions: 2,
+      deletions: 1,
+      preview: '@@ -1,2 +1,3 @@\n one\n-two\n+TWO\n+three',
+      clamped: false,
+      truncated: false,
+      anchored: true,
+    }
+
+    renderWithClient(
+      <ThreadView taskId="task-1" entries={[line({ action: 'Wrote', target: edit.path, edit })]} />,
+    )
+
+    expect(screen.getByText('Wrote')).not.toBeNull()
+    expect(screen.getByText('(openspec/changes/pie-charts/proposal.md)')).not.toBeNull()
+    expect(screen.getByText(/Added 2 lines, removed 1 line/)).not.toBeNull()
+    expect(screen.getByText('+TWO')).not.toBeNull()
+  })
+
+  it('a tool use that changed nothing keeps its single line — AC-994', () => {
+    render(<ThreadView entries={[line({ action: 'Read' })]} taskId="task-1" />)
+
+    expect(screen.getByText('Read')).not.toBeNull()
+    expect(screen.queryByText(/Added/)).toBeNull()
+  })
+
+  it('something that happened to the run is a sentence with its particulars beneath it', () => {
     render(
       <ThreadView
+        taskId="task-1"
         entries={[line({ shape: 'event', action: 'Stage accepted', target: 'fd07a56' })]}
       />,
     )
@@ -120,16 +170,21 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByText('└')).not.toBeNull()
   })
 
-  test('what a run is doing right now is marked as in progress (AC-940)', () => {
-    render(<ThreadView entries={[line({ live: true }), line({ id: 'event-3', live: false })]} />)
+  it('what a run is doing right now is marked as in progress (AC-940)', () => {
+    render(
+      <ThreadView
+        taskId="task-1"
+        entries={[line({ live: true }), line({ id: 'event-3', live: false })]}
+      />,
+    )
 
     const items = screen.getAllByRole('listitem')
     expect(items[0]?.getAttribute('data-live')).toBe('')
     expect(items[1]?.getAttribute('data-live')).toBeNull()
   })
 
-  test('a person’s turn and the machine’s record share one column, in order', () => {
-    render(<ThreadView entries={[line(), turn({ id: 'event-3' })]} />)
+  it('a person’s turn and the machine’s record share one column, in order', () => {
+    render(<ThreadView taskId="task-1" entries={[line(), turn({ id: 'event-3' })]} />)
 
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(2)
@@ -137,8 +192,8 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(items[1]?.getAttribute('data-feed-kind')).toBe('owner')
   })
 
-  test('a thread with one entry renders that entry and no empty state', () => {
-    render(<ThreadView entries={[turn()]} />)
+  it('a thread with one entry renders that entry and no empty state', () => {
+    render(<ThreadView entries={[turn()]} taskId="task-1" />)
 
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.queryByText(/nothing/i)).toBeNull()
@@ -146,9 +201,10 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
 })
 
 describe('the live line (REQ-915)', () => {
-  test('what the run is doing now is one line at the end, with no clock on it', () => {
+  it('what the run is doing now is one line at the end, with no clock on it', () => {
     render(
       <ThreadView
+        taskId="task-1"
         entries={[line({ action: 'Edited', target: 'src/ui/YAxis.tsx' })]}
         live={{ action: 'Reading', target: 'src/series/pie.ts', stageId: 'stage-1' }}
       />,
@@ -163,8 +219,8 @@ describe('the live line (REQ-915)', () => {
     expect(items[1]?.getAttribute('title')).toBeNull()
   })
 
-  test('a step with no run under way carries no live line', () => {
-    render(<ThreadView entries={[line()]} live={null} />)
+  it('a step with no run under way carries no live line', () => {
+    render(<ThreadView entries={[line()]} live={null} taskId="task-1" />)
 
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })

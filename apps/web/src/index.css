@@ -561,6 +561,21 @@ body {
     box-shadow: var(--shadow-popover);
   }
 
+  /* A drawer is a popover's own surface at the scale of the viewport: lifted
+     above whatever it covers, and carrying its edge on the side it opens from. */
+  .drawer {
+    border-left: 1px solid var(--color-border-bright);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+
+  /* Dims what the drawer covers without hiding it: the surface underneath is
+     what the drawer is about, and reading the two together is the point. */
+  .drawer-scrim {
+    background: color-mix(in srgb, var(--color-ground) 75%, transparent);
+    backdrop-filter: blur(1px);
+  }
+
   /* Scroll panes inside the page (thread, rail) — visible, but not furniture. */
   .scroll-thin {
     scrollbar-color: var(--color-border-bright) transparent;
@@ -789,6 +804,20 @@ body {
 
   .diff-line-context {
     color: var(--color-text);
+  }
+
+  /* One gutter column, sized for four digits and holding its width when empty. */
+  .diff-document-numbered .diff-line {
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0 0.5rem;
+  }
+
+  .diff-gutter {
+    text-align: right;
+    color: color-mix(in srgb, var(--color-muted) 80%, transparent);
+    user-select: none;
   }
 } /* @layer components */
 

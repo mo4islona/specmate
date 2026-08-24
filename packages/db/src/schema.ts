@@ -260,6 +260,12 @@ export const tasks = pgTable(
     planDepth: integer('plan_depth').notNull().default(0),
     /** What planning declared; null until it has run. Selects the pipeline profile (REQ-408). */
     planSize: planSizeEnum('plan_size').$type<PlanSize>(),
+    /**
+     * What planning called the change, which names its folder (REQ-705). Null
+     * until planning has declared one — and for every task that predates the
+     * declaration, whose folder stays named after its slug.
+     */
+    changeName: text('change_name'),
     harnessStatus: harnessStatusEnum('harness_status').notNull().default('unknown'),
     /**
      * Resolved by provisioning, which is the only code that sees the working tree and

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { AgentRole, ProviderId } from '@specmate/core'
 import { resolveWorkspaceConfig, type WorkspaceConfig, type WorkspaceOptions } from './config.ts'
@@ -21,6 +21,8 @@ export interface ProvisionRequest {
   readonly repoUrl: string
   /** Absent means the repository's default branch, resolved here (REQ-703). */
   readonly baseBranch?: string
+  /** What planning called the change; absent leaves the folder under the slug (REQ-705). */
+  readonly changeName?: string | null
 }
 
 export interface Workspace {
@@ -104,14 +106,14 @@ export class WorkspaceManager {
       await ensureExcludes(mirror)
       const path = worktreePath(this.config, request.slug)
       await this.ensureWorktree(mirror, path, branch)
-      await this.scaffoldChangeFolder(path, request.slug)
+      const folder = await this.scaffoldChangeFolder(path, request.slug, request.changeName)
       return {
         slug: request.slug,
         repoUrl: request.repoUrl,
         branch,
         baseBranch,
         path,
-        changeDir: changeDir(request.slug),
+        changeDir: folder,
         mirrorPath: mirror,
       }
     })
@@ -243,6 +245,19 @@ export class WorkspaceManager {
     })
   }
 
+  /**
+   * Moves the task's change folder onto the name its planning declared, and
+   * answers with the workspace naming where the folder actually ended up —
+   * which is not always the name asked for (REQ-705/AC-742).
+   */
+  async renameChangeFolder(workspace: Workspace, changeName: string): Promise<Workspace> {
+    return this.withMirrorLock(workspace.mirrorPath, async () => {
+      const folder = await this.scaffoldChangeFolder(workspace.path, workspace.slug, changeName)
+
+      return { ...workspace, changeDir: folder }
+    })
+  }
+
   async headCommit(workspace: Workspace): Promise<string> {
     return this.withMirrorLock(workspace.mirrorPath, async () => {
       const head = await this.git.run(['rev-parse', 'HEAD'], { cwd: workspace.path })
@@ -313,12 +328,64 @@ export class WorkspaceManager {
     return head.exitCode === 0 && head.stdout.trim() === branch
   }
 
-  private async scaffoldChangeFolder(path: string, slug: string): Promise<void> {
-    const folder = join(path, changeDir(slug))
-    await mkdir(folder, { recursive: true })
-    const marker = join(folder, SCHEMA_MARKER)
-    if (await pathExists(marker)) return
-    await writeFile(marker, `schema: ${this.config.changeSchema}\n`)
+  /**
+   * Converges on the one folder this task's work belongs in and returns its
+   * path, working-tree-relative (REQ-705). The rename only ever happens while
+   * the folder is still untracked — which is exactly the window before the
+   * declaring stage's own commit — so no history ever carries two names for it.
+   */
+  private async scaffoldChangeFolder(
+    path: string,
+    slug: string,
+    changeName?: string | null,
+  ): Promise<string> {
+    const folder = await this.convergeChangeDir(path, slug, changeName)
+    await mkdir(join(path, folder), { recursive: true })
+
+    const marker = join(path, folder, SCHEMA_MARKER)
+    if (!(await pathExists(marker))) {
+      await writeFile(marker, `schema: ${this.config.changeSchema}\n`)
+    }
+
+    return folder
+  }
+
+  private async convergeChangeDir(
+    path: string,
+    slug: string,
+    changeName?: string | null,
+  ): Promise<string> {
+    const provisional = changeDir(slug)
+    if (!changeName || changeName === slug) return provisional
+
+    const standing = await isDirectory(join(path, provisional))
+    // Nothing standing under the provisional name means this task already
+    // converged; the declared folder is its own, suffix and all.
+    if (!standing) return changeDir(changeName)
+
+    // A name the repository has already used for something else is not this
+    // task's to write into, and the two sharing one folder is the failure
+    // (AC-742). The task's own identity is what separates them.
+    const taken = await isDirectory(join(path, changeDir(changeName)))
+    const declared = taken ? `${changeDir(changeName)}-${slug.slice(-8)}` : changeDir(changeName)
+
+    // Renaming a folder already in the history would rewrite paths the stage
+    // results and artifact rows point at; the provisional name stands.
+    if (await this.isTracked(path, provisional)) return provisional
+
+    const moved = await this.git.tryRun(['mv', provisional, declared], { cwd: path })
+    if (moved.exitCode !== 0) {
+      await mkdir(dirname(join(path, declared)), { recursive: true })
+      await rename(join(path, provisional), join(path, declared))
+    }
+
+    return declared
+  }
+
+  private async isTracked(path: string, folder: string): Promise<boolean> {
+    const tracked = await this.git.tryRun(['ls-files', '--', folder], { cwd: path })
+
+    return tracked.exitCode === 0 && tracked.stdout.trim().length > 0
   }
 }
 

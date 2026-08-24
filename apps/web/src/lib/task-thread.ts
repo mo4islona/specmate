@@ -126,6 +126,55 @@ export function stageActivityParts(
   return { kind: toolVerb(tool)[tense], target: shortenTarget(target) }
 }
 
+/** What one file-editing tool use did (REQ-212), as the timeline carries it. */
+export interface ActivityEdit {
+  readonly path: string
+  readonly additions: number
+  readonly deletions: number
+  readonly preview: string
+  readonly clamped: boolean
+  readonly truncated: boolean
+  readonly anchored: boolean
+}
+
+/**
+ * The payload is typed as an open record, and an event recorded before this
+ * existed carries no edit at all — so the shape is checked rather than asserted.
+ */
+export function activityEdit(event: TimelineEvent): ActivityEdit | null {
+  const edit = event.payload.edit
+  if (typeof edit !== 'object' || edit === null) return null
+
+  const fields = edit as Record<string, unknown>
+  if (typeof fields.path !== 'string' || typeof fields.preview !== 'string') return null
+
+  return {
+    path: fields.path,
+    additions: typeof fields.additions === 'number' ? fields.additions : 0,
+    deletions: typeof fields.deletions === 'number' ? fields.deletions : 0,
+    preview: fields.preview,
+    clamped: fields.clamped === true,
+    truncated: fields.truncated === true,
+    anchored: fields.anchored === true,
+  }
+}
+
+/** "Added 10 lines, removed 4 lines" — a side that did nothing does not claim a clause. */
+export function editSummary(edit: ActivityEdit): string {
+  const added = edit.additions > 0 ? `${edit.additions} ${lineWord(edit.additions)}` : null
+  const removed = edit.deletions > 0 ? `${edit.deletions} ${lineWord(edit.deletions)}` : null
+
+  if (added && removed) return `Added ${added}, removed ${removed}`
+  if (added) return `Added ${added}`
+  if (removed) return `Removed ${removed}`
+
+  return 'Rewrote the file with no line changed'
+}
+
+function lineWord(count: number): string {
+  return count === 1 ? 'line' : 'lines'
+}
+
 /** Mirrors the engine's own `countRedirects`, so the client reads the cap the same way the server enforces it. */
 export function countGateRedirects(events: readonly TimelineEvent[], gateKey: string): number {
   return events.filter(
@@ -376,6 +425,10 @@ export interface LineEntry {
   readonly tone: LineTone
   /** The newest action of a run still under way (REQ-915). */
   readonly live: boolean
+  /** The event's own cursor, which is where its whole patch is read (REQ-1018). */
+  readonly seq: number
+  /** What the call changed, where it was a file-editing one (REQ-212). */
+  readonly edit: ActivityEdit | null
 }
 
 export type FeedEntry = TurnEntry | LineEntry
@@ -570,16 +623,21 @@ export function buildStepFeed({
     }
 
     const { action, target } = lineParts(event)
+    const edit = event.type === 'stage.activity' ? activityEdit(event) : null
 
     entries.push({
       kind: 'line',
       id: `event-${event.seq}`,
       at: String(event.createdAt),
       shape: event.type === 'stage.activity' ? 'call' : 'event',
+      // The edit knows the path relative to the repository; the raw target is
+      // whatever the CLI reported, which is the fallback rather than the answer.
       action,
-      target,
+      target: edit ? edit.path : target,
       tone: lineTone(event),
       live: isLiveActivity(event, stages, events),
+      seq: event.seq,
+      edit,
     })
   }
 

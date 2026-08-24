@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button } from './button.tsx'
 import { Chip } from './chip.tsx'
+import { Drawer } from './drawer.tsx'
 import { Field, Input } from './field.tsx'
 import { Popover } from './popover.tsx'
 
@@ -170,5 +171,54 @@ describe('Popover', () => {
     await userEvent.click(screen.getByText('medium'))
 
     expect(screen.getByRole('menu')).toBeTruthy()
+  })
+})
+
+describe('Drawer', () => {
+  function Sheet({ onDismiss }: { onDismiss: () => void }) {
+    return (
+      <Drawer open onDismiss={onDismiss} label="File diff">
+        <p>the diff</p>
+      </Drawer>
+    )
+  }
+
+  it('names itself as a modal layer, so what it covers is not what is being read', () => {
+    render(<Sheet onDismiss={vi.fn()} />)
+    const drawer = screen.getByRole('dialog', { name: 'File diff' })
+
+    expect(drawer.getAttribute('aria-modal')).toBe('true')
+  })
+
+  // The same two ways out as a popover, at the scale of the viewport. The scrim
+  // is a pointer affordance and nothing else, so it is hidden from the tree and
+  // the close button is what carries the verb.
+  it('escape shuts it', async () => {
+    const onDismiss = vi.fn()
+    render(<Sheet onDismiss={onDismiss} />)
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(onDismiss).toHaveBeenCalled()
+  })
+
+  it('its close button shuts it, and names what it closes', async () => {
+    const onDismiss = vi.fn()
+    render(<Sheet onDismiss={onDismiss} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close file diff' }))
+
+    expect(onDismiss).toHaveBeenCalled()
+  })
+
+  it('draws nothing at all while it is shut', () => {
+    render(
+      <Drawer open={false} onDismiss={vi.fn()} label="File diff">
+        <p>the diff</p>
+      </Drawer>,
+    )
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText('the diff')).toBeNull()
   })
 })

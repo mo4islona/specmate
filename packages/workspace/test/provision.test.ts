@@ -1,6 +1,7 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathExists } from '../src/fs.ts'
 import {
   BaseBranchMissingError,
   DefaultBranchUnknownError,
@@ -40,7 +41,7 @@ async function headOf(manager: WorkspaceManager, path: string): Promise<string> 
 }
 
 describe('provisioning', () => {
-  test('gives a task its own working tree on its own branch', async () => {
+  it('gives a task its own working tree on its own branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
 
@@ -59,7 +60,7 @@ describe('provisioning', () => {
     expect(branch.stdout.trim()).toBe('task/fix-reorg')
   })
 
-  test('keeps two tasks apart and leaves the base branch alone', async () => {
+  it('keeps two tasks apart and leaves the base branch alone', async () => {
     const origin = await makeOrigin()
     const base = await origin.head()
     const { manager } = await makeManager()
@@ -76,7 +77,7 @@ describe('provisioning', () => {
     expect(await headOf(manager, b.path)).toBe(base)
   })
 
-  test('returns the same workspace on a second request, commits intact', async () => {
+  it('returns the same workspace on a second request, commits intact', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const request = { slug: 'again', repoUrl: origin.url, baseBranch: 'main' }
@@ -97,7 +98,7 @@ describe('provisioning', () => {
     )
   })
 
-  test('names the missing base branch instead of guessing another', async () => {
+  it('names the missing base branch instead of guessing another', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
 
@@ -111,7 +112,7 @@ describe('provisioning', () => {
     await expect(failure).rejects.toThrow(/develop/)
   })
 
-  test('cuts a task that named no base branch from the repository default — AC-737', async () => {
+  it('cuts a task that named no base branch from the repository default — AC-737', async () => {
     const origin = await makeOrigin({ 'README.md': '# origin\n' }, 'master')
     const { manager } = await makeManager()
 
@@ -121,7 +122,7 @@ describe('provisioning', () => {
     expect(await headOf(manager, workspace.path)).toBe(await origin.head('master'))
   })
 
-  test('refuses to guess when the remote reports no default branch — AC-738', async () => {
+  it('refuses to guess when the remote reports no default branch — AC-738', async () => {
     const empty = await tempDir('empty-origin')
     await new Git(resolveWorkspaceConfig({ root: empty })).run(['init', '--bare', '--quiet', empty])
     const { manager } = await makeManager()
@@ -133,7 +134,7 @@ describe('provisioning', () => {
 })
 
 describe('the shared local copy', () => {
-  test('is reused by the next task rather than copied again', async () => {
+  it('is reused by the next task rather than copied again', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     await manager.provision({ slug: 'first', repoUrl: origin.url, baseBranch: 'main' })
@@ -145,7 +146,7 @@ describe('the shared local copy', () => {
     expect(await readFile(sentinel, 'utf8')).toBe('kept')
   })
 
-  test('never appears half-made, and leftovers are swept', async () => {
+  it('never appears half-made, and leftovers are swept', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const mirror = mirrorPath(manager.config, origin.url)
@@ -164,7 +165,7 @@ describe('the shared local copy', () => {
     expect(await headOf(manager, workspace.path)).toBe(await origin.head())
   })
 
-  test('is made once when two tasks arrive before it exists', async () => {
+  it('is made once when two tasks arrive before it exists', async () => {
     const origin = await makeOrigin()
     const root = await tempDir('root')
     const options = { root, ...FAST_LOCKS }
@@ -190,7 +191,7 @@ describe('the shared local copy', () => {
 })
 
 describe('a task branch stands still', () => {
-  test('later tasks start from the advanced base, earlier ones do not move', async () => {
+  it('later tasks start from the advanced base, earlier ones do not move', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const early = await manager.provision({
@@ -218,7 +219,7 @@ describe('a task branch stands still', () => {
 })
 
 describe('repair', () => {
-  test('recreates a working tree that was lost, keeping the branch', async () => {
+  it('recreates a working tree that was lost, keeping the branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const request = { slug: 'lost-tree', repoUrl: origin.url, baseBranch: 'main' }
@@ -236,7 +237,7 @@ describe('repair', () => {
     ).toBe('# work\n')
   })
 
-  test('restores a path that is no longer a checkout of the task branch', async () => {
+  it('restores a path that is no longer a checkout of the task branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const request = { slug: 'broken-tree', repoUrl: origin.url, baseBranch: 'main' }
@@ -256,7 +257,7 @@ describe('repair', () => {
 })
 
 describe('scratch exclusions', () => {
-  test('keep runner leftovers out of git without touching the repository', async () => {
+  it('keep runner leftovers out of git without touching the repository', async () => {
     const origin = await makeOrigin({ 'README.md': '# origin\n', '.gitignore': 'dist/\n' })
     const { manager } = await makeManager()
     const workspace = await manager.provision({
@@ -285,7 +286,7 @@ describe('scratch exclusions', () => {
 })
 
 describe('change folder scaffolding', () => {
-  test('creates the folder with its schema marker and preserves existing artifacts', async () => {
+  it('creates the folder with its schema marker and preserves existing artifacts', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const request = { slug: 'scaffold', repoUrl: origin.url, baseBranch: 'main' }
@@ -304,7 +305,86 @@ describe('change folder scaffolding', () => {
     ).toBe('# kept\n')
   })
 
-  test('adds nothing else to a repository that does not use OpenSpec', async () => {
+  it('takes the name planning gave the change — AC-739', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const workspace = await manager.provision({
+      slug: 'named-task-a1b2c3d4',
+      repoUrl: origin.url,
+      baseBranch: 'main',
+      changeName: 'pie-chart-axis-fade',
+    })
+
+    expect(workspace.changeDir).toBe('openspec/changes/pie-chart-axis-fade')
+    expect(await pathExists(join(workspace.path, 'openspec/changes/named-task-a1b2c3d4'))).toBe(
+      false,
+    )
+  })
+
+  it('stands under the slug until planning has named it — AC-740', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const workspace = await manager.provision({
+      slug: 'unnamed-task',
+      repoUrl: origin.url,
+      baseBranch: 'main',
+    })
+
+    expect(workspace.changeDir).toBe('openspec/changes/unnamed-task')
+  })
+
+  it('moves the work with the folder rather than leaving it behind — AC-741', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const request = { slug: 'moving-task', repoUrl: origin.url, baseBranch: 'main' }
+    const workspace = await manager.provision(request)
+    await writeFiles(workspace.path, { 'openspec/changes/moving-task/proposal.md': '# brief\n' })
+
+    const renamed = await manager.renameChangeFolder(workspace, 'the-real-name')
+
+    expect(renamed.changeDir).toBe('openspec/changes/the-real-name')
+    expect(
+      await readFile(join(workspace.path, 'openspec/changes/the-real-name/proposal.md'), 'utf8'),
+    ).toBe('# brief\n')
+    expect(await pathExists(join(workspace.path, 'openspec/changes/moving-task'))).toBe(false)
+  })
+
+  it('leaves a folder that is already in the history where it is — AC-741', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const request = { slug: 'committed-task', repoUrl: origin.url, baseBranch: 'main' }
+    const workspace = await manager.provision(request)
+    await writeFiles(workspace.path, { 'openspec/changes/committed-task/proposal.md': '# brief\n' })
+    await manager.commitStage(workspace, STAGE)
+
+    const renamed = await manager.renameChangeFolder(workspace, 'too-late-to-rename')
+
+    expect(renamed.changeDir).toBe('openspec/changes/committed-task')
+  })
+
+  it('does not write into a name the repository already uses — AC-742', async () => {
+    const origin = await makeOrigin({
+      'openspec/changes/pie-chart-axis-fade/proposal.md': '# somebody else\n',
+    })
+    const { manager } = await makeManager()
+    const workspace = await manager.provision({
+      slug: 'colliding-task-9f8e7d6c',
+      repoUrl: origin.url,
+      baseBranch: 'main',
+    })
+
+    const renamed = await manager.renameChangeFolder(workspace, 'pie-chart-axis-fade')
+
+    expect(renamed.changeDir).toBe('openspec/changes/pie-chart-axis-fade-9f8e7d6c')
+    expect(
+      await readFile(
+        join(workspace.path, 'openspec/changes/pie-chart-axis-fade/proposal.md'),
+        'utf8',
+      ),
+    ).toBe('# somebody else\n')
+  })
+
+  it('adds nothing else to a repository that does not use OpenSpec', async () => {
     const origin = await makeOrigin({ 'src/main.ts': 'export const a = 1\n' })
     const { manager } = await makeManager()
     const workspace = await manager.provision({

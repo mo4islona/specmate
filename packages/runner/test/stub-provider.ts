@@ -4,7 +4,7 @@
  * and no container runtime. Its behaviour is chosen by SPECMATE_STUB_MODE, and
  * it records what it was given so tests can assert on the invocation.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 // Answered before anything else, as the real CLI does — and before the mode
@@ -17,6 +17,24 @@ if (process.argv.includes('--version')) {
 const cwd = process.cwd()
 const prompt = await Bun.stdin.text()
 const mode = await nextMode()
+
+/**
+ * The change folder as it stands, not as the slug would name it: planning may
+ * have renamed it (REQ-705), and a real agent is told where to write rather
+ * than deriving it. There is exactly one folder per task, so reading the
+ * directory is the same answer the prompt carries.
+ */
+async function changeFolder(): Promise<string> {
+  const root = join(cwd, 'openspec/changes')
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+  const folders = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  const slug = process.env.SPECMATE_STUB_SLUG ?? 'unknown'
+
+  return join(root, folders.includes(slug) ? slug : (folders[0] ?? slug))
+}
+
+const CHANGE_FOLDER = await changeFolder()
+const CHANGE_DIR = CHANGE_FOLDER.slice(cwd.length + 1)
 
 /**
  * A queue file lets one test drive several attempts with different outcomes,
@@ -178,7 +196,7 @@ function proposedAnswerDecisionAction(
 
 /** Review verdicts, so one queue file can drive a loop: revise, then approve. */
 async function writeVerdict(verdict: string): Promise<void> {
-  const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+  const folder = CHANGE_FOLDER
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, 'review.md'), `# stub review: ${verdict}\n`)
   const findings =
@@ -209,7 +227,7 @@ async function writeVerdict(verdict: string): Promise<void> {
 
 /** Verifier verdicts: the matrix under `verification.md` comes from the test. */
 async function writeVerification(verdict: string): Promise<void> {
-  const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+  const folder = CHANGE_FOLDER
   await mkdir(folder, { recursive: true })
   const matrix = process.env.SPECMATE_STUB_MATRIX ?? ''
   await writeFile(join(folder, 'verification.md'), `# Verification\n\n## Matrix\n\n${matrix}\n`)
@@ -301,12 +319,7 @@ const ACTIVITY_TRANSCRIPT = [
  */
 const scenarios = Number(process.env.SPECMATE_STUB_SCENARIOS ?? '0')
 if (scenarios > 0) {
-  const capability = join(
-    cwd,
-    'openspec/changes',
-    process.env.SPECMATE_STUB_SLUG ?? 'unknown',
-    'specs/stub-capability',
-  )
+  const capability = join(CHANGE_FOLDER, 'specs/stub-capability')
   await mkdir(capability, { recursive: true })
   const declared = Array.from(
     { length: scenarios },
@@ -330,7 +343,7 @@ if (session) {
 
 switch (mode) {
   case 'activity': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
     await writeResult(validResult())
@@ -338,7 +351,7 @@ switch (mode) {
     break
   }
   case 'activity-garbled': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
     await writeResult(validResult())
@@ -457,7 +470,7 @@ switch (mode) {
     break
   }
   case 'ok': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeResult(validResult())
@@ -467,7 +480,7 @@ switch (mode) {
   // What a continuation returns: the size and the coverage were settled by the run
   // that opened the session, and this node's prompt asks for neither again.
   case 'continuation': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeResult(
@@ -478,7 +491,7 @@ switch (mode) {
   }
   // The planner's first run, leaving a proposal that the mechanical check refuses.
   case 'brief-incomplete': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# written by the stub\n')
     await writeResult(validResult())
@@ -486,7 +499,7 @@ switch (mode) {
     break
   }
   case 'brief-complete': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), BRIEF_MD)
     await writeResult(
@@ -503,7 +516,7 @@ switch (mode) {
     break
   }
   case 'brief-complete-questions': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), BRIEF_MD)
     await writeResult(
@@ -513,7 +526,7 @@ switch (mode) {
         status: 'ok',
         artifacts_changed: [
           {
-            path: `openspec/changes/${process.env.SPECMATE_STUB_SLUG}/proposal.md`,
+            path: `${CHANGE_DIR}/proposal.md`,
             kind: 'proposal',
             op: 'modified',
           },
@@ -543,7 +556,7 @@ switch (mode) {
     break
   }
   case 'brief-complete-harness-gap': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), BRIEF_MD_WITH_HARNESS_GAP)
     await writeResult(
@@ -553,7 +566,7 @@ switch (mode) {
         status: 'ok',
         artifacts_changed: [
           {
-            path: `openspec/changes/${process.env.SPECMATE_STUB_SLUG}/proposal.md`,
+            path: `${CHANGE_DIR}/proposal.md`,
             kind: 'proposal',
             op: 'modified',
           },
@@ -567,7 +580,7 @@ switch (mode) {
     break
   }
   case 'scribble-decision-log': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeFile(join(folder, 'decisions.md'), '# an agent scribbled here\n')
@@ -576,7 +589,7 @@ switch (mode) {
     break
   }
   case 'needs-decision': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(
       join(folder, scratchArtifact()),
@@ -607,14 +620,14 @@ switch (mode) {
     break
   }
   case 'half-written': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# HALF-WRITTEN-GARBAGE\n')
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }
   case 'agent-failed': {
-    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    const folder = CHANGE_FOLDER
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'proposal.md'), '# BROKEN-OUTPUT\n')
     await writeResult(

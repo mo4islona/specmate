@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 import assert from 'node:assert/strict'
 import {
   CAPS_FOR_SIZE,
@@ -56,6 +56,9 @@ describeDb('the profile a declared size selects', () => {
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created.splice(0)))
   })
 
+  // The fake the engine was built with, so a test can read what it was asked to do.
+  const engineWorkspaces = new WeakMap<Engine, ReturnType<typeof fakeWorkspaces>>()
+
   function makeEngine(overrides: Partial<EngineSettings> = {}) {
     const ws = fakeWorkspaces()
     const stagesDispatcher = fakeDispatcher()
@@ -72,6 +75,7 @@ describeDb('the profile a declared size selects', () => {
       log: () => {},
     })
     engines.push(engine)
+    engineWorkspaces.set(engine, ws)
 
     return { engine, stagesDispatcher }
   }
@@ -91,7 +95,7 @@ describeDb('the profile a declared size selects', () => {
       .orderBy(asc(runGraphs.version))
   }
 
-  test('a small plan appends the compact graph and drops the spec review — AC-417', async () => {
+  it('a small plan appends the compact graph and drops the spec review — AC-417', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -110,7 +114,7 @@ describeDb('the profile a declared size selects', () => {
     expect(versions[1]?.dag.nodes.map((node) => node.key)).not.toContain('spec_review')
   })
 
-  test('planning renames the task and leaves its slug alone — AC-1320, AC-343', async () => {
+  it('planning renames the task and leaves its slug alone — AC-1320, AC-343', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() =>
@@ -137,7 +141,67 @@ describeDb('the profile a declared size selects', () => {
     })
   })
 
-  test('a plan repeating the title the task already has renames nothing', async () => {
+  it('names the change folder from the plan, before the stage commits — AC-741, AC-1323', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const ws = engineWorkspaces.get(engine)
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan(() => ({
+      ...planningResult('medium', { change: 'pie-chart-axis-fade' }),
+      commitDeferred: true,
+    }))
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).changeName).toBe('pie-chart-axis-fade')
+    expect(ws?.calls.changeFolderRenames).toEqual([
+      { slug: task.slug, changeName: 'pie-chart-axis-fade' },
+    ])
+    // The commit that follows sees the renamed folder, so the first commit of
+    // the task's history carries no path under the provisional name.
+    expect(ws?.calls.stageCommits.map((commit) => commit.changeDir)).toEqual([
+      'openspec/changes/pie-chart-axis-fade',
+    ])
+  })
+
+  it('cuts the change folder from the title when the plan named none — AC-1324', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'planning' })
+    stagesDispatcher.plan(() =>
+      planningResult('medium', { title: 'Recover ingestion from a stale lease' }),
+    )
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).changeName).toBe('recover-ingestion-from-a-stale-lease')
+  })
+
+  it('leaves the folder under the slug for a role that declares no plan — AC-740', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const ws = engineWorkspaces.get(engine)
+    const { task } = await seed({ at: 'implement' })
+    stagesDispatcher.plan(() => ({
+      status: 'succeeded' as const,
+      attempts: [{ attempt: 0, ok: true, durationMs: 5 }],
+      result: StageResult.parse({
+        schema_version: 1,
+        role: 'implementer',
+        status: 'ok',
+        notes_md: 'stub',
+        plan: planShape({ change: 'not-this-role-s-to-name' }),
+      }),
+      telemetry: { model: 'stub-model-1', tokens: null, costUsd: null, raw: null },
+    }))
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).changeName).toBeNull()
+    expect(ws?.calls.changeFolderRenames).toEqual([])
+  })
+
+  it('a plan repeating the title the task already has renames nothing', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('medium', { title: task.title, type: task.type }))
@@ -152,7 +216,7 @@ describeDb('the profile a declared size selects', () => {
     expect(renames).toHaveLength(0)
   })
 
-  test('a medium plan appends nothing and walks the graph it has — AC-418', async () => {
+  it('a medium plan appends nothing and walks the graph it has — AC-418', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('medium'))
@@ -166,7 +230,7 @@ describeDb('the profile a declared size selects', () => {
     expect(await graphVersions(task.id)).toHaveLength(1)
   })
 
-  test('the stages run before the swap stay readable beside the version they ran under — AC-419', async () => {
+  it('the stages run before the swap stay readable beside the version they ran under — AC-419', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -182,7 +246,7 @@ describeDb('the profile a declared size selects', () => {
     expect(before[0]?.status).toBe('succeeded')
   })
 
-  test('a compact task dispatches the specification straight from the kickoff gate', async () => {
+  it('a compact task dispatches the specification straight from the kickoff gate', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -194,7 +258,7 @@ describeDb('the profile a declared size selects', () => {
     expect((await reload(db, task.id)).status).toBe('specify')
   })
 
-  test('AC-427: the declared size records its caps on the task', async () => {
+  it('AC-427: the declared size records its caps on the task', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning' })
     stagesDispatcher.plan(() => planningResult('small'))
@@ -208,7 +272,7 @@ describeDb('the profile a declared size selects', () => {
     })
   })
 
-  test('AC-428: medium and large share a profile and are separated by their caps', async () => {
+  it('AC-428: medium and large share a profile and are separated by their caps', async () => {
     const runs: Record<'medium' | 'large', number | undefined> = {
       medium: undefined,
       large: undefined,
@@ -229,7 +293,7 @@ describeDb('the profile a declared size selects', () => {
     expect(runs.medium).not.toBe(runs.large)
   })
 
-  test('AC-641: a cap the owner chose survives the size the planner declares', async () => {
+  it('AC-641: a cap the owner chose survives the size the planner declares', async () => {
     const { engine, stagesDispatcher } = makeEngine()
     const { task } = await seed({ at: 'planning', caps: { max_impl_iterations: 9 } })
     stagesDispatcher.plan(() => planningResult('small'))

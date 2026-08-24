@@ -63,6 +63,31 @@ export interface StageJob {
 export interface StageActivity {
   readonly tool: string
   readonly target: string
+  /** Present when the use was an edit and the edit could be reconstructed (REQ-212). */
+  readonly edit?: StageActivityEdit
+}
+
+/**
+ * What one file-editing tool use did, as a unified diff. Two bounds because two
+ * readers want different amounts: `preview` rides every timeline read, `patch`
+ * is fetched for the one event being looked at.
+ */
+export interface StageActivityEdit {
+  /** Relative to the working tree's root — never the absolute path the CLI reported. */
+  readonly path: string
+  readonly additions: number
+  readonly deletions: number
+  readonly preview: string
+  readonly patch: string
+  /** `preview` is the first part of `patch` rather than all of it. */
+  readonly clamped: boolean
+  /** The whole edit did not fit `patch`, which is therefore its first part. */
+  readonly truncated: boolean
+  /**
+   * The diff's line numbers are the file's own. False when the file could not be
+   * read to place the edit, which leaves the diff correct and its position unknown.
+   */
+  readonly anchored: boolean
 }
 
 /**

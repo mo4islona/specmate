@@ -23,9 +23,16 @@ export interface TaskDiffRange {
 
 export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'type-changed'
 
+/**
+ * Which half of the task's work a file is: the specification it wrote inside
+ * its own change folder, or everything else it changed (REQ-1013).
+ */
+export type DiffFileGroup = 'spec' | 'code'
+
 export interface DiffFile {
   readonly path: string
   readonly status: DiffFileStatus
+  readonly group: DiffFileGroup
   /** `null` for a binary file, which `git diff --numstat` reports as `-`. */
   readonly additions: number | null
   readonly deletions: number | null
@@ -78,18 +85,23 @@ export async function resolveTaskDiffRange(
 }
 
 /**
- * Files-changed list for a task, excluding its own OpenSpec change folder —
- * the same split `renderDiff` draws, since change-folder diffing belongs to
- * the separate `artifact-diff-view` change.
+ * Everything a task's branch changed, each file marked with which half of the
+ * work it is (REQ-1013). The change folder is grouped rather than withheld: a
+ * task between planning and the spec gate has changed nothing else, and a list
+ * that hides its only work reads as a list of nothing.
+ *
+ * `renderDiff` (`packages/runner/src/prompt.ts`) still excludes the folder for
+ * the reviewer's prompt — a role reading a code diff wants code. Same split,
+ * different question.
  */
 export async function taskFilesChanged(
   git: Git,
   range: TaskDiffRange,
-  excludeChangeDir: string,
+  changeDir: string,
 ): Promise<DiffFile[]> {
   if (range.base === range.tip) return []
 
-  const pathspec = ['--', '.', `:(exclude)${excludeChangeDir}`]
+  const pathspec = ['--', '.']
   const [numstat, nameStatus] = await Promise.all([
     git.inMirror(range.mirror, [
       'diff',
@@ -113,12 +125,15 @@ export async function taskFilesChanged(
 
   const counts = parseNumstat(numstat.stdout)
 
+  const specPrefix = `${changeDir}/`
+
   return parseNameStatus(nameStatus.stdout).map((entry) => {
     const count = counts.get(entry.path)
 
     return {
       path: entry.path,
       status: STATUS_LETTERS[entry.status] ?? 'modified',
+      group: entry.path.startsWith(specPrefix) ? ('spec' as const) : ('code' as const),
       additions: count?.additions ?? null,
       deletions: count?.deletions ?? null,
     }
@@ -135,15 +150,10 @@ export async function taskFilesChanged(
  * `--numstat` first, and only a match of exactly `path` and nothing else is
  * fetched as a patch; anything broader is treated as no match.
  */
-export async function taskFileDiff(
-  git: Git,
-  range: TaskDiffRange,
-  path: string,
-  excludeChangeDir: string,
-): Promise<string> {
+export async function taskFileDiff(git: Git, range: TaskDiffRange, path: string): Promise<string> {
   if (range.base === range.tip) return ''
 
-  const pathspec = ['--', `:(literal)${path}`, `:(exclude)${excludeChangeDir}`]
+  const pathspec = ['--', `:(literal)${path}`]
   const numstat = await git.inMirror(range.mirror, [
     'diff',
     '--no-renames',

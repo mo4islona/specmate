@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "change_name" text;
