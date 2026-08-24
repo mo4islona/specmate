@@ -112,18 +112,26 @@ re-probe, it repeats the same `classification` and `evidence_md` `planning` foun
 
 ## Declaring the shape of the work — `planning`
 
-You also name this task, classify it, decide how much process it gets, and say what has to land
-before it. All four go in `plan` in `RESULT.json`, alongside `harness_coverage`:
+You also name this task, name the change, classify it, decide how much process it gets, and say
+what has to land before it. All of it goes in `plan` in `RESULT.json`, alongside
+`harness_coverage`:
 
 ```
-"plan": { "title": "Retry the ingestion cursor on a stale lease", "type": "bugfix", "size": "small", "prerequisites": [] }
+"plan": { "title": "Retry the ingestion cursor on a stale lease", "change": "stale-lease-retry", "type": "bugfix", "size": "small", "prerequisites": [] }
 ```
 
 `title` is what this task is called from here on. The owner launched it with a request, not a
 name: the title it carries right now was cut from the first line of that request before anyone
 had opened the repository. Write the one a person scanning a list of tasks would want — what
-changes, in a handful of words, no ticket prefix, no trailing period. The task's branch and
-change folder keep the name they were created with; only the title changes.
+changes, in a handful of words, no ticket prefix, no trailing period. The task's branch keeps the
+name it was created with; it is internal and nobody reads it.
+
+`change` is what the OpenSpec change is called, and it names the folder every artifact of this
+task is written into — a folder that ends up in the pull request, where it is the first thing a
+reviewer reads. Kebab-case, a few words, saying what the change is: `stale-lease-retry`,
+`pie-chart-axis-fade`. It is optional; leave it out and the folder is cut from the title, which
+is longer and duller but never wrong. Write it on the `planning` result — by `specify` the folder
+is already in the history and keeps the name it has.
 
 `type` is `feature` or `bugfix`: restoring behaviour that was meant to work already is a bugfix,
 everything else is a feature. It is a label on the task, not a lever — both run the same pipeline.
@@ -276,6 +284,7 @@ A `planning` run that grounded the request:
   "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the ingestion path this request targets." },
   "plan": {
     "title": "Recover ingestion from a stale lease",
+    "change": "stale-lease-recovery",
     "type": "bugfix",
     "size": "medium",
     "prerequisites": [
@@ -332,7 +341,7 @@ A `planning` run with one open question:
     }
   ],
   "harness_coverage": { "classification": "missing", "evidence_md": "No end-to-end or integration suite touches the auth path this request targets." },
-  "plan": { "title": "Retry the ingestion cursor on a stale lease", "type": "bugfix", "size": "small", "prerequisites": [] },
+  "plan": { "title": "Retry the ingestion cursor on a stale lease", "change": "stale-lease-retry", "type": "bugfix", "size": "small", "prerequisites": [] },
   "notes_md": "One or two sentences a human will read in a chat timeline."
 }
 ```

@@ -43,7 +43,7 @@ import {
 import type { Engine } from '@specmate/orchestrator/engine'
 import { createTask, revokeCoverageWaiverInForce, taskSpend } from '@specmate/orchestrator/store'
 import { GitError, mirrorKey, type WorkspaceService } from '@specmate/workspace'
-import { and, asc, count, desc, eq, gt, inArray, isNull, max, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNull, max, ne, sql } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { streamSSE } from 'hono/streaming'
@@ -523,12 +523,26 @@ export function createApp({
     }
   }
 
+  /**
+   * REQ-1018: every timeline read is a page of up to 200 events, so an activity
+   * event's whole patch is dropped here and fetched per event instead. The
+   * clamped preview beside it is what the run log draws.
+   */
+  const eventColumns = {
+    seq: events.seq,
+    taskId: events.taskId,
+    stageId: events.stageId,
+    type: events.type,
+    payload: sql<Record<string, unknown>>`${events.payload} #- '{edit,patch}'`.as('payload'),
+    createdAt: events.createdAt,
+  }
+
   function eventsAfter({ cursor, taskId }: EventQuery) {
     const scope = taskId
       ? and(gt(events.seq, cursor), eq(events.taskId, taskId))
       : gt(events.seq, cursor)
 
-    return db.select().from(events).where(scope).orderBy(asc(events.seq)).limit(200)
+    return db.select(eventColumns).from(events).where(scope).orderBy(asc(events.seq)).limit(200)
   }
 
   async function eventStream(context: Context, taskId?: string): Promise<Response> {
@@ -1282,12 +1296,40 @@ export function createApp({
     .get('/tasks/:id/events', async (c) => {
       const id = c.req.param('id')
       const rows = await db
-        .select()
+        .select(eventColumns)
         .from(events)
         .where(eq(events.taskId, id))
         .orderBy(desc(events.seq))
         .limit(200)
       return c.json({ events: rows.reverse() })
+    })
+
+    /**
+     * REQ-1018: the half of an activity event the timeline does not carry. An
+     * event that recorded no edit answers with an absent patch rather than a
+     * 404 — the event exists, and "there is nothing to show" is the answer.
+     */
+    .get('/tasks/:id/events/:seq/patch', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const seq = Number(c.req.param('seq'))
+      if (!Number.isSafeInteger(seq) || seq <= 0) {
+        throw new ApiError('validation', 'the event cursor must be a positive integer', {
+          status: 400,
+          fields: { seq: ['must be a positive integer'] },
+        })
+      }
+
+      const [event] = await db
+        .select({ payload: events.payload })
+        .from(events)
+        .where(and(eq(events.seq, seq), eq(events.taskId, task.id)))
+        .limit(1)
+      if (!event) throw new ApiError('not_found', `event ${seq} not found`, { status: 404 })
+
+      const edit = event.payload.edit
+      const patch = isRecord(edit) && typeof edit.patch === 'string' ? edit.patch : null
+
+      return c.json({ seq, patch })
     })
 
   return app.route('/api/v1', routes)

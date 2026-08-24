@@ -9,6 +9,7 @@ import type {
   TurnEntry,
 } from '../lib/task-thread.ts'
 import { cx, TextButton } from '../ui/index.ts'
+import { ActivityEditBlock } from './activity-edit.tsx'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
@@ -34,6 +35,10 @@ interface ThreadViewProps {
   readonly entries: readonly FeedEntry[]
   /** What the run is doing at this moment, where one is under way. */
   readonly live?: LiveActivity | null
+  /** Whose record this is — an edit's whole patch is read against the task. */
+  readonly taskId: string
+  /** Opens a file's whole diff over the surface, where the surface offers one. */
+  readonly onOpenFile?: (path: string) => void
 }
 
 /**
@@ -46,12 +51,12 @@ interface ThreadViewProps {
  * The record ends where the run is now: a single line that replaces itself as
  * the run reads and searches its way to the next change (REQ-915).
  */
-export function ThreadView({ entries, live = null }: ThreadViewProps) {
+export function ThreadView({ entries, live = null, taskId, onOpenFile }: ThreadViewProps) {
   return (
     <ol aria-label="Task thread">
       {entries.map((entry) =>
         entry.kind === 'line' ? (
-          <RunLine key={entry.id} entry={entry} />
+          <RunLine key={entry.id} entry={entry} taskId={taskId} onOpenFile={onOpenFile} />
         ) : (
           <FeedTurn key={entry.id} entry={entry} />
         ),
@@ -95,7 +100,15 @@ function LiveLine({ live }: { live: LiveActivity }) {
  * a column of timestamps down the left was buying an ordering the order already
  * gives. The exact moment stays in the tooltip and in an `sr-only` `<time>`.
  */
-function RunLine({ entry }: { entry: LineEntry }) {
+function RunLine({
+  entry,
+  taskId,
+  onOpenFile,
+}: {
+  entry: LineEntry
+  taskId: string
+  onOpenFile?: (path: string) => void
+}) {
   const call = entry.shape === 'call'
 
   return (
@@ -144,6 +157,17 @@ function RunLine({ entry }: { entry: LineEntry }) {
           </span>
           <span className="min-w-0 break-words">{entry.target}</span>
         </p>
+      )}
+
+      {/* A call that changed a file says what it changed, on the same branch a
+          sentence's particulars hang from (REQ-915). */}
+      {entry.edit && (
+        <ActivityEditBlock
+          taskId={taskId}
+          seq={entry.seq}
+          edit={entry.edit}
+          onOpenFile={onOpenFile}
+        />
       )}
     </li>
   )

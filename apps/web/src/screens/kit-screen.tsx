@@ -9,7 +9,9 @@ import {
   Chip,
   Console,
   ConsoleField,
+  Diff,
   Dot,
+  Drawer,
   EmptyState,
   ErrorNote,
   ErrorState,
@@ -51,6 +53,17 @@ const TONES: readonly Tone[] = ['muted', 'accent', 'info', 'attention', 'danger'
 
 const DOTS = ['bg-status-active', 'bg-status-parked', 'bg-status-failed', 'bg-status-done'] as const
 
+const SPECIMEN_DIFF = [
+  '@@ -41,6 +41,7 @@',
+  ' state per event, which is disproportionate to a rare, bounded cost',
+  '-elsewhere in this engine (see `EPOCH_GAP_BOUND`). Traced through this',
+  "-product's actual fold order, the realistic cases either fail before",
+  '+elsewhere in this engine (see `EPOCH_GAP_BOUND`).',
+  '+',
+  '+The accumulator half is not a trade-off: an earlier series can fully fold',
+  ' an event before a later one fails on the *same* event.',
+].join('\n')
+
 /** A named specimen, so what a part is called sits next to what it looks like. */
 function Specimen({ name, children }: { name: string; children: ReactNode }) {
   return (
@@ -78,6 +91,7 @@ function Row({ children }: { children: ReactNode }) {
 export function KitScreen() {
   const [chosen, setChosen] = useState('medium')
   const [open, setOpen] = useState(false)
+  const [drawer, setDrawer] = useState(false)
   const [text, setText] = useState('')
 
   return (
@@ -341,6 +355,51 @@ export function KitScreen() {
             </Button>
           </div>
         </Console>
+      </Section>
+
+      <Section
+        eyebrow="What a run changed"
+        title="Diffs"
+        description="One face, two readings: a whole file is read as prose, and an edit inside a record is read by line, so the gutter is a choice rather than a second stylesheet."
+      >
+        <Specimen name="Diff">
+          <Diff diff={SPECIMEN_DIFF} />
+        </Specimen>
+
+        <Specimen name="Diff · lineNumbers">
+          <Diff diff={SPECIMEN_DIFF} lineNumbers />
+        </Specimen>
+
+        <Specimen name="Diff · nothing to show">
+          <Diff diff="" />
+        </Specimen>
+      </Section>
+
+      <Section
+        eyebrow="Over the page, at its own scale"
+        title="Drawer"
+        description="A surface that opens over the one being read rather than instead of it. The same two ways out as a popover, anchored to the viewport rather than to a control, because what opens one is a file named halfway down a record."
+      >
+        <Row>
+          <Button variant="secondary" onClick={() => setDrawer(true)}>
+            open a drawer
+          </Button>
+        </Row>
+
+        <Drawer
+          open={drawer}
+          onDismiss={() => setDrawer(false)}
+          label="File diff"
+          detail={
+            <p className="mt-1 break-all font-mono text-xs text-info">
+              openspec/changes/pie-chart-axis-fade/proposal.md
+            </p>
+          }
+        >
+          <div className="min-w-0 p-4 sm:p-6">
+            <Diff diff={SPECIMEN_DIFF} lineNumbers />
+          </div>
+        </Drawer>
       </Section>
 
       <Section

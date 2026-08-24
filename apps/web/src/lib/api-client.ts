@@ -149,6 +149,10 @@ type AnswerDecisionRequest = InferRequestType<
 type DismissDecisionRequest = InferRequestType<
   (typeof apiClient.api.v1.decisions)[':id']['dismiss']['$post']
 >
+type ActivityPatchResponse = InferResponseType<
+  (typeof apiClient.api.v1.tasks)[':id']['events'][':seq']['patch']['$get'],
+  200
+>
 type RepositoriesResponse = InferResponseType<typeof apiClient.api.v1.repositories.$get, 200>
 type ModelDefaultsResponse = InferResponseType<
   (typeof apiClient.api.v1.settings)['model-defaults']['$get'],
@@ -519,4 +523,18 @@ export async function getFileDiff(
   )
 
   return readJson<FileDiffResponse>(response)
+}
+
+/** REQ-1018: the half of an activity event the timeline deliberately does not carry. */
+export async function getActivityPatch(
+  taskId: string,
+  seq: number,
+  signal?: AbortSignal,
+): Promise<ActivityPatchResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].events[':seq'].patch.$get(
+    { param: { id: taskId, seq: String(seq) } },
+    { init: { signal } },
+  )
+
+  return readJson<ActivityPatchResponse>(response)
 }

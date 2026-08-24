@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
 import { rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -25,7 +25,7 @@ const STAGE: StageRef = {
 afterAll(cleanupTempDirs)
 
 describe('task diff range', () => {
-  test('resolves the merge-base and tip of a provisioned task branch', async () => {
+  it('resolves the merge-base and tip of a provisioned task branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const workspace = await manager.provision({
@@ -46,7 +46,7 @@ describe('task diff range', () => {
     expect(range.mirror).toBe(workspace.mirrorPath)
   })
 
-  test('rejects a task whose branch was never provisioned', async () => {
+  it('rejects a task whose branch was never provisioned', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -60,7 +60,7 @@ describe('task diff range', () => {
     await expect(range).rejects.toThrow(TaskBranchMissingError)
   })
 
-  test('rejects a task branch that shares no history with its base', async () => {
+  it('rejects a task branch that shares no history with its base', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -88,7 +88,7 @@ describe('task diff range', () => {
     await expect(range).rejects.toThrow(GitError)
   })
 
-  test('serializes with a concurrent mirror-lock holder (regression)', async () => {
+  it('serializes with a concurrent mirror-lock holder (regression)', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -122,7 +122,7 @@ describe('task diff range', () => {
 })
 
 describe('files changed', () => {
-  test('keeps the full path when a file name contains a tab', async () => {
+  it('keeps the full path when a file name contains a tab', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -141,12 +141,14 @@ describe('files changed', () => {
     })
     const files = await taskFilesChanged(git, range, workspace.changeDir)
 
-    expect(files).toEqual([
-      { path: 'src/foo\tbar.ts', status: 'added', additions: 1, deletions: 0 },
-    ])
+    expect(files).toEqual(
+      expect.arrayContaining([
+        { path: 'src/foo\tbar.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
+      ]),
+    )
   })
 
-  test('lists product-code files with status and line counts', async () => {
+  it('lists product-code files with status and line counts', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -170,14 +172,14 @@ describe('files changed', () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        { path: 'src/new-file.ts', status: 'added', additions: 1, deletions: 0 },
-        { path: 'README.md', status: 'modified', additions: 1, deletions: 0 },
+        { path: 'src/new-file.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
+        { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
       ]),
     )
-    expect(files).toHaveLength(2)
+    expect(files.filter((file) => file.group === 'code')).toHaveLength(2)
   })
 
-  test('returns an empty list before any product-code commit exists (AC-1035)', async () => {
+  it('returns an empty list before any product-code commit exists (AC-1035)', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -193,7 +195,7 @@ describe('files changed', () => {
     expect(files).toEqual([])
   })
 
-  test('excludes a commit that only touches the change folder', async () => {
+  it('lists a commit that only touches the change folder, as specification (AC-1060)', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -214,10 +216,21 @@ describe('files changed', () => {
     })
     const files = await taskFilesChanged(git, range, workspace.changeDir)
 
-    expect(files).toEqual([])
+    expect(files).toEqual(
+      expect.arrayContaining([
+        {
+          path: 'openspec/changes/change-only/proposal.md',
+          status: 'added',
+          group: 'spec',
+          additions: 1,
+          deletions: 0,
+        },
+      ]),
+    )
+    expect(files.every((file) => file.group === 'spec')).toBe(true)
   })
 
-  test('marks a removed file with status "deleted"', async () => {
+  it('marks a removed file with status "deleted"', async () => {
     const origin = await makeOrigin({
       'README.md': '# origin\n',
       'src/existing.ts': 'export const existing = 1\n',
@@ -239,12 +252,14 @@ describe('files changed', () => {
     })
     const files = await taskFilesChanged(git, range, workspace.changeDir)
 
-    expect(files).toEqual([
-      { path: 'src/existing.ts', status: 'deleted', additions: 0, deletions: 1 },
-    ])
+    expect(files).toEqual(
+      expect.arrayContaining([
+        { path: 'src/existing.ts', status: 'deleted', group: 'code', additions: 0, deletions: 1 },
+      ]),
+    )
   })
 
-  test('marks a file whose type changed (regular file to symlink) with status "type-changed"', async () => {
+  it('marks a file whose type changed (regular file to symlink) with status "type-changed"', async () => {
     const origin = await makeOrigin({
       'README.md': '# origin\n',
       'src/target.ts': 'export const target = 1\n',
@@ -276,7 +291,7 @@ describe('files changed', () => {
 })
 
 describe('one file diff', () => {
-  test('returns the unified diff for the requested path', async () => {
+  it('returns the unified diff for the requested path', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -293,12 +308,12 @@ describe('one file diff', () => {
       baseBranch: 'main',
       slug: 'one-file',
     })
-    const diff = await taskFileDiff(git, range, 'src/thing.ts', workspace.changeDir)
+    const diff = await taskFileDiff(git, range, 'src/thing.ts')
 
     expect(diff).toContain('+export const thing = 2')
   })
 
-  test('rejects a directory-shaped path instead of returning every file (regression)', async () => {
+  it('rejects a directory-shaped path instead of returning every file (regression)', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -322,11 +337,11 @@ describe('one file diff', () => {
     // `.`, `src`, and `src/` all still match every file under them even with
     // `:(literal)` — git's directory-prefix matching, not glob magic.
     for (const path of ['.', 'src', 'src/']) {
-      expect(await taskFileDiff(git, range, path, workspace.changeDir)).toBe('')
+      expect(await taskFileDiff(git, range, path)).toBe('')
     }
   })
 
-  test('excludes the task change folder even when requested directly', async () => {
+  it("returns a change-folder path's diff rather than refusing it (AC-1061)", async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -345,19 +360,14 @@ describe('one file diff', () => {
       baseBranch: 'main',
       slug: 'exclude-change-dir',
     })
-    const diff = await taskFileDiff(
-      git,
-      range,
-      'openspec/changes/exclude-change-dir/proposal.md',
-      workspace.changeDir,
-    )
+    const diff = await taskFileDiff(git, range, 'openspec/changes/exclude-change-dir/proposal.md')
 
-    expect(diff).toBe('')
+    expect(diff).toContain('+# proposal')
   })
 })
 
 describe('a task whose workspace has been released (AC-1037)', () => {
-  test('reads the same diff after the worktree is removed', async () => {
+  it('reads the same diff after the worktree is removed', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)

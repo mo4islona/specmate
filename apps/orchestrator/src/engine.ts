@@ -18,6 +18,7 @@ import {
   type ConversationActionProposal,
   canTransition,
   capsForSize,
+  changeNameFor,
   type DecisionOption,
   decisionFromRequest,
   definitionForSize,
@@ -309,6 +310,12 @@ export interface EngineWorkspaces {
   discard(workspace: Workspace, commit?: string): Promise<void>
   headCommit?(workspace: Workspace): Promise<string>
   commitStage?(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
+  /**
+   * Puts the change folder under the name planning declared, answering with
+   * where it actually landed (REQ-705). Absent in ops-only contexts, where the
+   * folder keeps whatever name it has.
+   */
+  renameChangeFolder?(workspace: Workspace, changeName: string): Promise<Workspace>
   /** Absent in ops-only contexts (the admin CLI), which never dispatch a stage. */
   writeDecisionLog?(workspace: Workspace, markdown: string): Promise<void>
   /**
@@ -330,6 +337,7 @@ export interface EngineWorkspaces {
 export interface DispatchingWorkspaces extends EngineWorkspaces {
   headCommit(workspace: Workspace): Promise<string>
   commitStage(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
+  renameChangeFolder(workspace: Workspace, changeName: string): Promise<Workspace>
   writeDecisionLog(workspace: Workspace, markdown: string): Promise<void>
   countSpecScenarios(workspace: Workspace): Promise<number>
 }
@@ -1637,6 +1645,34 @@ export class Engine {
    * its own graph no longer contains. The size is honoured at `planning`,
    * where it is first declared, or not at all.
    */
+  /**
+   * REQ-705: the change folder's name, once planning has one. The name answered
+   * is where the folder actually is, not what was asked for — a name already
+   * taken in the repository is disambiguated by the convergence, and persisting
+   * the asked-for name would point every later stage at a folder that is not
+   * this task's work.
+   */
+  private async applyDeclaredChangeName(
+    task: Task,
+    node: StageNode,
+    result: StageResult,
+    workspace: Workspace | undefined,
+  ): Promise<{ workspace: Workspace | undefined; changeName: string | null }> {
+    const unchanged = { workspace, changeName: task.changeName }
+    if (result.status !== 'ok' || !result.plan) return unchanged
+    if (!ROLE_CONTRACTS[node.role].declaresPlan) return unchanged
+
+    const declared = changeNameFor(result.plan)
+    if (!declared || !workspace || !this.deps.workspaces.renameChangeFolder) return unchanged
+
+    const renamed = await this.deps.workspaces.renameChangeFolder(workspace, declared)
+
+    return {
+      workspace: renamed,
+      changeName: renamed.changeDir.slice(renamed.changeDir.lastIndexOf('/') + 1),
+    }
+  }
+
   private async applyDeclaredProfile(
     tx: DbClient,
     task: Task,
@@ -1716,12 +1752,18 @@ export class Engine {
       const { task: liveTask, graph: liveGraph } = await this.taskWithGraph(task.id, tx)
       if (liveGraph.id !== graph.id || liveTask.status !== node.key) return null
 
+      // REQ-705/AC-741: the folder takes the name planning gave the change
+      // *before* this stage's own commit, so the first commit of the task's
+      // history already carries it and no rename ever appears in the diff.
+      const named = await this.applyDeclaredChangeName(liveTask, node, result, workspace)
+      const changeName = named.changeName
+
       let acceptedCommit = execution.commit ?? null
       if (execution.commitDeferred) {
-        if (!workspace || !this.deps.workspaces.commitStage) {
+        if (!named.workspace || !this.deps.workspaces.commitStage) {
           throw new Error(`stage ${row.id} deferred its commit without an accepting workspace`)
         }
-        const commit = await this.deps.workspaces.commitStage(task.id, workspace, {
+        const commit = await this.deps.workspaces.commitStage(task.id, named.workspace, {
           stageId: row.id,
           role: node.role,
           provider: row.provider,
@@ -1836,6 +1878,7 @@ export class Engine {
           declaredCoverage,
           declaredPlan,
           runGraph.dag.pipeline,
+          changeName,
         )
       }
 

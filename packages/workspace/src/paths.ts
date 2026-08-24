@@ -62,7 +62,12 @@ export function taskBranch(slug: string): string {
   return `task/${slug}`
 }
 
-/** Change folder, relative to the working tree root. */
-export function changeDir(slug: string): string {
-  return `${CHANGES_ROOT}/${slug}`
+/**
+ * Change folder, relative to the working tree root. The name is what planning
+ * called the change (REQ-705); the task's slug is the provisional name it
+ * stands under until there is one, and stays the name of a task whose planning
+ * never declared it.
+ */
+export function changeDir(slug: string, changeName?: string | null): string {
+  return `${CHANGES_ROOT}/${changeName || slug}`
 }

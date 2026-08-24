@@ -18,6 +18,7 @@ import {
 import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
 import type { ExecBackend, ExecResult } from './backend.ts'
 import type { RunnerConfig } from './config.ts'
+import { editFor, type ToolUse } from './tool-edit.ts'
 
 export type RunFailure = 'timeout' | 'provider_error' | 'no_result' | 'invalid_result'
 
@@ -107,6 +108,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     const forkFrom = job.resume?.sessionId ?? undefined
     let argv = this.argv(job.role, job.model, job.reasoningEffort, forkFrom)
     let coldStartReason: string | null = null
+    const activity = activityRelay(job)
     let run = await backend.run({
       argv,
       stdin: job.prompt,
@@ -118,12 +120,9 @@ export class ClaudeCodeProvider implements AgentProvider {
       environment: job.environment,
       label,
       labels: stageContainerLabels(job),
-      onActivityLine: job.onActivity
-        ? (line) => {
-            for (const activity of parseActivityLine(line)) job.onActivity?.(activity)
-          }
-        : undefined,
+      onActivityLine: activity?.onLine,
     })
+    await activity?.drain()
 
     // AC-235: the artifacts are the contract and the session is grounding, so a
     // session the provider will not give back degrades the run rather than failing it.
@@ -142,12 +141,9 @@ export class ClaudeCodeProvider implements AgentProvider {
         environment: job.environment,
         label,
         labels: stageContainerLabels(job),
-        onActivityLine: job.onActivity
-          ? (line) => {
-              for (const activity of parseActivityLine(line)) job.onActivity?.(activity)
-            }
-          : undefined,
+        onActivityLine: activity?.onLine,
       })
+      await activity?.drain()
     }
 
     // The command line that produced `run`, which after a cold start is not the
@@ -483,8 +479,11 @@ const ACTIVITY_TARGET_KEYS = [
  * text/thinking deltas, system/init, tool results, the terminal result line —
  * is read and discarded, per REQ-212/AC-227. A single assistant turn can
  * report more than one tool call, so this returns every one found on the line.
+ *
+ * The tool's own input travels with it: for a file-editing tool that input is
+ * the edit, which is what `editFor` turns into the event's diff (REQ-212).
  */
-export function parseActivityLine(line: string): StageActivity[] {
+export function parseActivityLine(line: string): ToolUse[] {
   const trimmed = line.trim()
   if (!trimmed) return []
 
@@ -499,15 +498,58 @@ export function parseActivityLine(line: string): StageActivity[] {
   const message = parsed.message
   if (!isRecord(message) || !Array.isArray(message.content)) return []
 
-  const activities: StageActivity[] = []
+  const uses: ToolUse[] = []
   for (const block of message.content) {
     if (!isRecord(block) || block.type !== 'tool_use') continue
     if (typeof block.name !== 'string' || block.name.length === 0) continue
 
-    activities.push({ tool: block.name, target: activityTarget(block.input) })
+    uses.push({
+      tool: block.name,
+      target: activityTarget(block.input),
+      input: isRecord(block.input) ? block.input : {},
+    })
   }
 
-  return activities
+  return uses
+}
+
+/**
+ * The activity one tool use becomes. Reconstructing an edit reads the file the
+ * CLI is editing, so this is where activity stops being pure — and where every
+ * failure of that read is absorbed, leaving the tool and its target standing.
+ */
+export async function activityFor(use: ToolUse, workspacePath: string): Promise<StageActivity> {
+  const edit = await editFor(use, workspacePath).catch(() => null)
+
+  return edit
+    ? { tool: use.tool, target: use.target, edit }
+    : { tool: use.tool, target: use.target }
+}
+
+/**
+ * Lines arrive synchronously and the edit behind one takes a file read, so the
+ * work is queued rather than raced: `events.seq` is trusted to be the order the
+ * tool uses happened in. `drain` is what keeps a run's last activity from
+ * landing after the outcome it preceded.
+ */
+function activityRelay(
+  job: StageJob,
+): { onLine: (line: string) => void; drain: () => Promise<void> } | undefined {
+  const onActivity = job.onActivity
+  if (!onActivity) return undefined
+
+  let queue: Promise<unknown> = Promise.resolve()
+
+  return {
+    onLine: (line) => {
+      for (const use of parseActivityLine(line)) {
+        queue = queue
+          .then(() => activityFor(use, job.workspacePath).then(onActivity))
+          .catch(() => {})
+      }
+    },
+    drain: () => queue.then(() => undefined),
+  }
 }
 
 function activityTarget(input: unknown): string {

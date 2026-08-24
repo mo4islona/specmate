@@ -11,6 +11,7 @@ import {
 import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { stageActivityPayload } from './activity.ts'
 import { createConversationDispatcher, createStageDispatcher } from './dispatch.ts'
 import { Engine } from './engine.ts'
 import { githubToken } from './github-auth.ts'
@@ -146,7 +147,7 @@ const executor = new StageExecutor({
         taskId: activity.taskId,
         stageId: activity.stageId,
         type: 'stage.activity',
-        payload: { attempt: activity.attempt, tool: activity.tool, target: activity.target },
+        payload: stageActivityPayload(activity),
       }).catch((e: Error) =>
         console.error(`activity event for stage ${activity.stageId}: ${e.message}`),
       ),

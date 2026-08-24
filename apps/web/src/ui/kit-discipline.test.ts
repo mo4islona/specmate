@@ -9,8 +9,9 @@ const CSS = readFileSync(join(SRC, 'index.css'), 'utf8')
  * The classes that lay an element out rather than dress one. Everything else in
  * the components layer is a part, and a part comes from the kit. These are the
  * page's gutter, a rail's inset, a scroll pane's thin bar, the two animations,
- * and the two document faces — stylesheets for content rather than parts
- * anyone assembles.
+ * and the markdown face — a stylesheet for content rather than a part anyone
+ * assembles. The diff face was the other one until it grew a variant and a
+ * second caller, which is what made it a part: it is `Diff` now.
  */
 const LAYOUT_CLASSES = new Set([
   'shell-main',
@@ -21,13 +22,6 @@ const LAYOUT_CLASSES = new Set([
   'dot-live',
   'mark-reach',
   'artifact-document',
-  'diff-document',
-  'diff-line',
-  'diff-line-add',
-  'diff-line-remove',
-  'diff-line-hunk',
-  'diff-line-meta',
-  'diff-line-context',
 ])
 
 /** Utility prefixes whose value is a colour, and so must resolve to a theme role. */

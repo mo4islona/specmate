@@ -24,6 +24,8 @@ export { Button, ButtonLink, type ButtonVariant, buttonClass } from './button.ts
 export { Chip } from './chip.tsx'
 export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.tsx'
 export { cx } from './cx.ts'
+export { Diff } from './diff.tsx'
+export { Drawer } from './drawer.tsx'
 export { Field, FieldLabel, Input, Select, Textarea } from './field.tsx'
 export { HoverHint } from './hover-hint.tsx'
 export { InlineLink, QuietLink } from './link.tsx'

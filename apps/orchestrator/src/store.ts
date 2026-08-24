@@ -668,6 +668,12 @@ export async function recordPlanOutcome(
   assessment: HarnessCoverageAssessment | null,
   plan: PlanShape | null,
   runningPipelineId: string,
+  /**
+   * REQ-705: where the change folder actually converged, which the engine
+   * settled against the working tree before this stage's commit. Null leaves
+   * the folder standing under the task's slug.
+   */
+  changeName: string | null = null,
 ): Promise<void> {
   // REQ-408: the column says what the task is running, so it is written only
   // where the graph agrees. `kickoff_brief` repeats the size — and nothing
@@ -679,7 +685,8 @@ export async function recordPlanOutcome(
 
   // REQ-1306: the name intake cut from the request, replaced by one written
   // after the repository was read. The slug is deliberately left alone — it
-  // names the branch and the change folder, which already exist.
+  // names the branch, which is internal and stays what it was; the change
+  // folder takes its own name from the plan (REQ-705).
   const renamed = plan !== null && plan.title !== task.title
   // A declared type may not silently disagree with the graph the task runs:
   // one selecting a different definition would leave the pinned graph naming a
@@ -695,6 +702,7 @@ export async function recordPlanOutcome(
     .set({
       ...(assessment ? { harnessStatus: assessment.classification } : {}),
       ...(sizeApplies && plan ? { planSize: plan.size } : {}),
+      ...(changeName === null ? {} : { changeName }),
       ...(renamed && plan ? { title: plan.title } : {}),
       ...(retyped && plan ? { type: plan.type } : {}),
       updatedAt: new Date(),

@@ -25,6 +25,7 @@ import {
   StageExecutor,
 } from '@specmate/runner'
 import {
+  changeDir,
   Git,
   resolveWorkspaceConfig,
   WorkspaceManager,
@@ -186,6 +187,21 @@ describeDb('the loop against a real repository', () => {
     })
   }
 
+  /**
+   * Where the task's change folder actually is. Planning renames it onto the
+   * name it declared (REQ-705), so a path built from the slug is only right
+   * until the first plan lands.
+   */
+  async function changePath(taskId: string, ...parts: string[]): Promise<string> {
+    const task = await reload(db, taskId)
+
+    return join(
+      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
+      changeDir(task.slug, task.changeName),
+      ...parts,
+    )
+  }
+
   async function walkOneStage(engine: Engine): Promise<void> {
     expect(await engine.tick()).toBe(1)
     await engine.idle()
@@ -291,15 +307,7 @@ describeDb('the loop against a real repository', () => {
       ['spec_review', 'skipped'],
     ])
 
-    const spec = await readFile(
-      join(
-        worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-        'openspec/changes',
-        task.slug,
-        'specs/stub-capability/spec.md',
-      ),
-      'utf8',
-    )
+    const spec = await readFile(await changePath(task.id, 'specs/stub-capability/spec.md'), 'utf8')
     expect(spec).toContain('### Requirement:')
   })
 
@@ -326,12 +334,7 @@ describeDb('the loop against a real repository', () => {
       [1, 'succeeded'],
     ])
 
-    const design = join(
-      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-      'openspec/changes',
-      task.slug,
-      'design.md',
-    )
+    const design = await changePath(task.id, 'design.md')
     expect(await readFile(design, 'utf8')).toBe('# written by the stub\n')
   })
 
@@ -438,12 +441,7 @@ describeDb('the loop against a real repository', () => {
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('spec_review')
-    const decisionLog = join(
-      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-      'openspec/changes',
-      task.slug,
-      'decisions.md',
-    )
+    const decisionLog = await changePath(task.id, 'decisions.md')
     expect(await readFile(decisionLog, 'utf8')).toContain('an agent scribbled here')
 
     await walkOneStage(engine)
@@ -644,12 +642,7 @@ describeDb('the loop against a real repository', () => {
     expect(scoped).toHaveLength(2)
     expect(scoped.every((c) => c.subjectKind === 'decision')).toBe(true)
 
-    const briefPath = join(
-      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-      'openspec/changes',
-      task.slug,
-      'proposal.md',
-    )
+    const briefPath = await changePath(task.id, 'proposal.md')
     const brief = await readFile(briefPath, 'utf8')
     expect(brief).toContain('## Key Points')
     expect(brief).toContain('## Open Questions')
@@ -715,12 +708,7 @@ describeDb('the loop against a real repository', () => {
     expect((await reload(db, task.id)).harnessStatus).toBe('missing')
     expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
 
-    const briefPath = join(
-      worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-      'openspec/changes',
-      task.slug,
-      'proposal.md',
-    )
+    const briefPath = await changePath(task.id, 'proposal.md')
     const brief = await readFile(briefPath, 'utf8')
     expect(brief).toContain('Harness gap:')
 

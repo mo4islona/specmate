@@ -31,7 +31,8 @@ export interface FakeWorkspaces {
     released: string[]
     decisionLogs: { slug: string; markdown: string }[]
     headRead: string[]
-    stageCommits: { taskId: string; stageId: string }[]
+    stageCommits: { taskId: string; stageId: string; changeDir: string }[]
+    changeFolderRenames: { slug: string; changeName: string }[]
   }
   readonly workspaces: DispatchingWorkspaces
   /** Makes the one predicate fact available; unset, the fact cannot be had. */
@@ -49,7 +50,8 @@ export function fakeWorkspaces(): FakeWorkspaces {
     released: [] as string[],
     decisionLogs: [] as { slug: string; markdown: string }[],
     headRead: [] as string[],
-    stageCommits: [] as { taskId: string; stageId: string }[],
+    stageCommits: [] as { taskId: string; stageId: string; changeDir: string }[],
+    changeFolderRenames: [] as { slug: string; changeName: string }[],
   }
   const workspace = (slug: string): Workspace => ({
     slug,
@@ -115,10 +117,17 @@ export function fakeWorkspaces(): FakeWorkspaces {
 
         return HEAD_COMMIT
       },
-      async commitStage(taskId, _ws, stage) {
-        calls.stageCommits.push({ taskId, stageId: stage.stageId })
+      async commitStage(taskId, ws, stage) {
+        calls.stageCommits.push({ taskId, stageId: stage.stageId, changeDir: ws.changeDir })
 
         return { committed: false }
+      },
+      // Mirrors the real convergence closely enough to be worth asserting on:
+      // the folder the workspace names afterwards is the one that was asked for.
+      async renameChangeFolder(ws: Workspace, changeName: string): Promise<Workspace> {
+        calls.changeFolderRenames.push({ slug: ws.slug, changeName })
+
+        return { ...ws, changeDir: `openspec/changes/${changeName}` }
       },
       async release(taskId) {
         calls.released.push(taskId)
