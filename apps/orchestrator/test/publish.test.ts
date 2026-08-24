@@ -81,7 +81,9 @@ describeDb('publish action', () => {
         options.fetch ??
         ((async () =>
           options.response ??
-          Response.json({ html_url: 'https://github.com/owner/repo/pull/1' })) as typeof fetch),
+          Response.json({
+            html_url: 'https://github.com/owner/repo/pull/1',
+          })) as unknown as typeof fetch),
     })
     const node = graph.dag.nodes.find((candidate) => candidate.key === 'publish')
     if (node?.kind !== 'action') throw new Error('fixture graph has no publish action')

@@ -78,7 +78,14 @@ describe('escalationForPark', () => {
         loop: 'spec',
         round: 2,
         verdict: 'escalate',
-        findings: [{ id: 'f1', severity: 'blocking', title: 'Missing acceptance criteria' }],
+        findings: [
+          {
+            id: 'f1',
+            severity: 'blocking',
+            title: 'Missing acceptance criteria',
+            detail_md: 'The scenario says what happens, never what makes it pass.',
+          },
+        ],
       },
     },
     {

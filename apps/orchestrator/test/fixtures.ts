@@ -173,10 +173,11 @@ export function planShape(overrides: Partial<PlanShape> = {}): PlanShape {
   }
 }
 
+/** The result is not optional here, so a caller may spread it without widening it. */
 export function okExecution(
   role: string,
   overrides: Partial<StageExecution> & { verdict?: string; findings?: unknown[] } = {},
-): StageExecution {
+): StageExecution & { result: StageResult } {
   const { verdict, findings, ...execution } = overrides
 
   return {

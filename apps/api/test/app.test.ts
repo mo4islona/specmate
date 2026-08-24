@@ -7,6 +7,7 @@ import {
   DEFAULT_MODEL_BINDINGS,
   instantiateDefinition,
   PIPELINE_CATALOG,
+  type PinnedGraph,
   type TaskState,
 } from '@specmate/core'
 import {
@@ -37,6 +38,14 @@ import {
 import { asc, eq, inArray } from 'drizzle-orm'
 import { createApp, type WorkspaceDiffOperations } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
+
+/** No nodes on purpose: a comment on this task has no node to pin itself to. */
+const EMPTY_DAG = {
+  pipeline: 'feature-bugfix',
+  entry: 'planning',
+  terminal: 'archived',
+  nodes: [],
+} satisfies PinnedGraph
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -688,11 +697,11 @@ describeDb('api', () => {
       const updatedBody = (await updated.json()) as {
         modelDefaults: Record<string, ModelBindingJson>
       }
-      expect(updatedBody.modelDefaults.reviewer.model).toBe('claude-sonnet-5')
+      expect(updatedBody.modelDefaults.reviewer?.model).toBe('claude-sonnet-5')
 
       const read = await app.request('/api/v1/settings/model-defaults', { headers: auth })
       const readBody = (await read.json()) as { modelDefaults: Record<string, ModelBindingJson> }
-      expect(readBody.modelDefaults.reviewer.model).toBe('claude-sonnet-5')
+      expect(readBody.modelDefaults.reviewer?.model).toBe('claude-sonnet-5')
 
       const created = await app.request('/api/v1/tasks', {
         method: 'POST',
@@ -709,7 +718,7 @@ describeDb('api', () => {
         task: { id: string; modelBindings: Record<string, ModelBindingJson> }
       }
       createdTaskIds.push(createdBody.task.id)
-      expect(createdBody.task.modelBindings.reviewer.model).toBe('claude-sonnet-5')
+      expect(createdBody.task.modelBindings.reviewer?.model).toBe('claude-sonnet-5')
     })
 
     test("updates one role's reasoning effort only, leaving that role's model untouched — AC-1041", async () => {
@@ -794,7 +803,7 @@ describeDb('api', () => {
         task: { id: string; modelBindings: Record<string, ModelBindingJson> }
       }
       createdTaskIds.push(body.task.id)
-      expect(body.task.modelBindings.implementer.model).toBe('claude-fable-5')
+      expect(body.task.modelBindings.implementer?.model).toBe('claude-fable-5')
       const currentDefaults = await getModelDefaults(db)
       expect(body.task.modelBindings.researcher).toEqual(currentDefaults.researcher)
     })
@@ -1141,6 +1150,7 @@ describeDb('api', () => {
             SPECMATE_STALL_HOURS: '4',
             WORKSPACE_ROOT: 'workspaces',
           }),
+          workspace: workspaceStub,
           now: () => fixedNow,
         })
         const attentionAuth = { authorization: 'Bearer test-password' }
@@ -1223,7 +1233,7 @@ describeDb('api', () => {
 
     const [graph] = await db
       .insert(runGraphs)
-      .values({ taskId: task.id, dag: { nodes: [] } })
+      .values({ taskId: task.id, dag: EMPTY_DAG })
       .returning()
     if (!graph) throw new Error('run graph insert returned no row')
 
@@ -1318,6 +1328,8 @@ describeDb('api', () => {
       .values({
         taskId: task.id,
         dag: {
+          pipeline: 'feature-bugfix',
+          terminal: 'archived',
           entry: 'implement',
           nodes: [
             { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
@@ -1382,6 +1394,8 @@ describeDb('api', () => {
       .values({
         taskId: task.id,
         dag: {
+          pipeline: 'feature-bugfix',
+          terminal: 'archived',
           entry: 'specify',
           nodes: [
             { kind: 'stage', key: 'specify', role: 'planner', binding: 'role_default' },
@@ -1434,6 +1448,8 @@ describeDb('api', () => {
     await db.insert(runGraphs).values({
       taskId: task.id,
       dag: {
+        pipeline: 'feature-bugfix',
+        terminal: 'archived',
         entry: 'implement',
         nodes: [{ kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' }],
       },

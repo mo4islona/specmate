@@ -77,6 +77,7 @@ function request(harness: Harness, overrides: Partial<StageRequest> = {}): Stage
     workspace: harness.workspace,
     baseBranch: 'main',
     environment: { image: 'local://host', toolchains: [] },
+    resume: null,
     ...overrides,
   }
 }
@@ -114,7 +115,7 @@ function matrixTable(rows: string): string {
 }
 
 describe('stage execution', () => {
-  test.each(AGENT_ROLES)(
+  test.each([...AGENT_ROLES])(
     'derives container-runtime access for %s from its role contract',
     (role) => {
       expect(roleNeedsContainerRuntime(role)).toBe(ROLE_CONTRACTS[role].writesCode)
@@ -180,7 +181,9 @@ describe('stage execution', () => {
 
     expect(
       Object.fromEntries(
-        jobs.map((job) => [job.role, job.needsContainerRuntime] satisfies [AgentRole, boolean]),
+        jobs.map(
+          (job) => [job.role, job.needsContainerRuntime ?? false] satisfies [AgentRole, boolean],
+        ),
       ),
     ).toEqual(
       Object.fromEntries(AGENT_ROLES.map((role) => [role, ROLE_CONTRACTS[role].writesCode])),
@@ -190,7 +193,7 @@ describe('stage execution', () => {
   test('passes the complete pinned environment into the provider job', async () => {
     const harness = await makeHarness('task-image')
     await harness.commitAll('baseline')
-    let jobEnvironment: StageJob['environment']
+    let jobEnvironment: StageJob['environment'] | undefined
     const config = makeConfig({ forwardEnv: STUB_ENV })
     const delegate = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
     const provider: AgentProvider = {

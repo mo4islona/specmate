@@ -65,6 +65,7 @@ describeDocker('universal runner toolchains', () => {
         workspace: harness.workspace,
         baseBranch: 'main',
         environment,
+        resume: null,
       })
       const second = await executor.execute({
         taskId: randomUUID(),
@@ -75,6 +76,7 @@ describeDocker('universal runner toolchains', () => {
         workspace: harness.workspace,
         baseBranch: 'main',
         environment,
+        resume: null,
       })
 
       expect(first.status).toBe('succeeded')
