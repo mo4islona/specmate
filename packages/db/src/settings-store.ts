@@ -1,7 +1,10 @@
 import {
   type ModelBindings,
   type ModelBindingsOverride,
+  normalizeRemote,
   resolveModelBindings,
+  type SpecConventionSetting,
+  SpecConventionSettings,
 } from '@specmate/core'
 import { eq } from 'drizzle-orm'
 import type { DbClient } from './index.ts'
@@ -10,6 +13,7 @@ import { appSettings } from './schema.ts'
 /** The `app_settings` keys wired up today — see model-settings/design.md. */
 const MODEL_DEFAULTS_KEY = 'model-defaults'
 const DEFAULT_REPOSITORY_KEY = 'default-repository'
+const SPEC_CONVENTIONS_KEY = 'spec-conventions'
 
 export type ModelDefaultsUpdate = ModelBindingsOverride
 
@@ -95,4 +99,84 @@ export async function setDefaultRepository(
     })
 
   return repoUrl
+}
+
+// ─── spec conventions (REQ-1702, REQ-923) ─────────────────────────────────────
+
+export class SuitePathRequiredError extends Error {
+  constructor() {
+    super('the custom profile needs the path its specification suite lives at')
+    this.name = 'SuitePathRequiredError'
+  }
+}
+
+/** Every repository the owner has set a convention for, keyed by normalised remote. */
+export async function getSpecConventions(db: DbClient): Promise<SpecConventionSettings> {
+  const [row] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, SPEC_CONVENTIONS_KEY))
+    .limit(1)
+
+  const parsed = SpecConventionSettings.safeParse(row?.value ?? {})
+
+  return parsed.success ? parsed.data : {}
+}
+
+/** What one repository's tasks run under, or undefined where the owner set nothing. */
+export async function getSpecConvention(
+  db: DbClient,
+  repoUrl: string,
+): Promise<SpecConventionSetting | undefined> {
+  const conventions = await getSpecConventions(db)
+
+  return conventions[normalizeRemote(repoUrl)]
+}
+
+/**
+ * Passing `null` returns the repository to detection. Read `for update` inside the
+ * transaction for the same reason `updateModelDefaults` does: two edits fired from the
+ * Settings screen must serialize rather than race on one read-then-write.
+ */
+export async function setSpecConvention(
+  db: DbClient,
+  repoUrl: string,
+  setting: SpecConventionSetting | null,
+): Promise<SpecConventionSettings> {
+  // AC-977: a custom profile without a location would point the planner at nothing and
+  // resolve back to `none` on every task, without ever saying why.
+  if (setting?.profile === 'custom' && !setting.suitePath?.trim()) {
+    throw new SuitePathRequiredError()
+  }
+
+  const key = normalizeRemote(repoUrl)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, SPEC_CONVENTIONS_KEY))
+      .limit(1)
+      .for('update')
+
+    const parsed = SpecConventionSettings.safeParse(row?.value ?? {})
+    const current = parsed.success ? parsed.data : {}
+
+    const merged = { ...current }
+    if (setting === null) {
+      delete merged[key]
+    } else {
+      merged[key] = setting
+    }
+
+    await tx
+      .insert(appSettings)
+      .values({ key: SPEC_CONVENTIONS_KEY, value: merged, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: merged, updatedAt: new Date() },
+      })
+
+    return merged
+  })
 }
