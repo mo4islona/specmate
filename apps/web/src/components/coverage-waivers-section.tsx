@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'wouter'
-import { ApiRequestError, listRepositories, revokeCoverageWaiver } from '../lib/api-client.ts'
+import { listRepositories, revokeCoverageWaiver } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { Button, InlineLink, ListRow, Note, Section } from '../ui/index.ts'
+import { RequestError } from './request-error.tsx'
 
 /**
  * REQ-918: the repositories the owner has accepted as under-covered, and the
@@ -24,72 +25,57 @@ export function CoverageWaiversSection() {
   const waived = repositories.data?.repositories.filter((repository) => repository.coverageWaiver)
 
   return (
-    <section className="panel space-y-5">
-      <div>
-        <p className="micro-label text-info">Remembered across tasks</p>
-        <h2 className="mt-2 text-lg font-semibold">Coverage waivers</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Repositories accepted as under-covered. A later task against one of them proceeds without
-          asking again; revoking makes the next task ask.
-        </p>
-      </div>
+    <Section
+      eyebrow="Remembered across tasks"
+      title="Coverage waivers"
+      description="Repositories accepted as under-covered. A later task against one of them proceeds without asking again; revoking makes the next task ask."
+    >
+      <RequestError error={repositories.error} fallback="Could not load the repositories" />
+      <RequestError error={revoke.error} fallback="Revoke failed" />
 
-      {repositories.isError && (
-        <p className="field-error">
-          {repositories.error instanceof ApiRequestError
-            ? repositories.error.message
-            : 'Could not load the repositories'}
-        </p>
-      )}
-      {revoke.isError && (
-        <p className="field-error">
-          {revoke.error instanceof ApiRequestError ? revoke.error.message : 'Revoke failed'}
-        </p>
-      )}
+      {repositories.isPending && <Note>Loading repositories…</Note>}
 
-      {repositories.isPending && <p className="text-sm text-muted">Loading repositories…</p>}
-
-      {waived?.length === 0 && (
-        <p className="text-sm text-muted">No repository has an accepted coverage gap.</p>
-      )}
+      {waived?.length === 0 && <Note>No repository has an accepted coverage gap.</Note>}
 
       <ul className="space-y-3">
-        {waived?.map((repository) => (
-          <li
-            key={repository.id}
-            className="subpanel flex flex-wrap items-start justify-between gap-3"
-          >
-            <div className="min-w-0">
-              <p className="break-all font-mono text-xs text-muted">{repository.repoUrl}</p>
-              <p className="mt-1 text-xs text-muted">
-                {repository.coverageWaiver?.originTaskId ? (
-                  <>
-                    Accepted on{' '}
-                    <Link
-                      href={`/tasks/${repository.coverageWaiver.originTaskId}`}
-                      className="text-info underline-offset-4 hover:underline"
-                    >
-                      {repository.coverageWaiver.originTitle ??
-                        repository.coverageWaiver.originTaskId.slice(0, 8)}
-                    </Link>
-                  </>
-                ) : (
-                  'Accepted on a task that no longer exists'
-                )}{' '}
-                · {formatTimestamp(repository.coverageWaiver?.acceptedAt ?? '')}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="button-secondary"
-              disabled={revoke.isPending && revoke.variables === repository.id}
-              onClick={() => revoke.mutate(repository.id)}
-            >
-              {revoke.isPending && revoke.variables === repository.id ? 'Revoking…' : 'Revoke'}
-            </button>
-          </li>
-        ))}
+        {waived?.map((repository) => {
+          const waiver = repository.coverageWaiver
+          const revoking = revoke.isPending && revoke.variables === repository.id
+
+          return (
+            <ListRow
+              key={repository.id}
+              primary={
+                <p className="break-all font-mono text-xs text-muted">{repository.repoUrl}</p>
+              }
+              secondary={
+                <Note size="xs" className="mt-1">
+                  {waiver?.originTaskId ? (
+                    <>
+                      Accepted on{' '}
+                      <InlineLink href={`/tasks/${waiver.originTaskId}`}>
+                        {waiver.originTitle ?? waiver.originTaskId.slice(0, 8)}
+                      </InlineLink>
+                    </>
+                  ) : (
+                    'Accepted on a task that no longer exists'
+                  )}{' '}
+                  · {formatTimestamp(waiver?.acceptedAt ?? '')}
+                </Note>
+              }
+              action={
+                <Button
+                  pending={revoking}
+                  pendingLabel="Revoking…"
+                  onClick={() => revoke.mutate(repository.id)}
+                >
+                  Revoke
+                </Button>
+              }
+            />
+          )
+        })}
       </ul>
-    </section>
+    </Section>
   )
 }

@@ -1,5 +1,6 @@
 import { PLAN_SIZES, type PlanSize } from '@specmate/core'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { Chip, cx, Popover } from '../ui/index.ts'
 
 /**
  * The size the owner declares up front, or `auto` — the absence of one, which
@@ -30,88 +31,71 @@ interface SizePickerProps {
  */
 export function SizePicker({ value, onChange }: SizePickerProps) {
   const [open, setOpen] = useState(false)
-  const root = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-
-    function onPointerDown(event: PointerEvent): void {
-      if (!root.current?.contains(event.target as Node)) setOpen(false)
-    }
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setOpen(false)
-    }
-
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
 
   return (
-    <div ref={root} className="relative">
-      <button
-        type="button"
-        className="chip min-h-9 gap-2"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen(!open)}
-      >
-        <span className="text-muted">Size</span>
-        <span>{value}</span>
-        <span
-          className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`}
-          aria-hidden="true"
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      side="bottom"
+      padding="menu"
+      role="menu"
+      label="Plan size"
+      trigger={
+        <Chip
+          className="min-h-9 gap-2"
+          expanded={open}
+          aria-haspopup="menu"
+          onClick={() => setOpen(!open)}
         >
-          ⌄
-        </span>
-      </button>
+          <span className="text-muted">Size</span>
+          <span>{value}</span>
+          <span
+            className={cx('text-muted transition-transform', open && 'rotate-180')}
+            aria-hidden="true"
+          >
+            ⌄
+          </span>
+        </Chip>
+      }
+    >
+      {CHOICES.map((choice) => {
+        const chosen = choice === value
 
-      {open && (
-        <div
-          role="menu"
-          className="console-popover absolute left-0 top-full z-20 mt-2 w-[21rem] p-1.5"
-        >
-          {CHOICES.map((choice) => {
-            const chosen = choice === value
-
-            return (
-              <button
-                key={choice}
-                type="button"
-                role="menuitemradio"
-                aria-checked={chosen}
-                className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-text/[0.06]"
-                onClick={() => {
-                  onChange(choice)
-                  setOpen(false)
-                }}
+        return (
+          <button
+            key={choice}
+            type="button"
+            role="menuitemradio"
+            aria-checked={chosen}
+            className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-text/[0.06]"
+            onClick={() => {
+              onChange(choice)
+              setOpen(false)
+            }}
+          >
+            <span className="min-w-0 flex-1">
+              <span
+                className={cx(
+                  'block font-mono text-[0.78rem]',
+                  chosen ? 'text-accent' : 'text-text',
+                )}
               >
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={`block font-mono text-[0.78rem] ${chosen ? 'text-accent' : 'text-text'}`}
-                  >
-                    {choice}
-                  </span>
-                  <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted">
-                    {NOTE[choice]}
-                  </span>
-                </span>
+                {choice}
+              </span>
+              <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted">
+                {NOTE[choice]}
+              </span>
+            </span>
 
-                <span
-                  className={`shrink-0 pt-0.5 text-accent ${chosen ? '' : 'invisible'}`}
-                  aria-hidden="true"
-                >
-                  ✓
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
+            <span
+              className={cx('shrink-0 pt-0.5 text-accent', !chosen && 'invisible')}
+              aria-hidden="true"
+            >
+              ✓
+            </span>
+          </button>
+        )
+      })}
+    </Popover>
   )
 }

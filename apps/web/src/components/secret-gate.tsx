@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, type ReactNode, useState, useSyncExternalStore } from 'react'
 import { getSecret, setSecret, subscribeToSecret } from '../lib/secret-store.ts'
+import { Button, Field, Input, MicroLabel, Note, Panel } from '../ui/index.ts'
 
 interface SecretGateProps {
   children: ReactNode
@@ -28,29 +29,28 @@ export function SecretGate({ children }: SecretGateProps) {
 
   return (
     <main className="grid min-h-full place-items-center bg-ground p-5 text-text">
-      <section className="panel w-full max-w-md border-accent/35">
-        <p className="micro-label text-accent">Owner channel</p>
+      <Panel className="w-full max-w-md border-accent/35">
+        <MicroLabel tone="accent">Owner channel</MicroLabel>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Authenticate SpecMate</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
+        <Note className="mt-3">
           Enter the owner secret. It stays in this browser and is sent only in request headers.
-        </p>
+        </Note>
+
         <form className="mt-7 space-y-4" onSubmit={submit}>
-          <label className="field-label" htmlFor="owner-secret">
-            Owner secret
-          </label>
-          <input
-            id="owner-secret"
-            type="password"
-            autoComplete="current-password"
-            value={candidate}
-            onChange={(event) => setCandidate(event.currentTarget.value)}
-            className="control w-full"
-          />
-          <button className="button-primary w-full" type="submit" disabled={!candidate.trim()}>
+          <Field label="Owner secret" id="owner-secret">
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={candidate}
+              onChange={(event) => setCandidate(event.currentTarget.value)}
+            />
+          </Field>
+
+          <Button variant="primary" className="w-full" type="submit" disabled={!candidate.trim()}>
             Open control room
-          </button>
+          </Button>
         </form>
-      </section>
+      </Panel>
     </main>
   )
 }

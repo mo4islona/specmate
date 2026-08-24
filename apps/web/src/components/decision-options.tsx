@@ -1,6 +1,7 @@
 import { type BudgetKey, budgetFromRaiseOption } from '@specmate/core'
 import { useState } from 'react'
 import type { DecisionItem } from '../lib/api-client.ts'
+import { Chip, Input } from '../ui/index.ts'
 
 /** Mirrors the server's Budgets schema (packages/core/src/state.ts): whole minutes, any positive cost. */
 function isValidRaiseValue(budget: BudgetKey, value: string): boolean {
@@ -34,15 +35,9 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
         const raiseBudget = budgetFromRaiseOption(option.id)
         if (!raiseBudget) {
           return (
-            <button
-              key={option.id}
-              type="button"
-              className="chip"
-              disabled={busy}
-              onClick={() => onAnswer(option.id)}
-            >
+            <Chip key={option.id} disabled={busy} onClick={() => onAnswer(option.id)}>
               {option.label}
-            </button>
+            </Chip>
           )
         }
 
@@ -51,11 +46,12 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
 
         return (
           <div key={option.id} className="flex shrink-0 items-center gap-2">
-            <input
+            <Input
               type="number"
+              fullWidth={false}
+              className="min-h-8 w-28 py-1"
               min={isMinutes ? '1' : '0.01'}
               step={isMinutes ? '1' : 'any'}
-              className="control min-h-8 w-28 py-1"
               value={value}
               onChange={(event) =>
                 setRaiseValues((prev) => ({ ...prev, [option.id]: event.currentTarget.value }))
@@ -63,14 +59,12 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
               placeholder="New value"
               aria-label={`New value for ${option.label}`}
             />
-            <button
-              type="button"
-              className="chip"
+            <Chip
               disabled={busy || !isValidRaiseValue(raiseBudget, value)}
               onClick={() => onAnswer(option.id, value.trim())}
             >
               {option.label}
-            </button>
+            </Chip>
           </div>
         )
       })}

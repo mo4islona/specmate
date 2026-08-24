@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
 import { FileIcon } from '../components/icons.tsx'
 import { ListDetailPanel } from '../components/list-detail-panel.tsx'
-import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { type ArtifactSummary, getArtifact, listArtifacts } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { cx, ErrorState, LoadingState, MicroLabel, NavRow, Note } from '../ui/index.ts'
 
 interface ArtifactsScreenProps {
   taskId: string
@@ -58,7 +57,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
           <>
             {[...grouped.entries()].map(([kind, rows]) => (
               <section key={kind} className="mb-4 last:mb-0">
-                <h2 className="micro-label text-muted">{kind.replaceAll('_', ' ')}</h2>
+                <MicroLabel as="h2">{kind.replaceAll('_', ' ')}</MicroLabel>
                 <ul className="mt-1.5 space-y-0.5">
                   {rows.map((row) => {
                     const open = artifactId === row.id
@@ -68,20 +67,23 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                         {/* The same row the step's own shelf draws: a page glyph,
                             then the name in the face every path in this app is
                             set in. Two places, one thing, one treatment. */}
-                        <Link
+                        <NavRow
                           href={`/tasks/${taskId}/docs/${row.id}`}
-                          className={`rail-row flex min-w-0 items-center gap-2.5 rounded-lg py-2 transition-colors ${
-                            open ? 'bg-accent/[0.09]' : 'hover:bg-text/[0.05]'
-                          }`}
+                          active={open}
+                          className="flex min-w-0 items-center gap-2.5"
                         >
                           <FileIcon
-                            className={`h-3.5 w-3.5 shrink-0 ${open ? 'text-info' : 'text-muted'}`}
+                            className={cx(
+                              'h-3.5 w-3.5 shrink-0',
+                              open ? 'text-info' : 'text-muted',
+                            )}
                           />
                           <span className="min-w-0 flex-1">
                             <span
-                              className={`block truncate font-mono text-[0.74rem] ${
-                                open ? 'text-text' : 'text-muted'
-                              }`}
+                              className={cx(
+                                'block truncate font-mono text-[0.74rem]',
+                                open ? 'text-text' : 'text-muted',
+                              )}
                             >
                               {row.path.split('/').at(-1)}
                             </span>
@@ -89,16 +91,14 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                               {row.path}
                             </span>
                           </span>
-                        </Link>
+                        </NavRow>
                       </li>
                     )
                   })}
                 </ul>
               </section>
             ))}
-            {artifacts.data.artifacts.length === 0 && (
-              <p className="text-sm text-muted">No artifacts have been indexed.</p>
-            )}
+            {artifacts.data.artifacts.length === 0 && <Note>No artifacts have been indexed.</Note>}
           </>
         }
       >

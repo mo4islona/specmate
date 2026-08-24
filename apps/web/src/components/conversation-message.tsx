@@ -1,11 +1,12 @@
 import type { ConversationMessage } from '../lib/api-client.ts'
 import { formatClock } from '../lib/format.ts'
+import { cx, Dot, MicroLabel, type Tone } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
-const AUTHORS: Record<ConversationMessage['role'], { label: string; tone: string }> = {
-  owner: { label: 'you', tone: 'text-accent' },
-  assistant: { label: 'guide', tone: 'text-info' },
-  system: { label: 'system', tone: 'text-muted' },
+const AUTHORS: Record<ConversationMessage['role'], { label: string; tone: Tone }> = {
+  owner: { label: 'you', tone: 'accent' },
+  assistant: { label: 'guide', tone: 'info' },
+  system: { label: 'system', tone: 'muted' },
 }
 
 /**
@@ -19,11 +20,13 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
 
   return (
     <li
-      className={`py-2 ${isPending ? 'attention-pulse rounded-xl px-3' : ''}`}
+      className={cx('py-2', isPending && 'attention-pulse rounded-xl px-3')}
       data-timeline-kind="conversation-message"
     >
       <div className="flex items-baseline gap-2">
-        <span className={`micro-label ${author.tone}`}>{author.label}</span>
+        <MicroLabel as="span" tone={author.tone}>
+          {author.label}
+        </MicroLabel>
         <span className="font-mono text-[0.6rem] text-muted">
           at {message.taskState.replaceAll('_', ' ')}
         </span>
@@ -43,7 +46,7 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
 
       {isPending && (
         <p className="mt-2 flex items-center gap-2 font-mono text-xs text-attention" role="status">
-          <span className="dot-live h-1.5 w-1.5 rounded-full bg-attention" aria-hidden="true" />
+          <Dot className="bg-attention" live />
           {message.status === 'responding' ? 'Responding…' : 'Waiting for a response slot…'}
         </p>
       )}

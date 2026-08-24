@@ -1,10 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'wouter'
-import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StatusChip } from '../components/status-chip.tsx'
 import { listAttention } from '../lib/api-client.ts'
 import { formatAge } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import {
+  ErrorState,
+  LoadingState,
+  MicroLabel,
+  Note,
+  PageHeader,
+  Panel,
+  PanelLink,
+} from '../ui/index.ts'
 
 function reasonLabel(kind: string): string {
   if (kind === 'gate') return 'Gate decision'
@@ -29,40 +36,37 @@ export function AttentionScreen() {
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-col justify-between gap-4 pb-2 sm:flex-row sm:items-end">
-        <div>
-          <p className="micro-label text-accent">Attention inbox</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Human signal queue
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-            Gates, failures, and stalled work that need an owner decision now.
+      <PageHeader
+        className="pb-2"
+        eyebrow="Attention inbox"
+        title="Human signal queue"
+        description="Gates, failures, and stalled work that need an owner decision now."
+        aside={
+          <p className="font-mono text-sm text-muted">
+            <span className="text-2xl text-text">{attention.data.items.length}</span> open
           </p>
-        </div>
-        <div className="font-mono text-sm text-muted">
-          <span className="text-2xl text-text">{attention.data.items.length}</span> open
-        </div>
-      </header>
+        }
+      />
 
       {attention.data.items.length === 0 ? (
-        <section className="panel grid min-h-72 place-items-center border-accent/20 text-center">
+        <Panel className="grid min-h-72 place-items-center border-accent/20 text-center">
           <div>
             <p className="font-mono text-5xl text-accent">✓</p>
             <h2 className="mt-5 text-xl font-semibold">Nothing needs the owner</h2>
-            <p className="mt-2 text-sm text-muted">All tracked work is moving or complete.</p>
+            <Note className="mt-2">All tracked work is moving or complete.</Note>
           </div>
-        </section>
+        </Panel>
       ) : (
         <ol className="grid gap-3 xl:grid-cols-2">
           {attention.data.items.map((item) => (
             <li key={item.id}>
-              <Link
+              <PanelLink
                 href={`/tasks/${item.task.id}`}
-                className="panel attention-pulse group block h-full transition-colors hover:border-accent/40 hover:bg-elevated"
+                className="attention-pulse group block h-full transition-colors hover:border-accent/40 hover:bg-elevated"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="micro-label text-attention">{reasonLabel(item.reason.kind)}</p>
+                    <MicroLabel tone="attention">{reasonLabel(item.reason.kind)}</MicroLabel>
                     <h2 className="mt-2 truncate text-lg font-semibold group-hover:text-accent">
                       {item.task.title}
                     </h2>
@@ -71,12 +75,14 @@ export function AttentionScreen() {
                     {formatAge(item.since)} ago
                   </span>
                 </div>
-                <p className="mt-4 text-sm leading-6 text-muted">{item.reason.detail}</p>
+
+                <Note className="mt-4">{item.reason.detail}</Note>
+
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <StatusChip status={item.task.status} />
                   <span className="font-mono text-xs text-info">Open task →</span>
                 </div>
-              </Link>
+              </PanelLink>
             </li>
           ))}
         </ol>

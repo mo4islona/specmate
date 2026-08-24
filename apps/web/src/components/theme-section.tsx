@@ -1,5 +1,6 @@
 import { THEMES, type ThemeId } from '../theme/themes.ts'
 import { useTheme } from '../theme/use-theme.tsx'
+import { cx, Section } from '../ui/index.ts'
 
 /**
  * A swatch is drawn in the theme it offers: the tile carries `data-theme`, so
@@ -32,17 +33,11 @@ export function ThemeSection() {
   const { themeId, setTheme } = useTheme()
 
   return (
-    <section className="panel space-y-5">
-      <div>
-        <p className="micro-label text-info">This browser only</p>
-        <h2 className="mt-2 text-lg font-semibold">Theme</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Colours and typefaces, never layout. Both come from the chart library's own presets, so
-          the telemetry canvas moves with the page. The choice is remembered in this browser and
-          travels with nothing else.
-        </p>
-      </div>
-
+    <Section
+      eyebrow="This browser only"
+      title="Theme"
+      description="Colours and typefaces, never layout. Both come from the chart library's own presets, so the telemetry canvas moves with the page. The choice is remembered in this browser and travels with nothing else."
+    >
       <fieldset className="grid gap-3 sm:grid-cols-2">
         <legend className="sr-only">Theme</legend>
 
@@ -52,9 +47,10 @@ export function ThemeSection() {
           return (
             <label
               key={theme.id}
-              className={`cursor-pointer rounded-xl border p-1.5 transition-colors ${
-                chosen ? 'border-accent' : 'border-border hover:border-border-bright'
-              }`}
+              className={cx(
+                'cursor-pointer rounded-xl border p-1.5 transition-colors',
+                chosen ? 'border-accent' : 'border-border hover:border-border-bright',
+              )}
             >
               <input
                 type="radio"
@@ -69,7 +65,7 @@ export function ThemeSection() {
 
               <span className="flex items-baseline justify-between gap-2 px-1.5 pt-2 pb-0.5">
                 <span
-                  className={`font-mono text-[0.75rem] ${chosen ? 'text-accent' : 'text-text'}`}
+                  className={cx('font-mono text-[0.75rem]', chosen ? 'text-accent' : 'text-text')}
                 >
                   {theme.label}
                 </span>
@@ -81,6 +77,6 @@ export function ThemeSection() {
           )
         })}
       </fieldset>
-    </section>
+    </Section>
   )
 }

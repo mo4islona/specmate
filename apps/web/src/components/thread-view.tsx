@@ -8,6 +8,7 @@ import type {
   LiveActivity,
   TurnEntry,
 } from '../lib/task-thread.ts'
+import { cx, TextButton } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
@@ -110,7 +111,10 @@ function RunLine({ entry }: { entry: LineEntry }) {
 
       <p className="flex items-baseline gap-2">
         <span
-          className={`shrink-0 leading-none ${entry.live ? 'dot-live text-accent' : BULLET_TONE[entry.tone]}`}
+          className={cx(
+            'shrink-0 leading-none',
+            entry.live ? 'dot-live text-accent' : BULLET_TONE[entry.tone],
+          )}
           aria-hidden="true"
         >
           ●
@@ -123,7 +127,10 @@ function RunLine({ entry }: { entry: LineEntry }) {
           </span>
         ) : (
           <span
-            className={`min-w-0 break-words ${entry.tone === 'trouble' ? 'text-danger' : 'text-text'}`}
+            className={cx(
+              'min-w-0 break-words',
+              entry.tone === 'trouble' ? 'text-danger' : 'text-text',
+            )}
           >
             {entry.action}
           </span>
@@ -176,9 +183,10 @@ function FeedTurn({ entry }: { entry: TurnEntry }) {
   return (
     <li className="flex py-2" data-feed-kind={entry.author} title={formatTimestamp(entry.at)}>
       <div
-        className={`flex min-w-0 max-w-[42rem] flex-col gap-1 ${
-          mine ? 'ml-auto items-end' : 'mr-auto items-start'
-        }`}
+        className={cx(
+          'flex min-w-0 max-w-[42rem] flex-col gap-1',
+          mine ? 'ml-auto items-end' : 'mr-auto items-start',
+        )}
       >
         {said && (
           <time className="sr-only" dateTime={String(entry.at)}>
@@ -191,7 +199,7 @@ function FeedTurn({ entry }: { entry: TurnEntry }) {
             {/* Your own side needs no name; a node's name is the only identity
                 the machine has, so it keeps one. */}
             {entry.author !== 'owner' && (
-              <span className={`uppercase tracking-[0.06em] ${AUTHOR_TONE[entry.author]}`}>
+              <span className={cx('uppercase tracking-[0.06em]', AUTHOR_TONE[entry.author])}>
                 {entry.label}
               </span>
             )}
@@ -212,22 +220,21 @@ function FeedTurn({ entry }: { entry: TurnEntry }) {
         {entry.body && (
           <div
             data-balloon={balloon ? '' : undefined}
-            className={`min-w-0 ${balloon ? 'rounded-[1.25rem] bg-elevated px-4 py-2.5' : ''}`}
+            className={cx('min-w-0', balloon && 'rounded-[1.25rem] bg-elevated px-4 py-2.5')}
           >
             <div
-              className={`artifact-document text-[0.85rem] ${clamped ? 'line-clamp-2 text-muted' : ''}`}
+              className={cx(
+                'artifact-document text-[0.85rem]',
+                clamped && 'line-clamp-2 text-muted',
+              )}
             >
               <ArtifactMarkdown content={entry.body} />
             </div>
 
             {clamps && (
-              <button
-                type="button"
-                onClick={() => setExpanded(!expanded)}
-                className="mt-1 font-mono text-[0.62rem] text-info hover:underline"
-              >
+              <TextButton className="mt-1" onClick={() => setExpanded(!expanded)}>
                 {expanded ? 'clamp it back' : 'read the whole thing →'}
-              </button>
+              </TextButton>
             )}
           </div>
         )}

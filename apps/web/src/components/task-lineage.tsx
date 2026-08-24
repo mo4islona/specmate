@@ -1,5 +1,5 @@
-import { Link } from 'wouter'
 import type { TaskSummary } from '../lib/api-client.ts'
+import { InlineLink } from '../ui/index.ts'
 
 interface TaskLineageProps {
   originTaskId: string | null
@@ -13,11 +13,7 @@ function titleFor(tasks: readonly TaskSummary[] | undefined, id: string): string
 }
 
 function TaskLink({ id, tasks }: { id: string; tasks: readonly TaskSummary[] | undefined }) {
-  return (
-    <Link href={`/tasks/${id}`} className="text-info underline-offset-4 hover:underline">
-      {titleFor(tasks, id)}
-    </Link>
-  )
+  return <InlineLink href={`/tasks/${id}`}>{titleFor(tasks, id)}</InlineLink>
 }
 
 /**

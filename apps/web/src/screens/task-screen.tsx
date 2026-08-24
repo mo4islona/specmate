@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { DecisionOptions } from '../components/decision-options.tsx'
 import { GateVerbs } from '../components/gate-panel.tsx'
-import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { StopControl } from '../components/run-controls.tsx'
 import { StepDocuments } from '../components/step-documents.tsx'
 import { StepHeader } from '../components/step-header.tsx'
@@ -39,6 +38,7 @@ import { consoleDestination, parkedStop } from '../lib/task-console.ts'
 import { stepDocuments } from '../lib/task-documents.ts'
 import { buildPipelineNodes } from '../lib/task-pipeline.ts'
 import { buildStepFeed, countGateRedirects, liveActivity, nodeLabel } from '../lib/task-thread.ts'
+import { Button, ConsoleDock, ErrorState, LoadingState } from '../ui/index.ts'
 
 interface TaskScreenProps {
   taskId: string
@@ -581,7 +581,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
         {/* The one thing that needs a person, and the one input, are the same
             box: a question with its own fold above a second scrolling column is
             what pass 3 exists to delete. */}
-        <div className="console-dock shrink-0">
+        <ConsoleDock className="shrink-0">
           {destination.kind === 'discussion' && actions.length > 0 && (
             <ul className="mb-2 space-y-1">
               {actions.map((action) => (
@@ -594,14 +594,13 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
                     {action.instruction ?? 'No instruction'}
                   </span>
                   {action.status === 'proposed' ? (
-                    <button
-                      type="button"
-                      className="button-ghost"
+                    <Button
+                      variant="ghost"
                       disabled={confirmAction.isPending}
                       onClick={() => confirmAction.mutate(action.id)}
                     >
                       Confirm
-                    </button>
+                    </Button>
                   ) : (
                     <span className="px-2.5 font-mono text-[0.68rem] text-muted">
                       {action.status}
@@ -669,41 +668,35 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
             escapes={
               <>
                 {destination.kind === 'discussion' && (
-                  <button
-                    type="button"
-                    className="button-ghost"
-                    onClick={() => setActiveConversationId(undefined)}
-                  >
+                  <Button variant="ghost" onClick={() => setActiveConversationId(undefined)}>
                     Back to answering
-                  </button>
+                  </Button>
                 )}
 
                 {destination.kind === 'question' && (
-                  <button
-                    type="button"
-                    className="button-ghost"
+                  <Button
+                    variant="ghost"
                     disabled={!comment.trim() || feedback.isPending}
                     onClick={() => feedback.mutate(undefined)}
                     title="Record this as a comment rather than as the answer"
                   >
                     Just comment instead
-                  </button>
+                  </Button>
                 )}
 
                 {destination.kind === 'restart' && (
-                  <button
-                    type="button"
-                    className="button-ghost"
+                  <Button
+                    variant="ghost"
                     disabled={restart.isPending}
                     onClick={() => restart.mutate('')}
                   >
                     Restart without guidance
-                  </button>
+                  </Button>
                 )}
               </>
             }
           />
-        </div>
+        </ConsoleDock>
       </div>
 
       <aside className="scroll-thin order-first min-h-0 xl:order-none xl:overflow-y-auto xl:border-l xl:border-border xl:pl-6">

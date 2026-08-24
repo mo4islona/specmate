@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
+import { Button, ErrorNote, Popover } from '../ui/index.ts'
 
 interface StopControlProps {
   readonly nodeKey: string
@@ -26,43 +27,39 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
 
   return (
     <>
-      <div className="relative">
-        <button
-          type="button"
-          className="button-ghost button-ghost-danger"
-          disabled={stopping}
-          aria-expanded={confirming}
-          onClick={() => setConfirming((open) => !open)}
-        >
-          {stopping ? 'Stopping…' : '■ Stop'}
-        </button>
+      <Popover
+        open={confirming}
+        onDismiss={() => setConfirming(false)}
+        role="dialog"
+        label="Confirm stop"
+        trigger={
+          <Button
+            variant="ghost-danger"
+            disabled={stopping}
+            aria-expanded={confirming}
+            onClick={() => setConfirming(!confirming)}
+          >
+            {stopping ? 'Stopping…' : '■ Stop'}
+          </Button>
+        }
+      >
+        <p className="text-[0.78rem] leading-6 text-muted">
+          Stopping <span className="text-text">{runLabel(nodeKey, attempt)}</span> may still incur
+          provider cost. Every uncommitted change from this attempt is discarded; accepted commits
+          stay.
+        </p>
 
-        {confirming && (
-          <div className="console-popover absolute bottom-full left-0 z-10 mb-2 w-[21rem] p-3.5">
-            <p className="text-[0.78rem] leading-6 text-muted">
-              Stopping <span className="text-text">{runLabel(nodeKey, attempt)}</span> may still
-              incur provider cost. Every uncommitted change from this attempt is discarded; accepted
-              commits stay.
-            </p>
+        <div className="mt-3 flex items-center justify-end gap-1">
+          <Button variant="ghost" disabled={stopping} onClick={() => setConfirming(false)}>
+            Keep running
+          </Button>
+          <Button variant="danger" disabled={stopping} onClick={onStop}>
+            Confirm stop
+          </Button>
+        </div>
+      </Popover>
 
-            <div className="mt-3 flex items-center justify-end gap-1">
-              <button
-                type="button"
-                className="button-ghost"
-                disabled={stopping}
-                onClick={() => setConfirming(false)}
-              >
-                Keep running
-              </button>
-              <button type="button" className="button-danger" disabled={stopping} onClick={onStop}>
-                Confirm stop
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {error && <p className="field-error w-full px-2.5 text-[0.72rem]">{error}</p>}
+      {error && <ErrorNote className="w-full px-2.5 text-[0.72rem]">{error}</ErrorNote>}
     </>
   )
 }

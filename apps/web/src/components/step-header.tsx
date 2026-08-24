@@ -2,8 +2,8 @@ import { useNow } from '../hooks/use-now.ts'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { nodeSpend } from '../lib/task-pipeline.ts'
 import { formatDuration } from '../lib/task-thread.ts'
+import { Button, cx, Dot, HoverHint } from '../ui/index.ts'
 import { CommitRef } from './commit-ref.tsx'
-import { HoverHint } from './hover-hint.tsx'
 import { InfoIcon } from './icons.tsx'
 import { NodeHint } from './node-hint.tsx'
 import { NODE_DOT, NODE_NAME } from './node-tone.ts'
@@ -62,18 +62,16 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-elevated/55 py-2 pl-4 pr-2">
       <h2 className="flex min-w-0 items-center gap-2">
-        <span
-          className={`h-[0.45rem] w-[0.45rem] shrink-0 rounded-full ${NODE_DOT[node.state]}`}
-          aria-hidden="true"
-        />
-        <span className={`truncate text-[0.95rem] ${NODE_NAME[node.state]}`}>{node.label}</span>
+        <Dot className={NODE_DOT[node.state]} />
+        <span className={cx('truncate text-[0.95rem]', NODE_NAME[node.state])}>{node.label}</span>
       </h2>
 
       {notice && (
         <p
-          className={`min-w-0 font-mono text-[0.66rem] ${
-            notice.tone === 'danger' ? 'text-danger' : 'text-muted'
-          }`}
+          className={cx(
+            'min-w-0 font-mono text-[0.66rem]',
+            notice.tone === 'danger' ? 'text-danger' : 'text-muted',
+          )}
           role="status"
         >
           {notice.text}
@@ -93,13 +91,13 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
       </p>
 
       <HoverHint hint={<NodeHint node={node} now={now} />} delayMs={120}>
-        <button
-          type="button"
-          className="button-ghost min-h-0 px-1.5 py-1.5"
+        <Button
+          variant="ghost"
+          className="min-h-0 px-1.5 py-1.5"
           aria-label={`What ${node.label} ran on, and what it spent`}
         >
           <InfoIcon className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </HoverHint>
     </header>
   )

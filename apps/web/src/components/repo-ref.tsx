@@ -1,4 +1,5 @@
 import { pullRequestNumber, repoLabel, repoWebUrl } from '../lib/repo-link.ts'
+import { cx } from '../ui/index.ts'
 import { PullRequestIcon, RepoIcon } from './icons.tsx'
 
 /** What the task opened against the repository, once it has opened one. */
@@ -62,9 +63,10 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
           title={`${pullRequest.url} — ${pullRequest.state}${
             pullRequest.checksState ? `, checks ${pullRequest.checksState}` : ''
           }`}
-          className={`flex shrink-0 items-center gap-1 rounded-md bg-text/[0.06] px-1.5 py-[0.1rem] hover:bg-text/10 ${
-            PR_TONE[pullRequest.state] ?? 'text-muted'
-          }`}
+          className={cx(
+            'flex shrink-0 items-center gap-1 rounded-md bg-text/[0.06] px-1.5 py-[0.1rem] hover:bg-text/10',
+            PR_TONE[pullRequest.state] ?? 'text-muted',
+          )}
         >
           <PullRequestIcon className="h-3 w-3" />
           {number}

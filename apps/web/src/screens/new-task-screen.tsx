@@ -8,6 +8,19 @@ import { type SizeChoice, SizePicker } from '../components/size-picker.tsx'
 import { ApiRequestError, type CreateTaskInput, createTask } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { repoLabel } from '../lib/repo-link.ts'
+import {
+  Button,
+  buttonClass,
+  Console,
+  ConsoleField,
+  ErrorNote,
+  Field,
+  FieldLabel,
+  Input,
+  Note,
+  PageHeader,
+  Subpanel,
+} from '../ui/index.ts'
 
 /** What the screen holds. Everything but the request is optional at intake (REQ-903). */
 export interface NewTaskForm {
@@ -85,38 +98,38 @@ export function RepositoryChoice({
   onSelect,
 }: RepositoryChoiceProps) {
   return (
-    <div className="subpanel bg-danger/10">
-      <p className="field-label">Which repository?</p>
-      <p className="mt-1 text-xs text-muted">
+    <Subpanel className="bg-danger/10">
+      <FieldLabel>Which repository?</FieldLabel>
+      <Note size="xs" className="mt-1">
         {detail ?? 'The request did not name one, and there is no default set.'}
-      </p>
+      </Note>
 
       {candidates.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {candidates.map((repoUrl) => (
-            <button
+            <Button
               key={repoUrl}
-              type="button"
+              variant={repoUrl === selected ? 'primary' : 'secondary'}
               aria-pressed={repoUrl === selected}
-              className={repoUrl === selected ? 'button-primary' : 'button-secondary'}
               onClick={() => onSelect(repoUrl)}
             >
               {repoLabel(repoUrl)}
-            </button>
+            </Button>
           ))}
         </div>
       )}
 
-      <input
+      <Input
         id="repo-url"
         type="url"
-        className="control mt-3 w-full font-mono"
+        mono
+        className="mt-3"
         placeholder="https://github.com/org/repository"
         aria-label="Repository URL"
         value={selected}
         onChange={(event) => onSelect(event.currentTarget.value)}
       />
-    </div>
+    </Subpanel>
   )
 }
 
@@ -158,25 +171,22 @@ export function NewTaskScreen() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Launch work</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          Say what you want done. The repository comes out of the request; planning names the task
-          once it has read the code.
-        </p>
-      </header>
+      <PageHeader
+        title="Launch work"
+        description="Say what you want done. The repository comes out of the request; planning names the task once it has read the code."
+      />
 
       {/* The same block the task's console is: this app has one input, and
           launching is the first time the owner uses it. */}
-      <form className="console" onSubmit={submit} noValidate>
+      <Console onSubmit={submit} noValidate>
         <div className="px-4 pt-4">
-          <textarea
+          <ConsoleField
             id="task-description"
             ref={request}
             rows={3}
-            // biome-ignore lint/a11y/noAutofocus: the screen exists for this one field
+            // The screen exists for this one field.
             autoFocus
-            className="console-field text-[0.95rem]"
+            className="text-[0.95rem]"
             value={form.description}
             onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
             placeholder="Fix the login redirect in specmate — it lands on the homepage instead of the dashboard."
@@ -185,9 +195,7 @@ export function NewTaskScreen() {
             aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
           />
           {fieldError('description') && (
-            <p id="task-description-error" className="field-error">
-              {fieldError('description')}
-            </p>
+            <ErrorNote id="task-description-error">{fieldError('description')}</ErrorNote>
           )}
         </div>
 
@@ -203,7 +211,7 @@ export function NewTaskScreen() {
         )}
 
         {launch.isError && !rejection && (
-          <p className="field-error px-4 pt-3">{launch.error.message}</p>
+          <ErrorNote className="px-4 pt-3">{launch.error.message}</ErrorNote>
         )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-4 pt-4">
@@ -214,14 +222,20 @@ export function NewTaskScreen() {
 
           <span className="flex-1" />
 
-          <button className="button-primary shrink-0" type="submit" disabled={launch.isPending}>
-            {launch.isPending ? 'Launching…' : 'Launch task'}
-          </button>
+          <Button
+            variant="primary"
+            className="shrink-0"
+            type="submit"
+            pending={launch.isPending}
+            pendingLabel="Launching…"
+          >
+            Launch task
+          </Button>
         </div>
-      </form>
+      </Console>
 
       <details className="group">
-        <summary className="button-ghost w-fit cursor-pointer list-none">
+        <summary className={`${buttonClass('ghost')} w-fit cursor-pointer list-none`}>
           <span className="transition-transform group-open:rotate-90" aria-hidden="true">
             ›
           </span>
@@ -229,26 +243,24 @@ export function NewTaskScreen() {
         </summary>
 
         <div className="mt-4 space-y-6">
-          <div>
-            <label className="field-label" htmlFor="base-branch">
-              Base branch
-            </label>
-            <p className="mt-1 text-xs text-muted">Empty means the repository's default branch.</p>
-            <input
-              id="base-branch"
-              className="control mt-2 w-full font-mono"
+          <Field
+            label="Base branch"
+            id="base-branch"
+            hint="Empty means the repository's default branch."
+            error={fieldError('baseBranch')}
+          >
+            <Input
+              mono
               placeholder="main"
               value={form.baseBranch}
               onChange={(event) => setForm({ ...form, baseBranch: event.currentTarget.value })}
-              aria-invalid={Boolean(fieldError('baseBranch'))}
             />
-            {fieldError('baseBranch') && <p className="field-error">{fieldError('baseBranch')}</p>}
-          </div>
+          </Field>
 
           <div>
-            <p className="field-label">Override models for this task</p>
+            <FieldLabel>Override models for this task</FieldLabel>
             {fieldError('modelBindings') && (
-              <p className="field-error mt-2">{fieldError('modelBindings')}</p>
+              <ErrorNote className="mt-2">{fieldError('modelBindings')}</ErrorNote>
             )}
             <div className="mt-4">
               <RoleBindings>

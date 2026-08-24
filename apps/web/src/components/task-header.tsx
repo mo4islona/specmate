@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { StateTone, TaskStateSentence } from '../lib/task-state.ts'
+import { cx, Dot } from '../ui/index.ts'
 
 const TONE_TEXT: Record<StateTone, string> = {
   running: 'text-accent',
@@ -34,11 +35,10 @@ export function TaskHeader({ title, state, badges }: TaskHeaderProps) {
     <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
       <h1 className="min-w-0 break-words text-lg font-semibold tracking-tight">{title}</h1>
 
-      <p className={`flex min-w-0 items-baseline gap-1.5 text-[0.82rem] ${TONE_TEXT[state.tone]}`}>
-        <span
-          className={`h-1.5 w-1.5 shrink-0 translate-y-[-0.1rem] rounded-full ${TONE_DOT[state.tone]}`}
-          aria-hidden="true"
-        />
+      <p
+        className={cx('flex min-w-0 items-baseline gap-1.5 text-[0.82rem]', TONE_TEXT[state.tone])}
+      >
+        <Dot className={cx('translate-y-[-0.1rem]', TONE_DOT[state.tone])} />
         <span className="min-w-0">
           {state.headline}
           {state.detail && <span className="text-muted"> — {state.detail}</span>}

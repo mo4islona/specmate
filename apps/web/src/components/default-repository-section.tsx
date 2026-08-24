@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
-import { ApiRequestError, listRepositories, setDefaultRepository } from '../lib/api-client.ts'
+import { listRepositories, setDefaultRepository } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { Button, Field, Input, Note, Section } from '../ui/index.ts'
+import { RequestError } from './request-error.tsx'
 
 /**
  * REQ-922: where a launch that names no repository ends up. The list is the
@@ -36,69 +38,45 @@ export function DefaultRepositorySection() {
   }
 
   return (
-    <section className="panel space-y-5">
-      <div>
-        <p className="micro-label text-info">Launch defaults</p>
-        <h2 className="mt-2 text-lg font-semibold">Default repository</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Where a task goes when its request names no repository. A request that names one — by URL
-          or by name — always wins over this.
-        </p>
-      </div>
-
-      {repositories.isError && (
-        <p className="field-error">
-          {repositories.error instanceof ApiRequestError
-            ? repositories.error.message
-            : 'Could not load the repositories'}
-        </p>
-      )}
-      {save.isError && (
-        <p className="field-error">
-          {save.error instanceof ApiRequestError ? save.error.message : 'Could not save'}
-        </p>
-      )}
+    <Section
+      eyebrow="Launch defaults"
+      title="Default repository"
+      description="Where a task goes when its request names no repository. A request that names one — by URL or by name — always wins over this."
+    >
+      <RequestError error={repositories.error} fallback="Could not load the repositories" />
+      <RequestError error={save.error} fallback="Could not save" />
 
       {nothingHasRun && !repositories.isPending && (
-        <p className="text-sm text-muted">
+        <Note>
           Nothing has run yet, so there is no history to pick from — name a repository and the first
           launch goes there.
-        </p>
+        </Note>
       )}
 
       <form className="flex flex-wrap items-end gap-3" onSubmit={submit}>
-        <div className="min-w-64 flex-1">
-          <label className="field-label" htmlFor="default-repository">
-            Repository URL
-          </label>
-          <input
-            id="default-repository"
+        <Field label="Repository URL" id="default-repository" className="min-w-64 flex-1">
+          <Input
             type="url"
             list="known-repositories"
-            className="control mt-2 w-full font-mono"
+            mono
             placeholder="https://github.com/org/repository"
             value={value}
             onChange={(event) => setDraft(event.currentTarget.value)}
           />
-          <datalist id="known-repositories">
-            {known.map((repository) => (
-              <option key={repository.id} value={repository.repoUrl} />
-            ))}
-          </datalist>
-        </div>
+        </Field>
+        <datalist id="known-repositories">
+          {known.map((repository) => (
+            <option key={repository.id} value={repository.repoUrl} />
+          ))}
+        </datalist>
 
-        <button className="button-primary" type="submit" disabled={save.isPending}>
-          {save.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          className="button-secondary"
-          type="button"
-          disabled={save.isPending || !current}
-          onClick={() => save.mutate(null)}
-        >
+        <Button variant="primary" type="submit" pending={save.isPending} pendingLabel="Saving…">
+          Save
+        </Button>
+        <Button disabled={save.isPending || !current} onClick={() => save.mutate(null)}>
           Clear
-        </button>
+        </Button>
       </form>
-    </section>
+    </Section>
   )
 }
