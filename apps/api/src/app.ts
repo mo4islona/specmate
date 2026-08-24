@@ -10,6 +10,7 @@ import {
   ModelBindingsOverride,
   openConversation,
   readConversation,
+  SpecConventionSetting,
   TaskState,
   TerminalTaskConversationError,
 } from '@specmate/core'
@@ -25,10 +26,13 @@ import {
   feedback,
   getDefaultRepository,
   getModelDefaults,
+  getSpecConventions,
   ping,
   runGraphs,
   type Stage,
+  SuitePathRequiredError,
   setDefaultRepository,
+  setSpecConvention,
   stages,
   type Task,
   tasks,
@@ -119,6 +123,12 @@ const UpdateModelDefaults = ModelBindingsOverride
 
 /** `null` clears it. A repository nothing has run against is a legal default (REQ-1017). */
 const UpdateDefaultRepository = z.object({ repoUrl: z.url().nullable() })
+
+/** `setting: null` returns the repository to detection (REQ-923). */
+const UpdateSpecConvention = z.object({
+  repoUrl: z.url(),
+  setting: SpecConventionSetting.nullable(),
+})
 
 const CreateComment = z.object({
   comment: z.string().trim().min(1).max(20_000),
@@ -737,6 +747,30 @@ export function createApp({
         const { repoUrl } = c.req.valid('json')
         const stored = await setDefaultRepository(db, repoUrl)
         return c.json({ defaultRepository: stored })
+      },
+    )
+
+    .get('/settings/spec-conventions', async (c) => {
+      const specConventions = await getSpecConventions(db)
+      return c.json({ specConventions })
+    })
+
+    .put(
+      '/settings/spec-conventions',
+      validator('json', validateJson(UpdateSpecConvention)),
+      async (c) => {
+        const { repoUrl, setting } = c.req.valid('json')
+        try {
+          const specConventions = await setSpecConvention(db, repoUrl, setting)
+          return c.json({ specConventions })
+        } catch (error) {
+          // AC-977: the screen has to be able to say what is missing, which a 500 cannot.
+          if (error instanceof SuitePathRequiredError) {
+            return c.json({ error: error.message }, 422)
+          }
+
+          throw error
+        }
       },
     )
 

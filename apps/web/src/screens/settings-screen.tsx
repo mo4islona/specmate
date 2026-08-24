@@ -10,6 +10,7 @@ import { CoverageWaiversSection } from '../components/coverage-waivers-section.t
 import { DefaultRepositorySection } from '../components/default-repository-section.tsx'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
+import { SpecConventionsSection } from '../components/spec-conventions-section.tsx'
 import { ApiRequestError, getModelDefaults, updateModelDefaults } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 
@@ -126,6 +127,8 @@ export function SettingsScreen() {
       <DefaultRepositorySection />
 
       <CoverageWaiversSection />
+
+      <SpecConventionsSection />
     </div>
   )
 }
