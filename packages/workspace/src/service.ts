@@ -1,5 +1,12 @@
-import { type ExecutionEnvironment, isTerminal, type TaskState } from '@specmate/core'
-import { type Database, events, tasks } from '@specmate/db'
+import {
+  type ExecutionEnvironment,
+  expectedSuitePath,
+  isTerminal,
+  resolveSpecConvention,
+  type SpecConvention,
+  type TaskState,
+} from '@specmate/core'
+import { type Database, events, getSpecConvention, tasks } from '@specmate/db'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type DiffFile, resolveTaskDiffRange, taskFileDiff, taskFilesChanged } from './diff.ts'
 import { Git } from './git.ts'
@@ -13,6 +20,7 @@ import type {
   WorkspaceManager,
 } from './manager.ts'
 import { changeDir } from './paths.ts'
+import { readSpecConventionTree } from './spec-conventions.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
 export const BASE_BRANCH_PINNED_EVENT = 'task.base_branch_pinned'
@@ -84,6 +92,8 @@ export class WorkspaceService {
     if (task.baseBranch === null) {
       await this.persistBaseBranch(request.taskId, workspace.baseBranch)
     }
+
+    await this.persistSpecConvention(request.taskId, workspace, task.repoUrl, task.specConvention)
 
     if (task.environment !== null) return workspace
 
@@ -209,6 +219,32 @@ export class WorkspaceService {
     })
   }
 
+  /**
+   * REQ-1702. Provisioning is the only code that sees the working tree and the owner's
+   * setting at once, and it runs before every stage — so a setting changed between two
+   * stages is picked up by the next one, with no cache to invalidate.
+   *
+   * Written only where the answer actually moved: re-resolving the same profile before
+   * every stage would bump `updated_at` on each one and make a task look edited.
+   */
+  private async persistSpecConvention(
+    taskId: string,
+    workspace: Workspace,
+    repoUrl: string,
+    current: SpecConvention | null,
+  ): Promise<void> {
+    const setting = await getSpecConvention(this.db, repoUrl)
+    const tree = await readSpecConventionTree(workspace.path, expectedSuitePath(setting))
+    const resolved = resolveSpecConvention(tree, setting)
+
+    if (current && sameSpecConvention(current, resolved)) return
+
+    await this.db
+      .update(tasks)
+      .set({ specConvention: resolved, updatedAt: new Date() })
+      .where(eq(tasks.id, taskId))
+  }
+
   private async persistInitialEnvironment(
     taskId: string,
     environment: ExecutionEnvironment,
@@ -258,4 +294,13 @@ export class WorkspaceService {
       throw new WorkspaceTaskMismatchError(request.taskId)
     }
   }
+}
+
+function sameSpecConvention(a: SpecConvention, b: SpecConvention): boolean {
+  return (
+    a.profile === b.profile &&
+    a.suitePath === b.suitePath &&
+    a.conventionNote === b.conventionNote &&
+    a.missingSuitePath === b.missingSuitePath
+  )
 }

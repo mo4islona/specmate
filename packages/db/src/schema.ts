@@ -15,6 +15,7 @@ import {
   type PlanSize,
   type ReviewFinding,
   resolveModelBindings,
+  type SpecConvention,
   type StageResult,
   type TaskState,
 } from '@specmate/core'
@@ -260,6 +261,12 @@ export const tasks = pgTable(
     /** What planning declared; null until it has run. Selects the pipeline profile (REQ-408). */
     planSize: planSizeEnum('plan_size').$type<PlanSize>(),
     harnessStatus: harnessStatusEnum('harness_status').notNull().default('unknown'),
+    /**
+     * Resolved by provisioning, which is the only code that sees the working tree and
+     * the owner's setting at once (REQ-1702). Null means not yet determined: a task
+     * pinned before the column existed, until its next stage re-provisions.
+     */
+    specConvention: jsonb('spec_convention').$type<SpecConvention>(),
     // Resolved at creation, not merged at read time: a task records the caps it ran with.
     budgets: jsonb()
       .$type<Budgets>()

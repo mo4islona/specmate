@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { normalizeRemote } from '@specmate/core'
 import type { WorkspaceConfig } from './config.ts'
 
 export const CHANGES_ROOT = 'openspec/changes'
@@ -27,14 +28,7 @@ export function mirrorKey(repoUrl: string): string {
   return `${readable || 'repo'}-${digest}`
 }
 
-export function normalizeRemote(repoUrl: string): string {
-  const trimmed = repoUrl
-    .trim()
-    .replace(/\/+$/, '')
-    .replace(/\.git$/i, '')
-  const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/^[^/@]+@/, '')
-  return withoutScheme.replace(':', '/').toLowerCase()
-}
+export { normalizeRemote }
 
 /** Accept the SSH and HTTPS GitHub spellings used by repository remotes. */
 export function githubRepository(repoUrl: string): string | undefined {
