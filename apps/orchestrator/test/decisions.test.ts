@@ -15,6 +15,7 @@ import {
 } from '@specmate/db'
 import type { StageExecution } from '@specmate/runner'
 import { and, asc, eq, inArray } from 'drizzle-orm'
+import type { z } from 'zod'
 import {
   DecisionAnswerEmptyError,
   DecisionNotOpenError,
@@ -40,7 +41,13 @@ const FIXTURE_HARNESS_COVERAGE = {
   evidence_md: 'Fixture: an existing e2e suite covers this path.',
 }
 
-function result(overrides: Partial<StageResult> & { role: StageResult['role'] }): StageExecution {
+/**
+ * Overrides are the schema's input, not its output: a caller writing a decision by
+ * hand should not have to repeat every field the schema itself fills in.
+ */
+function result(
+  overrides: Partial<z.input<typeof StageResult>> & { role: StageResult['role'] },
+): StageExecution {
   const needsCoverage = overrides.role === 'planner' && (overrides.status ?? 'ok') === 'ok'
 
   return {

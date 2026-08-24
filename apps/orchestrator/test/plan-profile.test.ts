@@ -232,7 +232,7 @@ describeDb('the profile a declared size selects', () => {
     await engine.idle()
 
     const after = await reload(db, task.id)
-    expect(after.caps.max_impl_iterations).toBe(9)
-    expect(after.caps.max_spec_iterations).toBe(CAPS_FOR_SIZE.small.max_spec_iterations)
+    // Everything the profile sets, except the one cap the owner had already chosen.
+    expect(after.caps).toMatchObject({ ...CAPS_FOR_SIZE.small, max_impl_iterations: 9 })
   })
 })

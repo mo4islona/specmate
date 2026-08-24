@@ -739,7 +739,7 @@ describe('pipeline profiles', () => {
 
   test('AC-640: the compact profile keeps the spine and every human gate', () => {
     const keys = FEATURE_BUGFIX_COMPACT.nodes.map((node) => node.key)
-    for (const key of [
+    const spine: readonly TaskState[] = [
       'planning',
       'specify',
       'implement',
@@ -747,7 +747,8 @@ describe('pipeline profiles', () => {
       'summarize',
       'publish',
       ...HUMAN_GATES,
-    ]) {
+    ]
+    for (const key of spine) {
       expect(keys).toContain(key)
     }
     expect(FEATURE_BUGFIX_COMPACT.terminal).toBe(FEATURE_BUGFIX_PIPELINE.terminal)

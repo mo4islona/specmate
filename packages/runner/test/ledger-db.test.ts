@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import type { PinnedGraph } from '@specmate/core'
 import {
   createDb,
   type Database,
@@ -10,6 +11,14 @@ import {
 } from '@specmate/db'
 import { eq } from 'drizzle-orm'
 import { loadLedgerSnapshot, TaskNotFoundError } from '../src/ledger.ts'
+
+/** The rows under test do not read the graph; it only has to be one. */
+const EMPTY_DAG = {
+  pipeline: 'feature-bugfix',
+  entry: 'planning',
+  terminal: 'archived',
+  nodes: [],
+} satisfies PinnedGraph
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -64,10 +73,7 @@ describeDb('ledger snapshot', () => {
   })
 
   test('renders guidance only while the run that claimed it is still going', async () => {
-    const [graph] = await db
-      .insert(runGraphs)
-      .values({ taskId, dag: { nodes: [] } })
-      .returning()
+    const [graph] = await db.insert(runGraphs).values({ taskId, dag: EMPTY_DAG }).returning()
     const [running] = await db
       .insert(stages)
       .values({

@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
+import type { DeclaredToolchain } from '@specmate/core'
 import { detectToolchains } from '../src/toolchains.ts'
 import { cleanupTempDirs, tempDir, writeFiles } from './fixtures.ts'
 
@@ -11,8 +12,15 @@ async function detect(files: Record<string, string>) {
   return detectToolchains(tree)
 }
 
+/** Spelled out because the rows differ: without it a manifest carrying no version widens the table. */
+interface DetectionCase {
+  readonly manifest: string
+  readonly contents: string
+  readonly expected: DeclaredToolchain[]
+}
+
 describe('toolchain detection', () => {
-  test.each([
+  test.each<DetectionCase>([
     {
       manifest: '.mise.toml',
       contents: '[tools]\nnode = "22.14.0"\npython = { version = "3.12.9" }\n',
