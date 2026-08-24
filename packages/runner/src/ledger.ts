@@ -4,6 +4,7 @@ import {
   type ReviewFinding,
   type ReviewVerdict,
   renderFindingBullets,
+  type SpecConvention,
 } from '@specmate/core'
 import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
@@ -43,6 +44,8 @@ export interface LedgerSnapshot {
   readonly harnessStatus: string
   /** The most recent probe's evidence, short form — null before any probe has run. */
   readonly harnessEvidence: string | null
+  /** What provisioning resolved (REQ-1703); null on a task pinned before the column existed. */
+  readonly specConvention: SpecConvention | null
   /** What planning declared; null until it has (REQ-1306). */
   readonly planSize: string | null
   /** Where this task sits in the chain a plan built, and the title of the task that proposed it. */
@@ -134,6 +137,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
     status: task.status,
     harnessStatus: task.harnessStatus,
     harnessEvidence,
+    specConvention: task.specConvention,
     planSize: task.planSize,
     planDepth: task.planDepth,
     originTitle: origin?.title ?? null,
@@ -175,6 +179,7 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     `- Base branch: ${snapshot.baseBranch ?? "the repository's default"}`,
     `- Current state: ${snapshot.status}`,
     `- Harness coverage: ${snapshot.harnessStatus}${harnessEvidence ? ` — ${harnessEvidence}` : ''}`,
+    `- Specification convention: ${renderSpecConvention(snapshot.specConvention)}`,
     '',
     '## Plan',
     '',
@@ -247,4 +252,32 @@ export async function renderLedgerForTask(
   taskId: string,
 ): Promise<string> {
   return renderLedger(config, await loadLedgerSnapshot(db, taskId))
+}
+
+/**
+ * REQ-1703: where the repository's specification is and what governs it — never a
+ * word of the specification itself, which the role reads from the working tree with
+ * the tools it already reads code with. The absence of a suite is stated rather than
+ * left off, so a role can tell "no specification here" from "nobody said".
+ */
+function renderSpecConvention(convention: SpecConvention | null): string {
+  if (convention === null) return 'not yet determined'
+
+  if (convention.profile === 'openspec') {
+    return `OpenSpec — living specifications at \`${convention.suitePath}\``
+  }
+
+  if (convention.profile === 'custom') {
+    const note = convention.conventionNote
+      ? ` — ${collapseWhitespace(convention.conventionNote)}`
+      : ''
+
+    return `a specification suite at \`${convention.suitePath}\`${note}`
+  }
+
+  if (convention.missingSuitePath !== null) {
+    return `none — a suite was configured at \`${convention.missingSuitePath}\`, but this working tree does not hold it`
+  }
+
+  return 'none — this repository has no living specification to ground in'
 }

@@ -59,6 +59,33 @@ decision instead (see below) and leave `proposal.md` as you found it.
 Otherwise, write the page: every part `## Writing the brief` describes, and no more. This is what
 the owner opens — there is no second pass to tidy it.
 
+## Grounding in the specification the repository already has
+
+The ledger's `Specification convention` line says whether this repository has a living
+specification, where it is, and what governs it. Read that line before you read anything else: a
+change written beside an existing specification instead of against it leaves two normative
+descriptions of the same behaviour, which somebody then has to reconcile by hand.
+
+**OpenSpec** — the suite is at the path the line names. Find the requirements the request touches
+and read them. In the brief, name them by their identifiers ("this changes REQ-412 and adds a
+scenario to REQ-407"), not by paraphrase. At `specify`, write `specs/` as a delta against those
+identifiers — what is modified, what is added, what is removed — rather than restating governed
+behaviour as new prose. Where the suite carries an allocation convention for new identifiers
+(a band registry, a numbering rule, a lint), follow it; where two tasks might allocate the same
+number at once, that collision is the repository's lint to catch, not yours to prevent.
+
+**A suite at a configured path** — the line names where it is and, usually, a sentence from the
+owner on what governs it. Do the same thing under that convention: find what already covers the
+area, cite it the way the suite cites itself, and write the change as a change to it.
+
+**None** — the repository has no living specification. Write the change's specification
+free-standing, and do not cite or invent identifiers as though a suite existed. This is an
+ordinary repository, not a deficient one.
+
+Where the line says a configured suite was not found in the working tree, treat the repository as
+having none, and say so in the brief — the owner configured something that is not there, and the
+kickoff gate is where they find that out.
+
 ## Judging what can prove this — `planning`
 
 Before you write a word of the brief, judge whether this repository can prove the change you are

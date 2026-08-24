@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import { DEFAULT_CAPS } from '@specmate/core'
 import { type LedgerSnapshot, renderLedger } from '../src/ledger.ts'
 import { makeConfig } from './fixtures.ts'
@@ -13,6 +13,7 @@ const BASE: LedgerSnapshot = {
   status: 'specify',
   harnessStatus: 'partial',
   harnessEvidence: null,
+  specConvention: null,
   planSize: null,
   planDepth: 0,
   originTitle: null,
@@ -224,5 +225,77 @@ describe('ledger', () => {
     }
 
     expect(renderLedger(makeConfig(), snapshot)).toBe(renderLedger(makeConfig(), snapshot))
+  })
+})
+
+describe('the specification convention line', () => {
+  // AC-1707: where the suite is and what governs it, so the role knows what to read.
+  it('names an OpenSpec suite and where it lives', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      specConvention: {
+        profile: 'openspec',
+        suitePath: 'openspec/specs',
+        conventionNote: null,
+        missingSuitePath: null,
+      },
+    })
+
+    expect(ledger).toContain('- Specification convention: OpenSpec')
+    expect(ledger).toContain('openspec/specs')
+  })
+
+  it("carries a configured suite's location and the owner's note", () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      specConvention: {
+        profile: 'custom',
+        suitePath: 'docs/spec',
+        conventionNote: 'Numbered requirements, one file per service.',
+        missingSuitePath: null,
+      },
+    })
+
+    expect(ledger).toContain('docs/spec')
+    expect(ledger).toContain('Numbered requirements, one file per service.')
+  })
+
+  // AC-1708: stated, not omitted — a role must tell "none here" from "nobody said".
+  it('says plainly when the repository has no specification', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      specConvention: {
+        profile: 'none',
+        suitePath: null,
+        conventionNote: null,
+        missingSuitePath: null,
+      },
+    })
+
+    expect(ledger).toContain('- Specification convention: none')
+    expect(ledger).toContain('no living specification')
+  })
+
+  // AC-1702: the discrepancy is visible rather than silent.
+  it('names a configured suite the working tree does not hold', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      specConvention: {
+        profile: 'none',
+        suitePath: null,
+        conventionNote: null,
+        missingSuitePath: 'docs/spec',
+      },
+    })
+
+    expect(ledger).toContain('- Specification convention: none')
+    expect(ledger).toContain('docs/spec')
+    expect(ledger).toContain('does not hold it')
+  })
+
+  it('a task pinned before the column existed says so rather than claiming none', () => {
+    const ledger = renderLedger(makeConfig(), BASE)
+
+    expect(ledger).toContain('- Specification convention: not yet determined')
   })
 })
