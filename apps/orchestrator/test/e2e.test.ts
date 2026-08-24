@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { appendOwnerMessage, forwardTarget } from '@specmate/core'
+import { appendOwnerMessage, forwardTarget, SPEC_REVIEW_SCENARIO_FLOOR } from '@specmate/core'
 import {
   conversationActions,
   conversations,
@@ -44,6 +44,7 @@ import { createConversationDispatcher, createStageDispatcher } from '../src/disp
 import { Engine, type StageDispatcher } from '../src/engine.ts'
 import { taskRunnerEnvironment } from '../src/runner.ts'
 import { createTask } from '../src/store.ts'
+import { createEngineWorkspaces } from '../src/workspaces.ts'
 import { reload } from './fixtures.ts'
 
 const url = process.env.DATABASE_URL
@@ -136,17 +137,7 @@ describeDb('the loop against a real repository', () => {
 
     return new Engine({
       db,
-      workspaces: {
-        provision: (request) => service.provision({ ...request, image: config.image }),
-        provisionConversation: (workspace, key) => service.provisionConversation(workspace, key),
-        releaseConversation: (task, key) =>
-          service.releaseConversation(task.slug, task.repoUrl, key),
-        discard: (workspace, commit) => service.discard(workspace, commit),
-        headCommit: (workspace) => service.headCommit(workspace),
-        commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
-        writeDecisionLog: (workspace, markdown) => service.writeDecisionLog(workspace, markdown),
-        release: (taskId) => service.release(taskId),
-      },
+      workspaces: createEngineWorkspaces({ service, image: config.image }),
       settings: { stageConcurrency: 1, stageAttemptCap: 2, availableProviders: ['claude-code'] },
       dispatcher,
       actionDispatcher: async ({ task, graph, node }) => {
@@ -176,7 +167,9 @@ describeDb('the loop against a real repository', () => {
   async function queueModes(
     task: Task,
     modes: string[],
-    options: { record?: string; session?: string } = {},
+    // `scenarios` asks the run to leave a spec that many scenarios deep: the
+    // conditional review node weighs it, and a stage that leaves none is skipped over.
+    options: { record?: string; session?: string; scenarios?: number } = {},
   ): Promise<void> {
     const queue = join(await tempDir('stub-queue'), 'modes.json')
     await writeFile(queue, JSON.stringify(modes))
@@ -185,6 +178,7 @@ describeDb('the loop against a real repository', () => {
       SPECMATE_STUB_SLUG: task.slug,
       ...(options.record ? { SPECMATE_STUB_RECORD: options.record } : {}),
       ...(options.session ? { SPECMATE_STUB_SESSION: options.session } : {}),
+      ...(options.scenarios ? { SPECMATE_STUB_SCENARIOS: String(options.scenarios) } : {}),
     })
   }
 
@@ -196,7 +190,7 @@ describeDb('the loop against a real repository', () => {
   test('a seeded task walks research → spec review → the spec gate, and the command line approves it', async () => {
     const engine = makeEngine()
     const task = await makeTask()
-    await queueModes(task, ['ok', 'approve'])
+    await queueModes(task, ['ok', 'approve'], { scenarios: SPEC_REVIEW_SCENARIO_FLOOR })
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('spec_review')
@@ -232,6 +226,35 @@ describeDb('the loop against a real repository', () => {
     )
     expect(await approve.exited).toBe(0)
     expect((await reload(db, task.id)).status).toBe('implement')
+  })
+
+  /**
+   * The other side of the same node, which nothing here could reach while the loop
+   * was assembled without the fact that decides it: the review is worth a stage only
+   * when the specification makes enough separate claims to be worth one.
+   */
+  test('a specification too thin to review is skipped over, and says so', async () => {
+    const engine = makeEngine()
+    const task = await makeTask()
+    await queueModes(task, ['ok'])
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+
+    await engine.tick()
+    await engine.idle()
+
+    expect((await reload(db, task.id)).status).toBe('human_spec_gate')
+    const rows = await db
+      .select()
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+      .orderBy(asc(stages.createdAt))
+    expect(rows.map((row) => [row.nodeKey, row.status])).toEqual([
+      ['specify', 'succeeded'],
+      ['spec_review', 'skipped'],
+    ])
+    expect(rows[1]?.skipReason).toContain('scenario')
   })
 
   test('a retry reads the artifacts as last committed, not as the failed attempt left them', async () => {
@@ -362,7 +385,10 @@ describeDb('the loop against a real repository', () => {
     const engine = makeEngine()
     const task = await makeTask()
     const record = join(await tempDir('stub-record'), 'invocation.json')
-    await queueModes(task, ['scribble-decision-log', 'approve'], { record })
+    await queueModes(task, ['scribble-decision-log', 'approve'], {
+      record,
+      scenarios: SPEC_REVIEW_SCENARIO_FLOOR,
+    })
 
     await walkOneStage(engine)
     expect((await reload(db, task.id)).status).toBe('spec_review')
@@ -491,12 +517,19 @@ describeDb('the loop against a real repository', () => {
   test('a spec loop that exhausts its cap with no agent request raises an escalation naming it, and answering resumes the task', async () => {
     const engine = makeEngine()
     const task = await makeTask()
+    // The node this cap belongs to is conditional, so the loop has to start from a
+    // specification deep enough to be worth reviewing — not from a forced status. The
+    // run that leaves it continues planning's session and so declares no size of its
+    // own: one that did would re-apply the profile and move the cap under the test.
+    await queueModes(task, ['continuation'], { scenarios: SPEC_REVIEW_SCENARIO_FLOOR })
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('spec_review')
+
     await db.insert(iterations).values([
       { taskId: task.id, loop: 'spec', round: 1, reviewerVerdict: 'revise', findings: [] },
       { taskId: task.id, loop: 'spec', round: 2, reviewerVerdict: 'revise', findings: [] },
       { taskId: task.id, loop: 'spec', round: 3, reviewerVerdict: 'revise', findings: [] },
     ])
-    await db.update(tasks).set({ status: 'spec_review' }).where(eq(tasks.id, task.id))
     await queueModes(task, ['revise'])
 
     await walkOneStage(engine)

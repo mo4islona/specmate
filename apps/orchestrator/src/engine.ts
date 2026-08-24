@@ -291,7 +291,11 @@ export class BudgetDecisionRequiresOptionError extends Error {
   }
 }
 
-/** What the engine needs from the workspace layer; the entry point adapts `WorkspaceService`. */
+/**
+ * What any engine needs from the workspace layer; the entry point adapts
+ * `WorkspaceService`. The four optional members below belong to an engine that
+ * runs stages — `DispatchingWorkspaces` is where they stop being optional.
+ */
 export interface EngineWorkspaces {
   provision(request: {
     taskId: string
@@ -315,6 +319,19 @@ export interface EngineWorkspaces {
    */
   countSpecScenarios?(workspace: Workspace): Promise<number>
   release(taskId: string): Promise<void>
+}
+
+/**
+ * What an engine that dispatches needs, where nothing above is optional. Three of
+ * the four fail silently when absent — a retry that does not rewind, a decision log
+ * the agent never reads, a conditional node that always runs — so the set an engine
+ * with a dispatcher is built from is a compile-time question, not a runtime one.
+ */
+export interface DispatchingWorkspaces extends EngineWorkspaces {
+  headCommit(workspace: Workspace): Promise<string>
+  commitStage(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
+  writeDecisionLog(workspace: Workspace, markdown: string): Promise<void>
+  countSpecScenarios(workspace: Workspace): Promise<number>
 }
 
 export interface StageDispatch {
@@ -430,12 +447,9 @@ export interface ConfirmActionOptions {
   readonly idempotencyKey: string
 }
 
-export interface EngineDeps {
+interface EngineDepsBase {
   readonly db: Database
-  readonly workspaces: EngineWorkspaces
   readonly settings: EngineSettings
-  /** Absent in ops-only contexts (the admin CLI); tick() requires it. */
-  readonly dispatcher?: StageDispatcher
   /** Executes an orchestrator-owned action node without starting a runner. */
   readonly actionDispatcher?: ActionDispatcher
   /** Answer-only runs use a disposable task snapshot and never enter the pinned graph. */
@@ -444,6 +458,17 @@ export interface EngineDeps {
   readonly killOrphans?: (labels: Record<string, string>) => Promise<string[]>
   readonly log?: (message: string) => void
 }
+
+/**
+ * The dispatcher is what decides which workspace contract applies: an ops-only
+ * engine (the admin CLI) approves and parks and never provisions, so it is held to
+ * the narrow set; one that can run a stage owes the whole of it.
+ */
+export type EngineDeps = EngineDepsBase &
+  (
+    | { readonly dispatcher: StageDispatcher; readonly workspaces: DispatchingWorkspaces }
+    | { readonly dispatcher?: undefined; readonly workspaces: EngineWorkspaces }
+  )
 
 /**
  * Statuses the poll never dispatches from: interrupts, terminals, and the

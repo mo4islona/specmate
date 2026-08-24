@@ -13,11 +13,14 @@ import { eq } from 'drizzle-orm'
 import type {
   ConversationDispatch,
   ConversationDispatcher,
-  EngineWorkspaces,
+  DispatchingWorkspaces,
   StageDispatch,
   StageDispatcher,
 } from '../src/engine.ts'
 import { createTask, type RunGraphRow } from '../src/store.ts'
+
+/** Stands in for whatever a real tree's head would be; only its stability matters. */
+const HEAD_COMMIT = '0000000000000000000000000000000000000000'
 
 export interface FakeWorkspaces {
   readonly calls: {
@@ -27,8 +30,10 @@ export interface FakeWorkspaces {
     discarded: string[]
     released: string[]
     decisionLogs: { slug: string; markdown: string }[]
+    headRead: string[]
+    stageCommits: { taskId: string; stageId: string }[]
   }
-  readonly workspaces: EngineWorkspaces
+  readonly workspaces: DispatchingWorkspaces
   /** Makes the one predicate fact available; unset, the fact cannot be had. */
   declareSpecScenarios(count: number): void
   failNextConversationRelease(error?: Error): void
@@ -43,6 +48,8 @@ export function fakeWorkspaces(): FakeWorkspaces {
     discarded: [] as string[],
     released: [] as string[],
     decisionLogs: [] as { slug: string; markdown: string }[],
+    headRead: [] as string[],
+    stageCommits: [] as { taskId: string; stageId: string }[],
   }
   const workspace = (slug: string): Workspace => ({
     slug,
@@ -99,6 +106,19 @@ export function fakeWorkspaces(): FakeWorkspaces {
       },
       async writeDecisionLog(ws, markdown) {
         calls.decisionLogs.push({ slug: ws.slug, markdown })
+      },
+      // The tree is a fake, so there is nothing to read a head from and nothing to
+      // commit — but an engine that dispatches is owed both, and answering keeps the
+      // fake honest about which engine it is standing in for.
+      async headCommit(ws) {
+        calls.headRead.push(ws.slug)
+
+        return HEAD_COMMIT
+      },
+      async commitStage(taskId, _ws, stage) {
+        calls.stageCommits.push({ taskId, stageId: stage.stageId })
+
+        return { committed: false }
       },
       async release(taskId) {
         calls.released.push(taskId)
