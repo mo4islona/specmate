@@ -48,6 +48,7 @@ function job(harness: Harness, overrides: Partial<StageJob> = {}): StageJob {
     environment: { image: 'local://host', toolchains: [] },
     timeoutMs: 20_000,
     attempt: 0,
+    resume: null,
     ...overrides,
   }
 }
@@ -170,6 +171,63 @@ describe('provider invocation', () => {
       .catch((e) => e)) as StageRunError
 
     expect(error.failure).toBe('timeout')
+  })
+
+  /**
+   * Asserted on what the CLI was actually handed, not on `argv()` in isolation:
+   * the flag was right all along the day a stage ran cold, and what went missing
+   * was the session on its way to this call.
+   */
+  test('forks the session its job carries', async () => {
+    const harness = await makeHarness('resume-argv')
+    const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
+    const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
+
+    await claude.run(job(harness, { resume: { node: 'planning', sessionId: 'sess-planning' } }))
+
+    const seen = (await Bun.file(record).json()) as { argv: string[] }
+    expect(seen.argv[seen.argv.indexOf('--resume') + 1]).toBe('sess-planning')
+    expect(seen.argv).toContain('--fork-session')
+  })
+
+  test('starts cold when the node it continues left no session', async () => {
+    const harness = await makeHarness('resume-argv-cold')
+    const record = join(harness.workspace.path, SCRATCH_DIR, 'record.json')
+    const claude = provider('ok', harness, { SPECMATE_STUB_RECORD: record })
+
+    await claude.run(job(harness, { resume: { node: 'planning', sessionId: null } }))
+
+    const seen = (await Bun.file(record).json()) as { argv: string[] }
+    expect(seen.argv).not.toContain('--resume')
+    expect(seen.argv).not.toContain('--fork-session')
+  })
+
+  test('holds a first pass to what its role owes', async () => {
+    const harness = await makeHarness('plan-owed')
+    const claude = provider('continuation', harness)
+
+    const error = (await claude
+      .run(job(harness, { role: 'planner' }))
+      .catch((e) => e)) as StageRunError
+
+    expect(error.failure).toBe('invalid_result')
+    expect(error.message).toBe('planner must return a harness coverage assessment')
+  })
+
+  /**
+   * The obligation belongs to the run that faces the gate. A continuation whose
+   * session the provider never gave back is still a continuation — the prompt it
+   * was handed asks for no plan, so demanding one fails a run that did as it was told.
+   */
+  test('asks a continuation for no plan, session or no session', async () => {
+    const harness = await makeHarness('plan-not-owed')
+    const claude = provider('continuation', harness)
+
+    const outcome = await claude.run(
+      job(harness, { role: 'planner', resume: { node: 'planning', sessionId: null } }),
+    )
+
+    expect(outcome.result.status).toBe('ok')
   })
 })
 

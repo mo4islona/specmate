@@ -219,6 +219,10 @@ describe('checkHarnessCoveragePresent', () => {
     expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'needs_decision' })).toBeNull()
     expect(checkHarnessCoveragePresent({ ...plannerOk, status: 'failed' })).toBeNull()
   })
+
+  test('ignores a continuation, which re-probes nothing', () => {
+    expect(checkHarnessCoveragePresent(plannerOk, true)).toBeNull()
+  })
 })
 
 describe('checkPlanPresent', () => {
@@ -258,6 +262,10 @@ describe('checkPlanPresent', () => {
 
   test('ignores a role that declares no plan', () => {
     expect(checkPlanPresent({ ...plannerOk, role: 'researcher' })).toBeNull()
+  })
+
+  test('ignores a continuation, which declares no size of its own', () => {
+    expect(checkPlanPresent(plannerOk, true)).toBeNull()
   })
 
   test('ignores a planning role that has not reached ok status', () => {

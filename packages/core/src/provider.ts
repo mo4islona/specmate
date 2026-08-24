@@ -3,6 +3,21 @@ import type { ModelId, ReasoningEffort } from './models.ts'
 import type { StageResult } from './result.ts'
 import type { AgentRole, ProviderId } from './roles.ts'
 
+/**
+ * A run that continues an earlier node's session (REQ-410).
+ *
+ * The two facts are separate on purpose. `node` comes from the graph and is what
+ * makes this run a continuation — it holds even when the provider hands back no
+ * session and the run starts cold. `sessionId` is only what was actually
+ * recorded, so it is what decides whether there is anything to fork.
+ */
+export interface StageResumption {
+  /** Key of the node whose session this run continues. */
+  readonly node: string
+  /** The session to fork, or null when the resumed run recorded none. */
+  readonly sessionId: string | null
+}
+
 export interface StageJob {
   readonly taskId: string
   readonly stageId: string
@@ -32,11 +47,11 @@ export interface StageJob {
   readonly timeoutMs: number
   readonly attempt: number
   /**
-   * The session an earlier node of the same role left, when the definition says
-   * this node continues it (REQ-410). The run forks it: the base is read, never
-   * appended to, so a retry starts from the same place this attempt did.
+   * Set when the definition says this node continues an earlier one, null when it
+   * does not. The run forks the session rather than appending to it, so a retry
+   * starts from the same place this attempt did (AC-236).
    */
-  readonly resumeSessionId?: string
+  readonly resume: StageResumption | null
   /**
    * Fired for each recognized tool use while the run is still in progress.
    * Absent for callers (e.g. conversation turns) that don't surface activity.

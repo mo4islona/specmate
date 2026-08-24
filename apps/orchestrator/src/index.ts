@@ -11,12 +11,8 @@ import {
 import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import {
-  type ConversationDispatcher,
-  Engine,
-  type EngineWorkspaces,
-  type StageDispatcher,
-} from './engine.ts'
+import { createConversationDispatcher, createStageDispatcher } from './dispatch.ts'
+import { Engine, type EngineWorkspaces } from './engine.ts'
 import { githubToken } from './github-auth.ts'
 import { Publisher } from './publish.ts'
 import {
@@ -177,74 +173,22 @@ const engineWorkspaces: EngineWorkspaces = {
   release: (taskId) => service.release(taskId),
 }
 
-const dispatcher: StageDispatcher = async ({
-  task,
-  node,
-  stageId,
-  attempt,
-  provider,
-  workspace,
-}) => {
-  // The environment is pinned during provision, moments after the tick took
-  // its task snapshot — dispatch on the pin, not on the snapshot.
-  const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
-  const binding = task.modelBindings[node.role]
+/**
+ * The environment is pinned during provision, moments after the tick took its task
+ * snapshot — dispatch on the pin, not on the snapshot.
+ */
+const pinnedEnvironment = async (taskId: string) => {
+  const [current] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
 
-  return executor.execute({
-    taskId: task.id,
-    stageId,
-    node: node.key,
-    role: node.role,
-    provider,
-    model: binding.model,
-    reasoningEffort: binding.reasoningEffort,
-    workspace,
-    baseBranch: workspace.baseBranch,
-    environment: taskRunnerEnvironment(current?.environment ?? null),
-    attempt,
-  })
+  return taskRunnerEnvironment(current?.environment ?? null)
 }
 
-const conversationDispatcher: ConversationDispatcher = async ({
-  task,
-  conversationId,
-  response,
-  ownerMessage,
-  context,
-  previousAnchorCommit,
-  previousTaskState,
-  currentAnchorCommit,
-  currentTaskState,
-  contextPath,
-  actionOptions,
-  attempt,
-  provider,
-  workspace,
-}) => {
-  const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
-  const binding = task.modelBindings.answerer
+const dispatcher = createStageDispatcher({ executor, pinnedEnvironment })
 
-  return conversationExecutor.execute({
-    taskId: task.id,
-    conversationId,
-    responseId: response.id,
-    message: ownerMessage.contentMd,
-    context,
-    previousAnchorCommit,
-    previousTaskState,
-    currentAnchorCommit,
-    currentTaskState,
-    contextPath,
-    actionOptions,
-    provider,
-    model: binding.model,
-    reasoningEffort: binding.reasoningEffort,
-    workspace,
-    baseBranch: workspace.baseBranch,
-    environment: taskRunnerEnvironment(current?.environment ?? null),
-    attempt,
-  })
-}
+const conversationDispatcher = createConversationDispatcher({
+  executor: conversationExecutor,
+  pinnedEnvironment,
+})
 
 const engine = new Engine({
   db,

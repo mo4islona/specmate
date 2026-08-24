@@ -8,6 +8,7 @@ import {
   type StageActivity,
   type StageJob,
   type StageResult,
+  type StageResumption,
   type StageTelemetry,
 } from '@specmate/core'
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
@@ -49,11 +50,11 @@ export interface StageRequest {
   /** Attempt number of the first try; a retry records the next one. */
   readonly attempt?: number
   /**
-   * A session an earlier node left, which this run continues by forking (REQ-410).
-   * Every attempt forks the same base, so a retry never reads the reasoning its own
-   * failed attempt produced (AC-236).
+   * The earlier node this run continues by forking its session (REQ-410), or null
+   * when it continues nothing. Required rather than optional: a caller that leaves
+   * it out is a caller that forgot, and the stage would silently run cold.
    */
-  readonly resumeSessionId?: string
+  readonly resume: StageResumption | null
 }
 
 export interface StageAttemptRecord {
@@ -192,7 +193,7 @@ export class StageExecutor {
       environment: request.environment,
       timeoutMs: config.stageTimeoutMs,
       attempt,
-      ...(request.resumeSessionId ? { resumeSessionId: request.resumeSessionId } : {}),
+      resume: request.resume,
       onActivity: onActivity
         ? (activity) =>
             onActivity({ ...activity, taskId: request.taskId, stageId: request.stageId, attempt })

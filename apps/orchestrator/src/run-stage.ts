@@ -91,6 +91,8 @@ const execution = await executor.execute({
   workspace,
   baseBranch: workspace.baseBranch,
   environment: taskRunnerEnvironment(provisionedTask.environment),
+  // One role against one workspace: there is no earlier node here to continue.
+  resume: null,
 })
 
 console.info(JSON.stringify(execution, null, 2))

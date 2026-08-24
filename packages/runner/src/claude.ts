@@ -101,9 +101,14 @@ export class ClaudeCodeProvider implements AgentProvider {
     // an attempt that never wrote anything.
     await rm(resultPath, { force: true })
 
+    // Only the session id decides whether there is anything to fork; whether this
+    // run is a continuation at all is `job.resume`, and the two part company when
+    // the resumed node recorded no session.
+    const forkFrom = job.resume?.sessionId ?? undefined
+    let argv = this.argv(job.role, job.model, job.reasoningEffort, forkFrom)
     let coldStartReason: string | null = null
     let run = await backend.run({
-      argv: this.argv(job.role, job.model, job.reasoningEffort, job.resumeSessionId),
+      argv,
       stdin: job.prompt,
       workspacePath: job.workspacePath,
       env: {},
@@ -122,11 +127,12 @@ export class ClaudeCodeProvider implements AgentProvider {
 
     // AC-235: the artifacts are the contract and the session is grounding, so a
     // session the provider will not give back degrades the run rather than failing it.
-    if (job.resumeSessionId && rejectedTheSession(run)) {
-      coldStartReason = `the provider would not continue session ${job.resumeSessionId}`
+    if (forkFrom && rejectedTheSession(run)) {
+      coldStartReason = `the provider would not continue session ${forkFrom}`
       await rm(resultPath, { force: true })
+      argv = this.argv(job.role, job.model, job.reasoningEffort)
       run = await backend.run({
-        argv: this.argv(job.role, job.model, job.reasoningEffort),
+        argv,
         stdin: job.prompt,
         workspacePath: job.workspacePath,
         env: {},
@@ -144,7 +150,9 @@ export class ClaudeCodeProvider implements AgentProvider {
       })
     }
 
-    const log = `$ ${this.argv(job.role, job.model, job.reasoningEffort, job.resumeSessionId).join(' ')}\n\n${run.stdout}\n${run.stderr}`
+    // The command line that produced `run`, which after a cold start is not the
+    // one this call started with — the log is read to find out what actually ran.
+    const log = `$ ${argv.join(' ')}\n\n${run.stdout}\n${run.stderr}`
     await writeFile(join(scratch, 'run.log'), log)
 
     if (run.timedOut) {
@@ -174,7 +182,11 @@ export class ClaudeCodeProvider implements AgentProvider {
       )
     }
 
-    const parsed = parseStageResult(raw, Boolean(job.resumeSessionId))
+    // The graph's fact, not the session's: a continuation is asked for neither a
+    // plan nor a coverage classification, and that stays true when the provider
+    // refused the session and this run started cold. A job carrying no resumption
+    // at all is held to both — the obligation is what a missing field falls back to.
+    const parsed = parseStageResult(raw, Boolean(job.resume))
     if (!parsed.ok) {
       throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, parsed.error)
     }
