@@ -5,9 +5,11 @@ import { TaskShell } from './components/task-shell.tsx'
 import { ArtifactsScreen } from './screens/artifacts-screen.tsx'
 import { AttentionScreen } from './screens/attention-screen.tsx'
 import { FilesChangedScreen } from './screens/files-changed-screen.tsx'
+import { KitScreen } from './screens/kit-screen.tsx'
 import { NewTaskScreen } from './screens/new-task-screen.tsx'
 import { SettingsScreen } from './screens/settings-screen.tsx'
 import { TaskScreen } from './screens/task-screen.tsx'
+import { MicroLabel, Panel } from './ui/index.ts'
 
 export function App() {
   return (
@@ -17,6 +19,8 @@ export function App() {
           <Route path="/" component={AttentionScreen} />
           <Route path="/tasks/new" component={NewTaskScreen} />
           <Route path="/settings" component={SettingsScreen} />
+          {/* Not linked from anywhere: the kit's own workbench, for whoever is changing it. */}
+          <Route path="/kit" component={KitScreen} />
 
           <Route path="/tasks/:taskId/docs/:artifactId">
             {(params) => (
@@ -62,10 +66,10 @@ export function App() {
           </Route>
 
           <Route>
-            <section className="panel text-center">
-              <p className="micro-label text-danger">404 / no route</p>
+            <Panel className="text-center">
+              <MicroLabel tone="danger">404 / no route</MicroLabel>
               <h1 className="mt-3 text-2xl font-semibold">Channel not found</h1>
-            </section>
+            </Panel>
           </Route>
         </Switch>
       </AppShell>

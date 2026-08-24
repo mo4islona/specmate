@@ -9,6 +9,7 @@ import {
 } from '@wick-charts/react'
 import { useEffect, useState } from 'react'
 import type { ConversationMessage, TaskDetail } from '../lib/api-client.ts'
+import { MicroLabel } from '../ui/index.ts'
 
 type Stage = TaskDetail['stages'][number]
 type ChartTheme = ReturnType<typeof createTheme>['theme']
@@ -214,7 +215,7 @@ export function TelemetryChart({
   return (
     <section className="border-t border-border/60 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <p className="micro-label text-muted">Budget trace by attempt</p>
+        <MicroLabel>Budget trace by attempt</MicroLabel>
         <p className="font-mono text-xs text-muted">
           ${recordedCost.toFixed(4)} recorded
           {absentCostCount > 0 ? ` · ${absentCostCount} cost absent` : ''}
@@ -310,7 +311,7 @@ export function TelemetryChart({
 
       {absent.length > 0 && (
         <div className="mt-5 border-t border-border/60 pt-4">
-          <p className="micro-label text-muted">No telemetry</p>
+          <MicroLabel>No telemetry</MicroLabel>
           <p className="mt-2 font-mono text-xs leading-6 text-muted">
             {absent.map((stage) => `${stage.nodeKey}#${stage.attempt}`).join(' · ')}
           </p>

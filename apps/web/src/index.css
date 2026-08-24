@@ -550,11 +550,14 @@ body {
     color: var(--color-muted);
   }
 
-  /* Something the console opens over itself — a rework target, a confirmation. */
-  .console-popover {
+  /* Anything that opens over the page — a rework target, a confirmation, a menu,
+     a hint. One surface for all of them, and the lifted one: a popover is by
+     definition above whatever it covers, and half of them cover the console,
+     which is already `elevated`. */
+  .popover {
     border: 1px solid var(--color-border-bright);
     border-radius: 0.75rem;
-    background: var(--color-surface);
+    background: var(--color-elevated);
     box-shadow: var(--shadow-popover);
   }
 

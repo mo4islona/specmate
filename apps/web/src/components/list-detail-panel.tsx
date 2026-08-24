@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ErrorState } from './query-state.tsx'
+import { EmptyState, ErrorState, Panel } from '../ui/index.ts'
 
 interface ListDetailPanelProps {
   sidebar: ReactNode
@@ -35,28 +35,27 @@ export function ListDetailPanel({
     // tall as the viewport and no taller. Left to overflow, a long document was
     // simply cut off at the panel's own `overflow-hidden` with no way down.
     <div className="grid min-h-0 min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:h-full">
-      <aside className="scroll-thin panel panel-flush rail-inset min-w-0 xl:overflow-y-auto">
+      <Panel as="aside" flush className="scroll-thin rail-inset min-w-0 xl:overflow-y-auto">
         {sidebar}
-      </aside>
+      </Panel>
 
-      <section className="scroll-thin panel panel-flush min-w-0 overflow-hidden xl:overflow-y-auto">
-        {!selectedId && (
-          <div className="grid min-h-96 place-items-center p-6 text-center text-sm text-muted">
-            {notSelectedLabel}
-          </div>
-        )}
+      <Panel flush className="scroll-thin min-w-0 overflow-hidden xl:overflow-y-auto">
+        {!selectedId && <EmptyState height="lg">{notSelectedLabel}</EmptyState>}
+
         {selectedId && isPending && (
-          <div className="grid min-h-96 place-items-center p-6 font-mono text-sm text-muted">
+          <EmptyState height="lg" mono>
             {loadingLabel}
-          </div>
+          </EmptyState>
         )}
+
         {selectedId && isError && (
           <div className="p-6">
             <ErrorState title={errorTitle} detail={error?.message ?? 'Request failed'} />
           </div>
         )}
+
         {selectedId && !isPending && !isError && children}
-      </section>
+      </Panel>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { MODELS, type ModelId, REASONING_EFFORTS, type ReasoningEffort } from '@specmate/core'
 import { shortModel } from '../lib/task-pipeline.ts'
+import { Select } from '../ui/index.ts'
 
 interface ModelSelectPairProps {
   role: string
@@ -35,9 +36,9 @@ export function ModelSelectPair({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2 sm:grid-cols-[10.5rem_7rem]">
-      <select
+      <Select
         aria-label={`${role} model${suffix}`}
-        className="control w-full font-mono"
+        mono
         value={modelValue}
         disabled={disabled}
         onChange={(event) => onModelChange(event.currentTarget.value as ModelId | '')}
@@ -48,10 +49,10 @@ export function ModelSelectPair({
             {shortModel(model)}
           </option>
         ))}
-      </select>
-      <select
+      </Select>
+      <Select
         aria-label={`${role} reasoning effort${suffix}`}
-        className="control w-full font-mono"
+        mono
         value={reasoningEffortValue}
         disabled={disabled}
         onChange={(event) =>
@@ -64,7 +65,7 @@ export function ModelSelectPair({
             {effort}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   )
 }

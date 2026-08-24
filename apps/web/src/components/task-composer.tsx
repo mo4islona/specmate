@@ -1,5 +1,13 @@
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef } from 'react'
 import type { ConsoleDestination, ConsoleTone } from '../lib/task-console.ts'
+import {
+  Button,
+  Console,
+  ConsoleField,
+  cx,
+  ErrorNote,
+  type ConsoleTone as SlabTone,
+} from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 /** The one open question the console is answering, and its siblings as a pager. */
@@ -36,13 +44,13 @@ interface TaskComposerProps {
   readonly escapes?: ReactNode
 }
 
-/** The slab's accent variable, set once and read by the mark and the focus ring. */
-const TONE_SLAB: Record<ConsoleTone, string> = {
-  asking: 'console-asking',
-  running: '',
-  stopped: 'console-stopped',
-  spent: 'console-spent',
-  plain: '',
+/** The slab's accent, which the mark and the focus ring both read. */
+const TONE_SLAB: Record<ConsoleTone, SlabTone> = {
+  asking: 'asking',
+  running: 'plain',
+  stopped: 'stopped',
+  spent: 'spent',
+  plain: 'plain',
 }
 
 const TONE_MARK: Record<ConsoleTone, string> = {
@@ -114,7 +122,7 @@ export function TaskComposer({
   }
 
   return (
-    <form className={`console ${TONE_SLAB[destination.tone]}`} onSubmit={submit}>
+    <Console tone={TONE_SLAB[destination.tone]} onSubmit={submit}>
       {question ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 pt-3">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-mono text-[0.72rem] leading-5">
@@ -165,10 +173,9 @@ export function TaskComposer({
           inside a bordered form drew the same rectangle twice, and the inner
           one carried nothing the outer one did not already say. */}
       <div className="px-4 pb-1 pt-3">
-        <textarea
+        <ConsoleField
           ref={field}
           rows={1}
-          className="console-field"
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
           onKeyDown={onKeyDown}
@@ -179,7 +186,7 @@ export function TaskComposer({
       </div>
 
       {(error || question?.error) && (
-        <p className="field-error px-4 pb-1">{error ?? question?.error}</p>
+        <ErrorNote className="px-4 pb-1">{error ?? question?.error}</ErrorNote>
       )}
 
       {/* The one row that acts, under the one field that types. */}
@@ -188,23 +195,13 @@ export function TaskComposer({
 
         {question && (
           <>
-            <button
-              type="button"
-              className="button-ghost"
-              disabled={question.busy}
-              onClick={question.onDismiss}
-            >
+            <Button variant="ghost" disabled={question.busy} onClick={question.onDismiss}>
               Dismiss
-            </button>
+            </Button>
             {question.onDiscuss && (
-              <button
-                type="button"
-                className="button-ghost"
-                disabled={question.busy}
-                onClick={question.onDiscuss}
-              >
+              <Button variant="ghost" disabled={question.busy} onClick={question.onDiscuss}>
                 Discuss
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -214,22 +211,25 @@ export function TaskComposer({
 
         <span className="flex-1" />
 
-        <button
-          className={`${urgent ? 'button-attention' : 'button-primary'} min-h-9 shrink-0 py-1.5`}
+        <Button
+          variant={urgent ? 'attention' : 'primary'}
+          className="min-h-9 shrink-0 py-1.5"
           type="submit"
-          disabled={disabled || !value.trim() || busy}
+          disabled={disabled || !value.trim()}
+          pending={busy}
+          pendingLabel="Sending…"
         >
-          {busy ? 'Sending…' : destination.submit}
-        </button>
+          {destination.submit}
+        </Button>
       </div>
-    </form>
+    </Console>
   )
 }
 
 /** The console's mood in one character — breathing while a node runs. */
 function Mark({ tone }: { tone: ConsoleTone }) {
   return (
-    <span className={`shrink-0 leading-none ${TONE_MARK[tone]}`} aria-hidden="true">
+    <span className={cx('shrink-0 leading-none', TONE_MARK[tone])} aria-hidden="true">
       ●
     </span>
   )
@@ -266,11 +266,12 @@ function Pager({
           aria-label={`Question ${step + 1}`}
           aria-current={step === index ? 'true' : undefined}
           disabled={disabled}
-          className={`grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors ${
+          className={cx(
+            'grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors',
             step === index
               ? 'bg-attention font-semibold text-on-attention'
-              : 'text-muted hover:bg-text/8 hover:text-text'
-          }`}
+              : 'text-muted hover:bg-text/8 hover:text-text',
+          )}
           onClick={() => onPage(step)}
         >
           {step + 1}

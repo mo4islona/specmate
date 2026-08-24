@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation } from 'wouter'
 import type { StreamConnectionState } from '../lib/event-stream.ts'
 import { useStreamStatus } from '../lib/stream-status.ts'
+import { ButtonLink, cx, NavRow } from '../ui/index.ts'
 import { GearIcon, SpecMateMark } from './icons.tsx'
 import { TaskNavigation } from './task-navigation.tsx'
 
@@ -33,18 +34,19 @@ function Lockup({ stream, compact = false }: LockupProps) {
 
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2.5">
-      <SpecMateMark stream={stream} className={`shrink-0 ${compact ? 'h-6 w-6' : 'h-7 w-7'}`} />
+      <SpecMateMark stream={stream} className={cx('shrink-0', compact ? 'h-6 w-6' : 'h-7 w-7')} />
       <span
-        className={`font-mono font-semibold tracking-[0.02em] text-text ${
-          compact ? 'text-sm' : 'text-base'
-        }`}
+        className={cx(
+          'font-mono font-semibold tracking-[0.02em] text-text',
+          compact ? 'text-sm' : 'text-base',
+        )}
       >
         SPECMATE
       </span>
 
       {trouble && (
         <span
-          className={`min-w-0 truncate font-mono text-[0.62rem] ${trouble.tone}`}
+          className={cx('min-w-0 truncate font-mono text-[0.62rem]', trouble.tone)}
           role="status"
           title={`event stream ${stream}`}
         >
@@ -73,9 +75,9 @@ export function AppShell({ children }: AppShellProps) {
         <div className="rail-inset border-b border-border">
           <Lockup stream={stream} />
 
-          <Link href="/tasks/new" className="button-secondary mt-4 flex w-full justify-center">
+          <ButtonLink href="/tasks/new" className="mt-4 flex w-full justify-center">
             + Launch task
-          </Link>
+          </ButtonLink>
         </div>
 
         <div className="scroll-thin rail-inset flex-1 overflow-y-auto">
@@ -83,18 +85,14 @@ export function AppShell({ children }: AppShellProps) {
         </div>
 
         <div className="rail-inset border-t border-border">
-          <Link
+          <NavRow
             href="/settings"
-            aria-current={isSettings ? 'page' : undefined}
-            className={`rail-row flex items-center gap-2 rounded-lg py-2 font-mono text-xs uppercase tracking-widest transition-colors ${
-              isSettings
-                ? 'bg-accent/[0.09] text-text'
-                : 'text-muted hover:bg-text/[0.05] hover:text-text'
-            }`}
+            active={isSettings}
+            className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest"
           >
             <GearIcon className="h-4 w-4 shrink-0" />
             Settings
-          </Link>
+          </NavRow>
         </div>
       </aside>
 
@@ -104,17 +102,15 @@ export function AppShell({ children }: AppShellProps) {
             <Lockup stream={stream} compact />
 
             <div className="flex shrink-0 items-center gap-2">
-              <Link href="/tasks/new" className="button-secondary">
-                + Task
-              </Link>
-              <Link
+              <ButtonLink href="/tasks/new">+ Task</ButtonLink>
+              <ButtonLink
                 href="/settings"
+                variant="ghost"
                 aria-current={isSettings ? 'page' : undefined}
                 aria-label="Settings"
-                className="button-ghost"
               >
                 <GearIcon className="h-4 w-4 shrink-0" />
-              </Link>
+              </ButtonLink>
             </div>
           </div>
 

@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { DiffViewer } from '../components/diff-viewer.tsx'
 import { ListDetailPanel } from '../components/list-detail-panel.tsx'
-import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { type DiffFileSummary, getFileDiff, listDiffFiles } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { EmptyState, ErrorState, LoadingState, MicroLabel, NavRow, Panel } from '../ui/index.ts'
 
 interface FilesChangedScreenProps {
   taskId: string
@@ -55,9 +55,9 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
   return (
     <div className="min-h-0 min-w-0 flex-1 space-y-4">
       {rows.length === 0 && (
-        <div className="panel grid min-h-48 place-items-center text-center">
-          <p className="text-sm text-muted">No product-code changes have been committed yet.</p>
-        </div>
+        <Panel as="div" flush>
+          <EmptyState>No product-code changes have been committed yet.</EmptyState>
+        </Panel>
       )}
 
       {rows.length > 0 && (
@@ -73,21 +73,17 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
             <ul className="space-y-0.5">
               {rows.map((file) => (
                 <li key={file.path}>
-                  <button
-                    type="button"
+                  <NavRow
+                    active={selected === file.path}
                     onClick={() => setSelected(file.path)}
-                    className={`block w-full min-w-0 rail-row rounded-lg py-2 text-left text-sm transition-colors ${
-                      selected === file.path
-                        ? 'bg-accent/[0.09] text-text'
-                        : 'text-muted hover:bg-text/[0.05] hover:text-text'
-                    }`}
+                    className="block min-w-0 text-sm"
                   >
                     <span className="block truncate font-mono text-xs">{file.path}</span>
                     <span className="mt-1 flex items-center gap-2 text-muted">
-                      <span className="micro-label">{STATUS_LABEL[file.status]}</span>
+                      <MicroLabel as="span">{STATUS_LABEL[file.status]}</MicroLabel>
                       <StatCounts file={file} />
                     </span>
-                  </button>
+                  </NavRow>
                 </li>
               ))}
             </ul>

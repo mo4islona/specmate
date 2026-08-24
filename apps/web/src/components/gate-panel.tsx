@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
+import { Button, buttonClass, ErrorNote, Popover, Select } from '../ui/index.ts'
 
 interface GateVerbsProps {
   readonly gateKey: string
@@ -38,67 +40,81 @@ export function GateVerbs({
   onRedirect,
   onRework,
 }: GateVerbsProps) {
+  const [reworking, setReworking] = useState(false)
+
   if (reworkTargets.length === 0 && redirect === null) return null
 
   return (
     <>
       {reworkTargets.length > 0 && (
-        <details className="relative">
-          <summary className="button-ghost cursor-pointer list-none">Rework ⌄</summary>
-
-          <div className="console-popover absolute bottom-full left-0 z-10 mb-2 w-[19rem] p-3.5">
-            <p className="text-[0.78rem] leading-6 text-muted">
-              {nodeLabel(gateKey)} · rework needs the comment you are typing.
-            </p>
-
-            <select
-              className="control mt-3 w-full"
-              value={reworkTarget}
-              onChange={(event) => onReworkTargetChange(event.currentTarget.value)}
-              aria-label="Rework target"
+        <Popover
+          open={reworking}
+          onDismiss={() => setReworking(false)}
+          width="19rem"
+          role="dialog"
+          label="Request rework"
+          trigger={
+            <Button
+              variant="ghost"
+              aria-expanded={reworking}
+              onClick={() => setReworking(!reworking)}
             >
-              <option value="">Rework target…</option>
-              {reworkTargets.map((target) => (
-                <option key={target} value={target}>
-                  {nodeLabel(target).toLowerCase()}
-                </option>
-              ))}
-            </select>
+              Rework ⌄
+            </Button>
+          }
+        >
+          <p className="text-[0.78rem] leading-6 text-muted">
+            {nodeLabel(gateKey)} · rework needs the comment you are typing.
+          </p>
 
-            <button
-              type="button"
-              className="button-danger mt-2.5 w-full"
-              disabled={!comment.trim() || !reworkTarget || busy}
-              onClick={onRework}
-            >
-              Request rework
-            </button>
-          </div>
-        </details>
+          <Select
+            className="mt-3"
+            value={reworkTarget}
+            onChange={(event) => onReworkTargetChange(event.currentTarget.value)}
+            aria-label="Rework target"
+          >
+            <option value="">Rework target…</option>
+            {reworkTargets.map((target) => (
+              <option key={target} value={target}>
+                {nodeLabel(target).toLowerCase()}
+              </option>
+            ))}
+          </Select>
+
+          <Button
+            variant="danger"
+            className="mt-2.5 w-full"
+            disabled={!comment.trim() || !reworkTarget || busy}
+            onClick={onRework}
+          >
+            Request rework
+          </Button>
+        </Popover>
       )}
 
       {redirect &&
         (redirect.spent ? (
+          // A span rather than a disabled button: nothing happens here, and what
+          // it reports — the cap, and that it is used up — is a status.
           <span
-            className="button-ghost cursor-not-allowed opacity-45"
+            className={`${buttonClass('ghost')} cursor-not-allowed opacity-45`}
             title={`${redirect.used} of ${redirect.limit} ${redirect.cap.replaceAll('_', ' ')} used`}
             role="status"
           >
             Redirect spent
           </span>
         ) : (
-          <button
-            type="button"
-            className="button-ghost"
+          <Button
+            variant="ghost"
             disabled={!comment.trim() || busy}
             onClick={onRedirect}
             title={comment.trim() ? undefined : 'Redirecting needs a comment'}
           >
             Redirect
-          </button>
+          </Button>
         ))}
 
-      {error && <p className="field-error w-full px-2.5">{error}</p>}
+      {error && <ErrorNote className="w-full px-2.5">{error}</ErrorNote>}
     </>
   )
 }

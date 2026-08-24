@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
-  ApiRequestError,
   getSpecConventions,
   listRepositories,
   setSpecConvention,
   type UpdateSpecConventionInput,
 } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { Button, Field, Input, ListRow, Note, Section, Select, Textarea } from '../ui/index.ts'
+import { RequestError } from './request-error.tsx'
 
 const PROFILE_LABELS: Record<string, string> = {
   openspec: 'OpenSpec',
@@ -72,139 +73,119 @@ export function SpecConventionsSection() {
   }
 
   return (
-    <section className="panel space-y-5">
-      <div>
-        <p className="micro-label text-cyan">Remembered across tasks</p>
-        <h2 className="mt-2 text-lg font-semibold">Specification conventions</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Where a repository keeps its living specification, so planning writes changes against it
-          rather than beside it. Every repository not listed here is detected when a task is
-          provisioned.
-        </p>
-      </div>
+    <Section
+      eyebrow="Remembered across tasks"
+      title="Specification conventions"
+      description="Where a repository keeps its living specification, so planning writes changes against it rather than beside it. Every repository not listed here is detected when a task is provisioned."
+    >
+      <RequestError error={conventions.error} fallback="Could not load the conventions" />
+      <RequestError error={save.error} fallback="Save failed" />
 
-      {conventions.isError && (
-        <p className="field-error">
-          {conventions.error instanceof ApiRequestError
-            ? conventions.error.message
-            : 'Could not load the conventions'}
-        </p>
-      )}
-      {save.isError && (
-        <p className="field-error">
-          {save.error instanceof ApiRequestError ? save.error.message : 'Save failed'}
-        </p>
-      )}
-
-      {conventions.isPending && <p className="text-sm text-muted">Loading conventions…</p>}
+      {conventions.isPending && <Note>Loading conventions…</Note>}
 
       {/* AC-979 — an empty list would read as "nothing is in force anywhere". */}
       {!conventions.isPending && entries.length === 0 && (
-        <p className="text-sm text-muted">
+        <Note>
           No repository has one set. Every repository is detected when a task is provisioned.
-        </p>
+        </Note>
       )}
 
       <ul className="space-y-3">
         {entries.map(([key, setting]) => (
-          <li key={key} className="subpanel flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="break-all font-mono text-xs text-muted">{key}</p>
-              <p className="mt-1 text-xs text-muted">
-                {PROFILE_LABELS[setting.profile] ?? setting.profile}
-                {setting.suitePath ? ` · ${setting.suitePath}` : ''}
-              </p>
-              {setting.conventionNote && (
-                <p className="mt-1 text-xs text-muted">{setting.conventionNote}</p>
-              )}
-            </div>
-            <button
-              type="button"
-              className="button-secondary"
-              disabled={save.isPending}
-              onClick={() => save.mutate({ repoUrl: key, setting: null })}
-            >
-              Use detection
-            </button>
-          </li>
+          <ListRow
+            key={key}
+            primary={<p className="break-all font-mono text-xs text-muted">{key}</p>}
+            secondary={
+              <>
+                <Note size="xs" className="mt-1">
+                  {PROFILE_LABELS[setting.profile] ?? setting.profile}
+                  {setting.suitePath ? ` · ${setting.suitePath}` : ''}
+                </Note>
+                {setting.conventionNote && (
+                  <Note size="xs" className="mt-1">
+                    {setting.conventionNote}
+                  </Note>
+                )}
+              </>
+            }
+            action={
+              <Button
+                disabled={save.isPending}
+                onClick={() => save.mutate({ repoUrl: key, setting: null })}
+              >
+                Use detection
+              </Button>
+            }
+          />
         ))}
       </ul>
 
-      <div className="space-y-3 border-t border-border pt-5">
-        <label className="block text-sm" htmlFor="spec-convention-repo">
-          Repository
-          <input
-            id="spec-convention-repo"
-            className="input mt-1 w-full"
+      <div className="space-y-4 border-t border-border pt-5">
+        <Field label="Repository" id="spec-convention-repo">
+          <Input
             list="spec-convention-known-repos"
+            mono
             value={repoUrl}
-            onChange={(event) => setRepoUrl(event.target.value)}
+            onChange={(event) => setRepoUrl(event.currentTarget.value)}
             placeholder="https://github.com/owner/repo"
           />
-        </label>
+        </Field>
         <datalist id="spec-convention-known-repos">
           {known.map((url) => (
             <option key={url} value={url} />
           ))}
         </datalist>
 
-        <label className="block text-sm" htmlFor="spec-convention-profile">
-          Convention
-          <select
-            id="spec-convention-profile"
-            className="input mt-1 w-full"
-            value={profile}
-            onChange={(event) => setProfile(event.target.value)}
-          >
+        <Field label="Convention" id="spec-convention-profile">
+          <Select value={profile} onChange={(event) => setProfile(event.currentTarget.value)}>
             {Object.entries(PROFILE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Field>
 
         {profile === 'custom' && (
           <>
-            <label className="block text-sm" htmlFor="spec-convention-path">
-              Suite path
-              <input
-                id="spec-convention-path"
-                className="input mt-1 w-full"
+            <Field
+              label="Suite path"
+              id="spec-convention-path"
+              error={
+                missingSuitePath
+                  ? 'A suite at a path needs the path it lives at, relative to the repository root.'
+                  : undefined
+              }
+            >
+              <Input
+                mono
                 value={suitePath}
-                onChange={(event) => setSuitePath(event.target.value)}
+                onChange={(event) => setSuitePath(event.currentTarget.value)}
                 placeholder="docs/spec"
               />
-            </label>
-            {missingSuitePath && (
-              <p className="field-error">
-                A suite at a path needs the path it lives at, relative to the repository root.
-              </p>
-            )}
+            </Field>
 
-            <label className="block text-sm" htmlFor="spec-convention-note">
-              What governs it
-              <textarea
-                id="spec-convention-note"
-                className="input mt-1 w-full"
+            <Field label="What governs it" id="spec-convention-note">
+              <Textarea
                 rows={2}
                 value={conventionNote}
-                onChange={(event) => setConventionNote(event.target.value)}
+                onChange={(event) => setConventionNote(event.currentTarget.value)}
                 placeholder="Numbered requirements, one file per service."
               />
-            </label>
+            </Field>
           </>
         )}
 
-        <button
-          type="button"
-          className="button-primary"
-          disabled={!canSave || save.isPending}
+        <Button
+          variant="primary"
+          disabled={!canSave}
+          pending={save.isPending}
+          pendingLabel="Saving…"
           onClick={submit}
         >
-          {save.isPending ? 'Saving…' : 'Save'}
-        </button>
+          Save
+        </Button>
       </div>
-    </section>
+    </Section>
   )
 }

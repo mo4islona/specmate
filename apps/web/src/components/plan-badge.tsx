@@ -1,5 +1,5 @@
 import type { PlanSize } from '@specmate/core'
-import { STATUS_BADGE_BASE_CLASSES, toneClasses } from './status-tone.ts'
+import { Badge } from '../ui/index.ts'
 
 interface PlanBadgeProps {
   size: PlanSize | null
@@ -14,11 +14,8 @@ export function PlanBadge({ size }: PlanBadgeProps) {
   if (!size) return null
 
   return (
-    <span
-      className={`${STATUS_BADGE_BASE_CLASSES} ${toneClasses(size === 'small' ? 'muted' : 'done')}`}
-      data-plan-size={size}
-    >
+    <Badge tone={size === 'small' ? 'muted' : 'done'} data-plan-size={size}>
       size: {size}
-    </span>
+    </Badge>
   )
 }

@@ -1,6 +1,7 @@
 import { AGENT_ROLES, type AgentRole, PIPELINE_CATALOG } from '@specmate/core'
 import type { ReactNode } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
+import { MicroLabel } from '../ui/index.ts'
 
 interface RoleGroup {
   readonly title: string
@@ -68,7 +69,7 @@ export function RoleBindings({ children }: RoleBindingsProps) {
     <div className="space-y-6">
       {roleGroups(places).map((group) => (
         <section key={group.title}>
-          <h3 className="micro-label text-muted">{group.title}</h3>
+          <MicroLabel as="h3">{group.title}</MicroLabel>
 
           <dl className="mt-1 divide-y divide-border/70">
             {group.roles.map((role) => (
