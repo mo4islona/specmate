@@ -21,3 +21,4 @@ bands:
   harness-coverage: 1400
   budgets: 1500
   task-qa: 1600
+  spec-conventions: 1700
