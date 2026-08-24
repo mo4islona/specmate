@@ -43,7 +43,7 @@ describeDb('a node that resumes an earlier session', () => {
     return { engine, stagesDispatcher }
   }
 
-  async function planningLeavesSession(sessionId: string) {
+  async function planningLeavesSession(sessionId: string | null) {
     const seeded = await seedTask(db, { at: 'planning' })
     created.push(seeded.task.id)
 
@@ -90,7 +90,25 @@ describeDb('a node that resumes an earlier session', () => {
 
     expect(stagesDispatcher.dispatches[0]).toMatchObject({
       node: { key: 'specify' },
-      resumeSessionId: 'sess-planning',
+      resume: { node: 'planning', sessionId: 'sess-planning' },
+    })
+    await cleanup()
+  })
+
+  test('AC-235: a continuation whose session was never recorded still continues', async () => {
+    const task = await planningLeavesSession(null)
+
+    const { engine: restarted, stagesDispatcher } = makeEngine()
+    await restarted.approve(task.id, 'evgeny')
+    stagesDispatcher.plan(() => okExecution('planner'))
+    await restarted.tick()
+    await restarted.idle()
+
+    // The node, not the session, is what makes the run a continuation: losing the
+    // session starts it cold, and must not put a first pass's obligations back on it.
+    expect(stagesDispatcher.dispatches[0]).toMatchObject({
+      node: { key: 'specify' },
+      resume: { node: 'planning', sessionId: null },
     })
     await cleanup()
   })
@@ -104,7 +122,7 @@ describeDb('a node that resumes an earlier session', () => {
     await engine.tick()
     await engine.idle()
 
-    expect(stagesDispatcher.dispatches[0]?.resumeSessionId).toBeUndefined()
+    expect(stagesDispatcher.dispatches[0]?.resume).toBeNull()
     await cleanup()
   })
 })

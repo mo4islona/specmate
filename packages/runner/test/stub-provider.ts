@@ -295,6 +295,16 @@ const ACTIVITY_TRANSCRIPT = [
   telemetry,
 ].join('\n')
 
+// The real CLI opens every run with this line, and it is the only place a session
+// id comes from. Emitted on request so a test can assert what the next node forks.
+const session = process.env.SPECMATE_STUB_SESSION
+if (session) {
+  await Bun.write(
+    Bun.stdout,
+    `${JSON.stringify({ type: 'system', subtype: 'init', session_id: session })}\n`,
+  )
+}
+
 switch (mode) {
   case 'activity': {
     const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
@@ -428,6 +438,18 @@ switch (mode) {
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
+  // What a continuation returns: the size and the coverage were settled by the run
+  // that opened the session, and this node's prompt asks for neither again.
+  case 'continuation': {
+    const folder = join(cwd, 'openspec/changes', process.env.SPECMATE_STUB_SLUG ?? 'unknown')
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
+    await writeResult(
+      JSON.stringify({ schema_version: 1, role: role(), status: 'ok', notes_md: 'stub run' }),
+    )
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }

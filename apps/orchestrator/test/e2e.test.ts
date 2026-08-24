@@ -40,7 +40,8 @@ import {
   setStubEnv,
   tempDir,
 } from '../../../packages/runner/test/fixtures.ts'
-import { type ConversationDispatcher, Engine, type StageDispatcher } from '../src/engine.ts'
+import { createConversationDispatcher, createStageDispatcher } from '../src/dispatch.ts'
+import { Engine, type StageDispatcher } from '../src/engine.ts'
 import { taskRunnerEnvironment } from '../src/runner.ts'
 import { createTask } from '../src/store.ts'
 import { reload } from './fixtures.ts'
@@ -114,58 +115,24 @@ describeDb('the loop against a real repository', () => {
       git: new Git(manager.config),
       ledger: (taskId) => renderLedgerForTask(db, config, taskId),
     })
-    const dispatcher: StageDispatcher = async ({ task, node, stageId, attempt, workspace }) => {
+    // The dispatcher the entry point ships, not a second one written to look like
+    // it — a field this loses is a field production loses, and that is the point
+    // of running the loop for real down here.
+    const pinnedEnvironment = async (taskId: string) => {
+      const [current] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
+
+      return taskRunnerEnvironment(current?.environment ?? null)
+    }
+    const dispatch = createStageDispatcher({ executor, pinnedEnvironment })
+    const dispatcher: StageDispatcher = async (dispatched) => {
       await options.beforeStage?.()
-      const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
 
-      return executor.execute({
-        taskId: task.id,
-        stageId,
-        node: node.key,
-        role: node.role,
-        workspace,
-        baseBranch: task.baseBranch,
-        environment: taskRunnerEnvironment(current?.environment ?? null),
-        attempt,
-      })
+      return dispatch(dispatched)
     }
-    const conversationDispatcher: ConversationDispatcher = async ({
-      task,
-      conversationId,
-      response,
-      ownerMessage,
-      context,
-      previousAnchorCommit,
-      previousTaskState,
-      currentAnchorCommit,
-      currentTaskState,
-      contextPath,
-      actionOptions,
-      attempt,
-      provider,
-      workspace,
-    }) => {
-      const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
-
-      return conversationExecutor.execute({
-        taskId: task.id,
-        conversationId,
-        responseId: response.id,
-        message: ownerMessage.contentMd,
-        context,
-        previousAnchorCommit,
-        previousTaskState,
-        currentAnchorCommit,
-        currentTaskState,
-        contextPath,
-        actionOptions,
-        provider,
-        workspace,
-        baseBranch: task.baseBranch,
-        environment: taskRunnerEnvironment(current?.environment ?? null),
-        attempt,
-      })
-    }
+    const conversationDispatcher = createConversationDispatcher({
+      executor: conversationExecutor,
+      pinnedEnvironment,
+    })
 
     return new Engine({
       db,
@@ -209,7 +176,7 @@ describeDb('the loop against a real repository', () => {
   async function queueModes(
     task: Task,
     modes: string[],
-    options: { record?: string } = {},
+    options: { record?: string; session?: string } = {},
   ): Promise<void> {
     const queue = join(await tempDir('stub-queue'), 'modes.json')
     await writeFile(queue, JSON.stringify(modes))
@@ -217,6 +184,7 @@ describeDb('the loop against a real repository', () => {
       SPECMATE_STUB_MODE_FILE: queue,
       SPECMATE_STUB_SLUG: task.slug,
       ...(options.record ? { SPECMATE_STUB_RECORD: options.record } : {}),
+      ...(options.session ? { SPECMATE_STUB_SESSION: options.session } : {}),
     })
   }
 
@@ -606,6 +574,31 @@ describeDb('the loop against a real repository', () => {
     const brief = await readFile(briefPath, 'utf8')
     expect(brief).toContain('## Key Points')
     expect(brief).toContain('## Open Questions')
+  })
+
+  /**
+   * The whole chain for one fact: planning records a session, the gate is held, and
+   * the specification's command line forks that session. Everything between is real
+   * — the engine's lookup, the dispatcher the entry point ships, the executor, the
+   * provider's argv — because the day this broke, every part of it was tested alone
+   * and the fact still never reached the CLI.
+   */
+  test('AC-233: the specification forks the session planning opened, across the gate', async () => {
+    const engine = makeEngine()
+    const task = await makeKickoffTask()
+    await queueModes(task, ['brief-complete'], { session: 'sess-planning' })
+
+    await walkOneStage(engine)
+    expect((await reload(db, task.id)).status).toBe('human_kickoff_gate')
+
+    const record = join(await tempDir('stub-record'), 'specify.json')
+    await queueModes(task, ['ok'], { record })
+    await engine.approve(task.id, 'evgeny')
+    await walkOneStage(engine)
+
+    const seen = (await Bun.file(record).json()) as { argv: string[] }
+    expect(seen.argv[seen.argv.indexOf('--resume') + 1]).toBe('sess-planning')
+    expect(seen.argv).toContain('--fork-session')
   })
 
   test('a kickoff redirect carries the comment back to planning; approving afterward starts research with no open question', async () => {

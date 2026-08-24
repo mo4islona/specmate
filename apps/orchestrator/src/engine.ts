@@ -47,6 +47,7 @@ import {
   type Spend,
   type StageNode,
   type StageResult,
+  type StageResumption,
   type StageTelemetry,
   spendAgainstBudget,
   splitCreatesWork,
@@ -326,10 +327,10 @@ export interface StageDispatch {
   readonly provider: ProviderId
   readonly workspace: Workspace
   /**
-   * The session the node this one resumes left behind (REQ-410, AC-233). Read from
-   * the resumed stage row, so it survives a restart and any length of gate.
+   * The node this one continues, with the session it left behind (REQ-410, AC-233).
+   * Read from the resumed stage row, so it survives a restart and any length of gate.
    */
-  readonly resumeSessionId?: string
+  readonly resume: StageResumption | null
 }
 
 export type StageDispatcher = (dispatch: StageDispatch) => Promise<StageExecution>
@@ -1449,11 +1450,11 @@ export class Engine {
    * attempt of this node forks that same base, so a retry carries none of the
    * turns its own failed attempt appended (AC-236).
    */
-  private async resumedSessionFor(
+  private async resumptionFor(
     graph: RunGraphRow,
     node: StageNode,
-  ): Promise<string | undefined> {
-    if (!node.resumes) return undefined
+  ): Promise<StageResumption | null> {
+    if (!node.resumes) return null
 
     const [source] = await this.deps.db
       .select({ providerSessionId: stages.providerSessionId })
@@ -1468,7 +1469,10 @@ export class Engine {
       .orderBy(desc(stages.attempt))
       .limit(1)
 
-    return source?.providerSessionId ?? undefined
+    // A continuation with no session to fork is still a continuation: the session
+    // is grounding, and losing it starts the run cold rather than turning it back
+    // into the first pass it never was (AC-235).
+    return { node: node.resumes, sessionId: source?.providerSessionId ?? null }
   }
 
   private async runStage(
@@ -1518,7 +1522,7 @@ export class Engine {
       if (workspaces.writeDecisionLog) await this.writeDecisionLog(task.id, workspace)
       // Read per dispatch rather than carried in memory: the gate between the two
       // nodes may have been held across a restart (AC-234).
-      const resumeSessionId = await this.resumedSessionFor(graph, node)
+      const resume = await this.resumptionFor(graph, node)
       execution = await dispatcher({
         task,
         graphId: graph.id,
@@ -1528,7 +1532,7 @@ export class Engine {
         attempt: row.attempt,
         provider: row.provider,
         workspace,
-        ...(resumeSessionId ? { resumeSessionId } : {}),
+        resume,
       })
     } catch (e) {
       await this.failAttempt(task, graph, node, row, 'crash', (e as Error).message, workspace, null)

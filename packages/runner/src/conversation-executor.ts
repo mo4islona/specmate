@@ -112,6 +112,8 @@ export class ConversationExecutor {
       stageId: request.responseId,
       node: 'conversation',
       role: 'answerer',
+      // A turn answers over the tree as it stands; it continues no stage's session.
+      resume: null,
       provider: provider.id,
       model: request.model,
       reasoningEffort: request.reasoningEffort,
