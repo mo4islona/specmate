@@ -257,6 +257,48 @@ describeDb('the loop against a real repository', () => {
     expect(rows[1]?.skipReason).toContain('scenario')
   })
 
+  /**
+   * AC-1715. This origin is a plain repository — a README and a source file, no living
+   * specification anywhere — so it resolves to the `none` profile. That must cost it
+   * nothing: the same spine, the same specifying stage, the same specification waiting
+   * at the gate as a repository with a suite would produce.
+   */
+  test('a repository with no specification of its own still specifies, and the gate has one', async () => {
+    const engine = makeEngine()
+    const task = await makeTask()
+    await queueModes(task, ['ok'], { scenarios: 2 })
+
+    await walkOneStage(engine)
+    await engine.tick()
+    await engine.idle()
+
+    const walked = await reload(db, task.id)
+    expect(walked.status).toBe('human_spec_gate')
+    expect(walked.specConvention?.profile).toBe('none')
+    expect(walked.specConvention?.missingSuitePath).toBeNull()
+
+    const rows = await db
+      .select()
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+      .orderBy(asc(stages.createdAt))
+    expect(rows.map((row) => [row.nodeKey, row.status])).toEqual([
+      ['specify', 'succeeded'],
+      ['spec_review', 'skipped'],
+    ])
+
+    const spec = await readFile(
+      join(
+        worktreePath(resolveWorkspaceConfig({ root }), task.slug),
+        'openspec/changes',
+        task.slug,
+        'specs/stub-capability/spec.md',
+      ),
+      'utf8',
+    )
+    expect(spec).toContain('### Requirement:')
+  })
+
   test('a retry reads the artifacts as last committed, not as the failed attempt left them', async () => {
     const engine = makeEngine()
     const task = await makeTask()

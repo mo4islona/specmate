@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import {
   advance,
   bindStageProvider,
@@ -17,8 +17,10 @@ import {
   isRestartable,
   loadPipelineCatalog,
   loadPipelineProfiles,
+  NODE_FACT_KINDS,
   NODE_PREDICATES,
   PIPELINE_CATALOG,
+  PIPELINE_PROFILES,
   type PinnedGraph,
   type PipelineDefinition,
   PipelineDefinitionError,
@@ -27,6 +29,7 @@ import {
   type RecordedRound,
   type StageNode,
   TASK_STATES,
+  TASK_TYPES,
   type TaskState,
   validateDefinition,
   validateReduction,
@@ -915,5 +918,49 @@ describe('session resumption', () => {
     }
 
     expect(validateReduction(base, reduction).join('\n')).toMatch(/resumes "research".*drops/)
+  })
+})
+
+/**
+ * REQ-1705. The spec convention is context a stage is given, never control flow. These
+ * pin both halves of that: the pipeline is the same under every profile, and no
+ * predicate can reach for the convention because no fact carries it.
+ */
+describe('the spec convention never reshapes the pipeline', () => {
+  const SPINE: TaskState[] = [
+    'planning',
+    'specify',
+    'implement',
+    'validate',
+    'summarize',
+    'publish',
+  ]
+
+  it('every shipped profile still contains the specifying stage and the rest of the spine', () => {
+    for (const type of TASK_TYPES) {
+      for (const profile of PIPELINE_PROFILES) {
+        const keys = definitionFor(type, profile).nodes.map((node) => node.key)
+
+        for (const node of SPINE) {
+          expect(keys).toContain(node)
+        }
+      }
+    }
+  })
+
+  it('no node is conditioned on anything a repository convention could decide', () => {
+    for (const type of TASK_TYPES) {
+      for (const profile of PIPELINE_PROFILES) {
+        for (const node of definitionFor(type, profile).nodes) {
+          if (node.kind !== 'stage' || !node.condition) continue
+
+          expect(NODE_PREDICATES[node.condition.predicate].reads).not.toContain('specConvention')
+        }
+      }
+    }
+  })
+
+  it('the facts a predicate may read carry nothing about the repository convention', () => {
+    expect(Object.keys(NODE_FACT_KINDS)).not.toContain('specConvention')
   })
 })
