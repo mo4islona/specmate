@@ -161,6 +161,13 @@ type DefaultRepositoryResponse = InferResponseType<
   (typeof apiClient.api.v1.settings)['default-repository']['$get'],
   200
 >
+type SpecConventionsResponse = InferResponseType<
+  (typeof apiClient.api.v1.settings)['spec-conventions']['$get'],
+  200
+>
+type UpdateSpecConventionRequest = InferRequestType<
+  (typeof apiClient.api.v1.settings)['spec-conventions']['$put']
+>
 
 export type TaskSummary = TasksResponse['tasks'][number]
 export type AttentionItem = AttentionResponse['items'][number]
@@ -188,6 +195,9 @@ export type Repository = RepositoriesResponse['repositories'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type DefaultRepository = DefaultRepositoryResponse['defaultRepository']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
+export type SpecConventions = SpecConventionsResponse['specConventions']
+export type SpecConventionSetting = NonNullable<UpdateSpecConventionRequest['json']['setting']>
+export type UpdateSpecConventionInput = UpdateSpecConventionRequest['json']
 
 export async function listTasks(signal?: AbortSignal): Promise<TasksResponse> {
   const response = await apiClient.api.v1.tasks.$get(undefined, { init: { signal } })
@@ -446,6 +456,23 @@ export async function setDefaultRepository(
   })
 
   return readJson<DefaultRepositoryResponse>(response)
+}
+
+export async function getSpecConventions(signal?: AbortSignal): Promise<SpecConventionsResponse> {
+  const response = await apiClient.api.v1.settings['spec-conventions'].$get(undefined, {
+    init: { signal },
+  })
+
+  return readJson<SpecConventionsResponse>(response)
+}
+
+/** `setting: null` returns the repository to detection. */
+export async function setSpecConvention(
+  input: UpdateSpecConventionInput,
+): Promise<SpecConventionsResponse> {
+  const response = await apiClient.api.v1.settings['spec-conventions'].$put({ json: input })
+
+  return readJson<SpecConventionsResponse>(response)
 }
 
 export async function getArtifact(

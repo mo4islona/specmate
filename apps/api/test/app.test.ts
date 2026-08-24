@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -598,6 +598,71 @@ describeDb('api', () => {
 
       const current = await app.request('/api/v1/settings/default-repository', { headers: auth })
       expect(await current.json()).toEqual({ defaultRepository: unused })
+    })
+  })
+
+  describe('spec conventions — REQ-923', () => {
+    const repo = 'https://github.com/example/conventions-api'
+
+    async function put(body: unknown) {
+      return app.request('/api/v1/settings/spec-conventions', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify(body),
+      })
+    }
+
+    async function stored() {
+      const response = await app.request('/api/v1/settings/spec-conventions', { headers: auth })
+
+      return (await response.json()) as {
+        specConventions: Record<
+          string,
+          { profile: string; suitePath?: string; conventionNote?: string }
+        >
+      }
+    }
+
+    it('saves a convention and reads it back under the repository — AC-975, AC-976', async () => {
+      const saved = await put({
+        repoUrl: repo,
+        setting: { profile: 'custom', suitePath: 'docs/spec', conventionNote: 'One per service.' },
+      })
+      expect(saved.status).toBe(200)
+
+      const { specConventions } = await stored()
+      expect(specConventions['github.com/example/conventions-api']).toEqual({
+        profile: 'custom',
+        suitePath: 'docs/spec',
+        conventionNote: 'One per service.',
+      })
+    })
+
+    // AC-977: refused with something the screen can render, not a 500.
+    it('refuses a configured suite with no location and changes nothing', async () => {
+      await put({ repoUrl: repo, setting: { profile: 'openspec' } })
+
+      const refused = await put({ repoUrl: repo, setting: { profile: 'custom' } })
+      expect(refused.status).toBe(422)
+
+      const { specConventions } = await stored()
+      expect(specConventions['github.com/example/conventions-api']).toEqual({ profile: 'openspec' })
+    })
+
+    it('returns a repository to detection — AC-978', async () => {
+      await put({ repoUrl: repo, setting: { profile: 'openspec' } })
+
+      const removed = await put({ repoUrl: repo, setting: null })
+      expect(removed.status).toBe(200)
+
+      const { specConventions } = await stored()
+      expect(specConventions['github.com/example/conventions-api']).toBeUndefined()
+    })
+
+    it('refuses a profile that is not one of the fixed set', async () => {
+      const response = await put({ repoUrl: repo, setting: { profile: 'freeform' } })
+
+      expect(response.status).toBe(400)
     })
   })
 
