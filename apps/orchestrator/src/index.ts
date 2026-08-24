@@ -12,7 +12,7 @@ import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { createConversationDispatcher, createStageDispatcher } from './dispatch.ts'
-import { Engine, type EngineWorkspaces } from './engine.ts'
+import { Engine } from './engine.ts'
 import { githubToken } from './github-auth.ts'
 import { Publisher } from './publish.ts'
 import {
@@ -23,6 +23,7 @@ import {
   taskRunnerEnvironment,
 } from './runner.ts'
 import { emitEvent } from './store.ts'
+import { createEngineWorkspaces } from './workspaces.ts'
 
 /** Docker/`.env` supply unset variables as empty strings; treat those as absent. */
 const optionalString = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional())
@@ -159,19 +160,7 @@ const conversationExecutor = new ConversationExecutor({
   ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
 })
 
-// The engine names tasks, not images: the default image joins here so the
-// service can pin the environment on first provision.
-const engineWorkspaces: EngineWorkspaces = {
-  provision: (request) => service.provision({ ...request, image: runnerConfig.image }),
-  provisionConversation: (workspace, key) => service.provisionConversation(workspace, key),
-  releaseConversation: (task, key) => service.releaseConversation(task.slug, task.repoUrl, key),
-  discard: (workspace, commit) => service.discard(workspace, commit),
-  headCommit: (workspace) => service.headCommit(workspace),
-  commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
-  writeDecisionLog: (workspace, markdown) => service.writeDecisionLog(workspace, markdown),
-  countSpecScenarios: (workspace) => service.countSpecScenarios(workspace),
-  release: (taskId) => service.release(taskId),
-}
+const engineWorkspaces = createEngineWorkspaces({ service, image: runnerConfig.image })
 
 /**
  * The environment is pinned during provision, moments after the tick took its task

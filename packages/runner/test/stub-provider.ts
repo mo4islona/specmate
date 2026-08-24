@@ -295,6 +295,29 @@ const ACTIVITY_TRANSCRIPT = [
   telemetry,
 ].join('\n')
 
+/**
+ * A specification the conditional spec-review node can weigh. Only the count of
+ * scenario headings is read, so the file declares that many and nothing more.
+ */
+const scenarios = Number(process.env.SPECMATE_STUB_SCENARIOS ?? '0')
+if (scenarios > 0) {
+  const capability = join(
+    cwd,
+    'openspec/changes',
+    process.env.SPECMATE_STUB_SLUG ?? 'unknown',
+    'specs/stub-capability',
+  )
+  await mkdir(capability, { recursive: true })
+  const declared = Array.from(
+    { length: scenarios },
+    (_, i) => `#### Scenario: AC-${i + 1} the stub declares one\n\n- **THEN** it holds\n`,
+  ).join('\n')
+  await writeFile(
+    join(capability, 'spec.md'),
+    `## ADDED Requirements\n\n### Requirement: REQ-1 the stub's capability\n\n${declared}`,
+  )
+}
+
 // The real CLI opens every run with this line, and it is the only place a session
 // id comes from. Emitted on request so a test can assert what the next node forks.
 const session = process.env.SPECMATE_STUB_SESSION
