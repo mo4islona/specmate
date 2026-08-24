@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BRIEF_SECTIONS, parseStageResult } from '@specmate/core'
@@ -246,5 +246,31 @@ describe('prompt assembly', () => {
     })
 
     expect(prompt).toContain('[truncated: product-code diff exceeded 512 bytes')
+  })
+
+  /**
+   * AC-1709. The ledger says where the suite is; the role reads it from the working
+   * tree with its own tools. Pasting the suite in would change what REQ-102 fixes the
+   * prompt's sources to be, and would spend the window on text read selectively anyway.
+   */
+  it('carries the suite’s location without a word of the suite itself', async () => {
+    const suiteText = 'REQ-1 — the ingester never drops a reorged block'
+    // The suite is what the repository already had, so it belongs to the base rather
+    // than to this branch — a suite the branch edited would show up in the diff, and
+    // rightly so.
+    const harness = await makeHarness('grounding', {
+      'README.md': '# origin\n',
+      'openspec/specs/ingestion/spec.md': `### Requirement: ${suiteText}\n`,
+    })
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), {
+      workspace: harness.workspace,
+      baseBranch: 'main',
+      role: 'planner',
+      ledger: `${LEDGER}- Specification convention: OpenSpec — living specifications at \`openspec/specs\`\n`,
+    })
+
+    expect(prompt).toContain('living specifications at `openspec/specs`')
+    expect(prompt).not.toContain(suiteText)
   })
 })
