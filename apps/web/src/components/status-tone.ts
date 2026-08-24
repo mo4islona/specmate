@@ -1,19 +1,48 @@
+import { isHumanGate, type TaskState } from '@specmate/core'
+
 /** The small, shared vocabulary of visual tones a status badge can carry. */
 export type StatusTone = 'active' | 'parked' | 'failed' | 'done' | 'muted' | 'warning'
 
+/** Where a task's state sits in that vocabulary — the chip and the index read it the same way. */
+export function statusTone(status: TaskState): StatusTone {
+  if (isHumanGate(status) || status === 'waiting_human') return 'parked'
+  if (status === 'failed' || status === 'blocked') return 'failed'
+  if (status === 'archived' || status === 'cancelled') return 'done'
+  if (status === 'draft' || status === 'paused') return 'muted'
+
+  return 'active'
+}
+
 const TONE_CLASSES: Record<StatusTone, string> = {
-  active: 'border-status-active/40 bg-status-active/10 text-status-active',
-  parked: 'border-status-parked/45 bg-status-parked/10 text-status-parked',
-  failed: 'border-status-failed/45 bg-status-failed/10 text-status-failed',
-  done: 'border-status-done/40 bg-status-done/10 text-status-done',
-  muted: 'border-muted/35 bg-muted/5 text-muted',
-  warning: 'border-amber/45 bg-amber/10 text-amber',
+  active: 'badge-active',
+  parked: 'badge-parked',
+  failed: 'badge-failed',
+  done: 'badge-done',
+  muted: 'badge-muted',
+  warning: 'badge-warning',
 }
 
 export function toneClasses(tone: StatusTone): string {
   return TONE_CLASSES[tone]
 }
 
-/** The pill markup `StatusChip` and `HarnessBadge` both render, tone classes appended by the caller. */
-export const STATUS_BADGE_BASE_CLASSES =
-  'inline-flex max-w-full items-center border px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.12em]'
+const TONE_DOT: Record<StatusTone, string> = {
+  active: 'bg-status-active',
+  parked: 'bg-status-parked',
+  failed: 'bg-status-failed',
+  done: 'bg-status-done',
+  muted: 'bg-muted',
+  warning: 'bg-attention',
+}
+
+/** The same tone as a mark rather than a pill, for lists too dense to carry chips. */
+export function toneDot(tone: StatusTone): string {
+  return TONE_DOT[tone]
+}
+
+/**
+ * The pill markup `StatusChip` and `HarnessBadge` both render, tone classes
+ * appended by the caller. A word in the tone's colour on a wash of it: the
+ * outline it used to wear made a two-word fact read like a control.
+ */
+export const STATUS_BADGE_BASE_CLASSES = 'badge'

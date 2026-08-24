@@ -19,6 +19,7 @@ import {
   type PipelineDefinition,
   type PlanChoice,
   type PlanShape,
+  type PlanSize,
   type RecordedRound,
   type RoundToRecord,
   renderInheritedWaiverPrompt,
@@ -92,6 +93,11 @@ export interface CreateTaskInput {
   readonly repoUrl: string
   /** Absent means the repository's default branch, resolved at provisioning (REQ-703). */
   readonly baseBranch?: string
+  /**
+   * The size the owner declared at intake. Absent leaves it to planning, which
+   * declares one either way once it has read the code (REQ-1306).
+   */
+  readonly planSize?: PlanSize
   readonly caps?: Partial<Caps>
   readonly budgets?: Partial<Budgets>
   /** Per-role, per-field override; unnamed roles/fields resolve from the current model-defaults setting. */
@@ -156,6 +162,7 @@ export async function createTaskInTx(
       type: input.type as TaskType,
       repoUrl: input.repoUrl,
       baseBranch: input.baseBranch ?? null,
+      planSize: input.planSize ?? null,
       // `draft` is a reserved state the poll never dispatches, so a task
       // created there waits forever with nothing to advance it. Creating is
       // launching: the task starts at its pipeline's entry node.

@@ -60,21 +60,52 @@ function payloadNumber(event: TimelineEvent, key: string): number | null {
   return typeof value === 'number' ? value : null
 }
 
-/** Human-facing verb per known tool name; an unrecognized tool falls back to its own name. */
-const ACTIVITY_VERBS: Record<string, string> = {
-  Read: 'Reading',
-  Edit: 'Editing',
-  MultiEdit: 'Editing',
-  Write: 'Writing',
-  NotebookEdit: 'Editing',
-  Bash: 'Running',
-  BashOutput: 'Checking',
-  Glob: 'Searching',
-  Grep: 'Searching',
-  WebFetch: 'Fetching',
-  WebSearch: 'Searching',
-  Task: 'Delegating to',
-  TodoWrite: 'Updating plan',
+interface ToolVerb {
+  /** What it is doing, for the line that reports a run in progress. */
+  readonly doing: string
+  /** What it did, for the record a finished run leaves behind. */
+  readonly did: string
+  /**
+   * Whether the tool changes anything. Only a change earns a permanent line:
+   * a run that read forty files and edited two is two lines and a count, not
+   * forty-two (REQ-915).
+   */
+  readonly mutates: boolean
+}
+
+const TOOL_VERBS: Record<string, ToolVerb> = {
+  Read: { doing: 'Reading', did: 'Read', mutates: false },
+  Glob: { doing: 'Searching', did: 'Searched', mutates: false },
+  Grep: { doing: 'Searching', did: 'Searched', mutates: false },
+  WebFetch: { doing: 'Fetching', did: 'Fetched', mutates: false },
+  WebSearch: { doing: 'Searching', did: 'Searched', mutates: false },
+  BashOutput: { doing: 'Checking', did: 'Checked', mutates: false },
+  TodoWrite: { doing: 'Updating plan', did: 'Updated its plan', mutates: false },
+  Task: { doing: 'Delegating to', did: 'Delegated to', mutates: false },
+  Edit: { doing: 'Editing', did: 'Edited', mutates: true },
+  MultiEdit: { doing: 'Editing', did: 'Edited', mutates: true },
+  Write: { doing: 'Writing', did: 'Wrote', mutates: true },
+  NotebookEdit: { doing: 'Editing', did: 'Edited', mutates: true },
+  Bash: { doing: 'Running', did: 'Ran', mutates: true },
+}
+
+/** An unrecognized tool keeps its own name and its line: we cannot claim it changed nothing. */
+function toolVerb(tool: string): ToolVerb {
+  return TOOL_VERBS[tool] ?? { doing: tool, did: tool, mutates: true }
+}
+
+export function isMutatingActivity(event: TimelineEvent): boolean {
+  return toolVerb(payloadValue(event, 'tool') ?? 'Unknown tool').mutates
+}
+
+/**
+ * Every target the agent reports is an absolute path inside the sandbox, so
+ * every line of a run repeated the same seventy characters of workspace root
+ * before saying anything. What the owner reads is the path within the
+ * repository.
+ */
+export function shortenTarget(target: string): string {
+  return target.replace(/^\/\S*?\/workspaces\/[^/\s]+\/[^/\s]+\//, '')
 }
 
 /** REQ-915: a live `stage.activity` event reads as "Editing src/foo.ts", not raw tool/target keys. */
@@ -84,29 +115,15 @@ export function stageActivityLabel(event: TimelineEvent): string {
   return target ? `${kind} ${target}` : kind
 }
 
-/** The run log gives the verb and its target a column each; everywhere else they read as one line. */
-export function stageActivityParts(event: TimelineEvent): { kind: string; target: string } {
+/** The record gives the verb and its target a column each; everywhere else they read as one line. */
+export function stageActivityParts(
+  event: TimelineEvent,
+  tense: 'doing' | 'did' = 'doing',
+): { kind: string; target: string } {
   const tool = payloadValue(event, 'tool') ?? 'Unknown tool'
+  const target = payloadValue(event, 'target') ?? ''
 
-  return { kind: ACTIVITY_VERBS[tool] ?? tool, target: payloadValue(event, 'target') ?? '' }
-}
-
-/**
- * REQ-915/AC-941: once an attempt's result is accepted — or it fails, or it's
- * interrupted — its activity is stale. Demoted here by dropping it from the
- * timeline rather than leaving it standing beside the outcome.
- */
-export function visibleTimelineEvents(
-  events: readonly TimelineEvent[],
-  stages: readonly { id: string; status: string }[],
-): TimelineEvent[] {
-  const runningStageIds = new Set(
-    stages.filter((stage) => stage.status === 'running').map((stage) => stage.id),
-  )
-
-  return events.filter(
-    (event) => event.type !== 'stage.activity' || runningStageIds.has(event.stageId ?? ''),
-  )
+  return { kind: toolVerb(tool)[tense], target: shortenTarget(target) }
 }
 
 /** Mirrors the engine's own `countRedirects`, so the client reads the cap the same way the server enforces it. */
@@ -283,36 +300,49 @@ export function stageTokens(stage: Stage): number | null {
   return Object.values(tokens).reduce((total, value) => total + value, 0)
 }
 
-// ─── the feed ─────────────────────────────────────────────────────────────────
-
 /**
- * What earns a line: something a person said, something asked of them, or an
- * outcome that needs them. Stated as an allow-set rather than a deny-set on
- * purpose — the thread stays five to fifteen lines only if a new event type has
- * to be let in deliberately (REQ-919).
+ * The provider's own usage keys, in the owner's words. Read against a budget,
+ * `cache_read_input_tokens` and `input_tokens` are not the same thing at all —
+ * one is nearly free — so the total is worth splitting where there is room.
  */
-const FEED_EVENTS: ReadonlySet<string> = new Set([
-  'task.created',
-  'task.published',
-  'task.cancelled',
-  'task.failed',
-  'task.budget_raised',
-  'gate.approved',
-  'gate.redirected',
-  'gate.reworked',
-  'feedback.comment',
-  'decision.answered',
-  'decision.dismissed',
-  'decision.refused',
-  'decision.inherited',
-  'coverage_waiver.recorded',
-  'stage.failed',
-])
+const TOKEN_LABELS: Record<string, string> = {
+  input_tokens: 'in',
+  output_tokens: 'out',
+  cache_creation_input_tokens: 'cache write',
+  cache_read_input_tokens: 'cache read',
+}
 
-/** Whose line it is. The machine's own name is the node, never "system". */
+export interface TokenPart {
+  readonly label: string
+  readonly value: number
+}
+
+/** Known keys first, in the order above; anything the provider adds keeps its own name. */
+export function tokenSplit(tokens: Readonly<Record<string, number>>): TokenPart[] {
+  const known = Object.keys(TOKEN_LABELS)
+  const rest = Object.keys(tokens)
+    .filter((key) => !known.includes(key))
+    .sort()
+
+  return [...known, ...rest]
+    .filter((key) => (tokens[key] ?? 0) > 0)
+    .map((key) => ({
+      label: TOKEN_LABELS[key] ?? key.replaceAll('_', ' '),
+      value: tokens[key] as number,
+    }))
+}
+
+// ─── the step's chapter ───────────────────────────────────────────────────────
+
+/** Whose turn it is. The machine's own name is the node, never "system". */
 export type FeedAuthor = 'owner' | 'guide' | 'task'
 
-export interface FeedEntry {
+/** Which column of the record carries the colour: boundaries, trouble, the rest. */
+export type LineTone = 'plain' | 'boundary' | 'trouble'
+
+/** Something a person said, was asked, or decided. */
+export interface TurnEntry {
+  readonly kind: 'turn'
   readonly id: string
   readonly at: string
   readonly author: FeedAuthor
@@ -326,11 +356,52 @@ export interface FeedEntry {
   readonly title: string
   readonly label: string
   readonly body: string | null
-  /** The node whose run log explains this line, where one does. */
-  readonly nodeKey: string | null
-  /** Set when the line is a resolved question, so its whole exchange can be opened. */
+  /** Set on a question and on its answer, so the exchange can be opened. */
   readonly decisionId: string | null
 }
+
+/**
+ * A line of the machine's own record: what the run did, and to what. A `call`
+ * is one tool use and reads as `Edited(src/foo.ts)`; an `event` is something
+ * that happened to the run and reads as a sentence with its particulars on a
+ * branch beneath it.
+ */
+export interface LineEntry {
+  readonly kind: 'line'
+  readonly id: string
+  readonly at: string
+  readonly shape: 'call' | 'event'
+  readonly action: string
+  readonly target: string
+  readonly tone: LineTone
+  /** The newest action of a run still under way (REQ-915). */
+  readonly live: boolean
+}
+
+export type FeedEntry = TurnEntry | LineEntry
+
+/**
+ * What earns a turn rather than a log line: something a person said, something
+ * asked of them, or an outcome addressed to them. Everything else a step did is
+ * the machine's own record, and reads as a line of it (REQ-919).
+ */
+const TURN_EVENTS: ReadonlySet<string> = new Set([
+  'task.created',
+  'task.published',
+  'task.cancelled',
+  'task.failed',
+  'task.budget_raised',
+  'gate.approved',
+  'gate.redirected',
+  'gate.reworked',
+  'feedback.comment',
+  'decision.raised',
+  'decision.answered',
+  'decision.dismissed',
+  'decision.refused',
+  'decision.inherited',
+  'coverage_waiver.recorded',
+])
 
 const OWNER_EVENTS: ReadonlySet<string> = new Set([
   'task.created',
@@ -353,68 +424,170 @@ const EVENT_VERBS: Record<string, string> = {
   'gate.redirected': 'redirected',
   'gate.reworked': 'sent back for rework',
   'feedback.comment': 'commented',
+  'decision.raised': 'asked',
   'decision.answered': 'answered',
   'decision.dismissed': 'dismissed',
   'decision.refused': 'declined to ask',
   'decision.inherited': 'inherited an answer',
   'coverage_waiver.recorded': 'accepted the coverage gap',
-  'stage.failed': 'failed',
 }
 
-interface FeedInput {
+/** A run's own boundaries: where it started, and how it ended. */
+const BOUNDARY_EVENTS: ReadonlySet<string> = new Set([
+  'stage.dispatched',
+  'stage.completed',
+  'stage.interrupted',
+  'stage.restart_confirmed',
+  'task.transitioned',
+])
+
+const TROUBLE_EVENTS: ReadonlySet<string> = new Set([
+  'stage.failed',
+  'stage.cleanup_failed',
+  'stage.stopping',
+])
+
+function lineTone(event: TimelineEvent): LineTone {
+  if (TROUBLE_EVENTS.has(event.type)) return 'trouble'
+  if (BOUNDARY_EVENTS.has(event.type)) return 'boundary'
+
+  return 'plain'
+}
+
+/** The record gives the action and its target a column each. */
+function lineParts(event: TimelineEvent): { action: string; target: string } {
+  if (event.type === 'stage.activity') {
+    const { kind, target } = stageActivityParts(event, 'did')
+
+    return { action: kind, target }
+  }
+
+  const reason = payloadValue(event, 'reason')
+  const target =
+    payloadValue(event, 'commit') ??
+    payloadValue(event, 'title') ??
+    (reason ? humanize(reason) : null) ??
+    payloadValue(event, 'detail') ??
+    ''
+
+  return { action: eventTitle(event), target }
+}
+
+interface StepInput {
   readonly events: readonly TimelineEvent[]
-  readonly messages: readonly ConversationMessage[]
   readonly stages: readonly Stage[]
-  readonly decisionsById: Map<string, DecisionItem>
+  /** Where the walk starts, for what happened before the first transition. */
+  readonly firstNodeKey: string | null
 }
 
 /**
- * A stage failure earns a line only when it is still the last word at its node.
- * A run that failed and was retried into an acceptance is the machine's own
- * business; one that stopped the task is addressed to the owner.
+ * Which node's chapter each event belongs to, by sequence. A stage event
+ * belongs to its stage's node, a gate or decision event to the node it names,
+ * and everything else to the node the task stood on when it happened — which is
+ * why this walks the transitions rather than reading the task's state now.
+ * Nothing is left homeless: the thread reads one chapter at a time, and an
+ * event with no chapter is one nobody can reach.
  */
-function stillFailing(event: TimelineEvent, stages: readonly Stage[]): boolean {
-  const failed = stages.find((stage) => stage.id === event.stageId)
-  if (!failed) return false
+export function assignSteps({
+  events,
+  stages,
+  firstNodeKey,
+}: StepInput): Map<number, string | null> {
+  const stageNodes = new Map(stages.map((stage) => [stage.id, stage.nodeKey]))
+  const steps = new Map<number, string | null>()
+  let standing = firstNodeKey
 
-  return !stages.some(
-    (stage) =>
-      stage.nodeKey === failed.nodeKey &&
-      stage.attempt > failed.attempt &&
-      stage.status === 'succeeded',
-  )
+  for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
+    const named =
+      (event.stageId ? stageNodes.get(event.stageId) : null) ??
+      payloadValue(event, 'nodeKey') ??
+      payloadValue(event, 'gate') ??
+      (event.type === 'task.transitioned' ? payloadValue(event, 'to') : null)
+
+    steps.set(event.seq, named ?? standing)
+
+    // An approval is written at the gate it passed and moves the task on; the
+    // chapter it opens is the one it named, not the one it was recorded in.
+    const moved = payloadValue(event, 'to') ?? named
+    if (moved) standing = moved
+  }
+
+  return steps
 }
 
-export function buildFeed({ events, messages, stages, decisionsById }: FeedInput): FeedEntry[] {
+interface StepFeedInput extends StepInput {
+  readonly messages: readonly ConversationMessage[]
+  readonly decisionsById: Map<string, DecisionItem>
+  /** The chapter being read. */
+  readonly nodeKey: string | null
+}
+
+/**
+ * One step's whole history: what it did, what it asked, and what was said to it
+ * while it stood there (REQ-919). Reading another step is reading another
+ * chapter — the rail is the switch, and no entry belongs to two of them.
+ */
+export function buildStepFeed({
+  events,
+  messages,
+  stages,
+  decisionsById,
+  nodeKey,
+  firstNodeKey,
+}: StepFeedInput): FeedEntry[] {
+  const steps = assignSteps({ events, stages, firstNodeKey })
   const entries: FeedEntry[] = []
 
   for (const event of events) {
-    if (!FEED_EVENTS.has(event.type)) continue
-    if (event.type === 'stage.failed' && !stillFailing(event, stages)) continue
+    if (steps.get(event.seq) !== nodeKey) continue
 
-    // An open question lives above the input, never also in the feed (AC-956);
-    // a resolved one reads here as the exchange it turned into.
     const decisionId = payloadValue(event, 'decisionId')
     const decision = decisionId ? decisionsById.get(decisionId) : undefined
+    // An open question lives above the input, never also in the thread (AC-956).
     if (decision && decision.status === 'open') continue
 
-    const stage = stages.find((row) => row.id === event.stageId)
+    // Reading and searching are how a run gets to what it changes, not what it
+    // did. They report themselves while the run is under way — one line, in
+    // place — and leave nothing behind (REQ-915).
+    if (event.type === 'stage.activity' && !isMutatingActivity(event)) continue
+
+    if (TURN_EVENTS.has(event.type)) {
+      const stage = stages.find((row) => row.id === event.stageId)
+
+      entries.push({
+        kind: 'turn',
+        id: `event-${event.seq}`,
+        at: String(event.createdAt),
+        author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
+        verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
+        title: eventTitle(event),
+        label: feedLabel(event, stage),
+        body: eventDetail(event, decisionsById),
+        decisionId: decision ? decision.id : null,
+      })
+
+      continue
+    }
+
+    const { action, target } = lineParts(event)
 
     entries.push({
+      kind: 'line',
       id: `event-${event.seq}`,
       at: String(event.createdAt),
-      author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
-      verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
-      title: eventTitle(event),
-      label: feedLabel(event, stage),
-      body: eventDetail(event, decisionsById),
-      nodeKey: stage?.nodeKey ?? payloadValue(event, 'nodeKey'),
-      decisionId: decision ? decision.id : null,
+      shape: event.type === 'stage.activity' ? 'call' : 'event',
+      action,
+      target,
+      tone: lineTone(event),
+      live: isLiveActivity(event, stages, events),
     })
   }
 
   for (const message of messages) {
+    if (messageStep(message.createdAt, events, steps, firstNodeKey) !== nodeKey) continue
+
     entries.push({
+      kind: 'turn',
       id: `message-${message.id}`,
       at: String(message.createdAt),
       author: message.role === 'owner' ? 'owner' : 'guide',
@@ -422,7 +595,6 @@ export function buildFeed({ events, messages, stages, decisionsById }: FeedInput
       title: message.role === 'owner' ? 'Message sent' : 'Guide replied',
       label: message.role === 'owner' ? 'You' : 'Guide',
       body: message.contentMd,
-      nodeKey: null,
       decisionId: null,
     })
   }
@@ -433,7 +605,88 @@ export function buildFeed({ events, messages, stages, decisionsById }: FeedInput
   )
 }
 
-/** Who the line is from: the owner, or the node that produced it. */
+/** What a run is doing at this moment, in its own words. */
+export interface LiveActivity {
+  readonly action: string
+  readonly target: string
+  /** The run it belongs to, so the line remounts rather than morphs across runs. */
+  readonly stageId: string
+}
+
+/**
+ * The one line that stands in for every read: the newest action of a run under
+ * way at this step, present tense, replaced in place as the run works and gone
+ * the moment the run ends (REQ-915). A run that has started but reported
+ * nothing yet still gets a line — silence at a live node reads as a hang.
+ */
+export function liveActivity({
+  events,
+  stages,
+  nodeKey,
+}: {
+  events: readonly TimelineEvent[]
+  stages: readonly Stage[]
+  nodeKey: string | null
+}): LiveActivity | null {
+  const running = stages.find((stage) => stage.status === 'running' && stage.nodeKey === nodeKey)
+  if (!running) return null
+
+  const latest = events.reduce<TimelineEvent | null>((newest, event) => {
+    if (event.type !== 'stage.activity' || event.stageId !== running.id) return newest
+
+    return newest === null || event.seq > newest.seq ? event : newest
+  }, null)
+  if (!latest) return { action: 'Working', target: '', stageId: running.id }
+
+  const { kind, target } = stageActivityParts(latest)
+
+  return { action: kind, target, stageId: running.id }
+}
+
+/**
+ * REQ-915: the newest action of a run still under way is what is happening now.
+ * Once that run ends the line stays in the record, but it stops claiming to be
+ * live — the outcome beneath it is the fresher fact.
+ */
+function isLiveActivity(
+  event: TimelineEvent,
+  stages: readonly Stage[],
+  events: readonly TimelineEvent[],
+): boolean {
+  if (event.type !== 'stage.activity' || !event.stageId) return false
+
+  const stage = stages.find((row) => row.id === event.stageId)
+  if (stage?.status !== 'running') return false
+
+  return !events.some(
+    (other) =>
+      other.type === 'stage.activity' && other.stageId === event.stageId && other.seq > event.seq,
+  )
+}
+
+/** A message carries no node of its own: it belongs to the step the task stood on when it was written. */
+function messageStep(
+  at: string | Date,
+  events: readonly TimelineEvent[],
+  steps: Map<number, string | null>,
+  firstNodeKey: string | null,
+): string | null {
+  const moment = millis(at) ?? 0
+  let latest = -1
+  let step = firstNodeKey
+
+  for (const event of events) {
+    const when = millis(event.createdAt) ?? 0
+    if (when > moment || event.seq <= latest) continue
+
+    latest = event.seq
+    step = steps.get(event.seq) ?? step
+  }
+
+  return step
+}
+
+/** Who the turn is from: the owner, or the node that produced it. */
 function feedLabel(event: TimelineEvent, stage: Stage | undefined): string {
   if (OWNER_EVENTS.has(event.type)) return 'You'
   if (stage) return nodeLabel(stage.nodeKey)

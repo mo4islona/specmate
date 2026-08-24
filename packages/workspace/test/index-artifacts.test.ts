@@ -36,6 +36,10 @@ describeDb('artifact index', () => {
       await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
     }
     await cleanupTempDirs()
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   async function setup() {

@@ -249,8 +249,14 @@ export async function listEvents(taskId: string, signal?: AbortSignal): Promise<
   return readJson<EventsResponse>(response)
 }
 
-export async function listConversations(taskId: string): Promise<ConversationsResponse> {
-  const response = await apiClient.api.v1.tasks[':id'].conversations.$get({ param: { id: taskId } })
+export async function listConversations(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<ConversationsResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].conversations.$get(
+    { param: { id: taskId } },
+    { init: { signal } },
+  )
 
   return readJson<ConversationsResponse>(response)
 }
@@ -267,10 +273,12 @@ export async function createConversation(taskId: string): Promise<CreateConversa
 export async function getConversation(
   taskId: string,
   conversationId: string,
+  signal?: AbortSignal,
 ): Promise<ConversationResponse> {
-  const response = await apiClient.api.v1.tasks[':id'].conversations[':conversationId'].$get({
-    param: { id: taskId, conversationId },
-  })
+  const response = await apiClient.api.v1.tasks[':id'].conversations[':conversationId'].$get(
+    { param: { id: taskId, conversationId } },
+    { init: { signal } },
+  )
 
   return readJson<ConversationResponse>(response)
 }

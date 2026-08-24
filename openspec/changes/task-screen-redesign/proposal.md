@@ -66,6 +66,62 @@ arrives.
   accepted. Today a run claims it and, if that run then fails, the retry does not re-claim it and
   the text is never rendered again — which is precisely the case the feature exists for.
 
+### Pass 4 — the column is the step
+
+Pass 3's first rule ("the column is the conversation, the rail is the machine") produced the
+screen it deserved: a task one minute into its first node showed a single line — `Task launched
+14:20` — in a column the width of the window, while what the node was doing, the control that
+stops it, and the node's facts were stacked into the rail beside it. The freed space was not
+used; it was vacated.
+
+Pass 4 inverts the rule. **The thread is the step the owner is reading**: its runs' actions and
+targets, the questions it raised, what was said to it, how it ended. **The rail is the switch** —
+selecting a node changes what the thread carries rather than opening a log over it, so the run
+log stops being a layer and becomes the thread itself. Everything an entry needs to find a home
+is already in the timeline, so nothing is lost: an event belongs to the stage that produced it,
+to the node it names, or to the node the task stood on when it happened.
+
+The console loses its second strip. Stop moves out of the rail to sit beside Send in one row over
+the field, and the sentence under the field — `Picked up by Planning on its next run · ⌘↵ to
+send` — goes with it: the field's own prompt already says `Ask Planning something, or steer it…`.
+Only a state that qualifies the destination keeps a line above the input.
+
+Two regressions surface with it. The kickoff brief lost its call site in pass 3's redraw, leaving
+an `Approve` button with nothing to read (REQ-913); it is restored in the gate's own chapter. And
+pinning a comment to a stage, which pass 3 moved into the run log without wiring, is now what
+typing while reading that stage does (REQ-906).
+
+### Pass 5 — say each thing once, and only what changed
+
+Pass 4 put the step in the column and the walk in the rail, and the owner read a real stopped task
+on it. The screen was legible and still wrong in five ways, all of them variations on one fault:
+it said things more than once, and it said the wrong things.
+
+- **Twenty-five lines of `Reading` and `Searching`, and nothing else.** A stopped `Specify` filled
+  its column with every file the run had looked at, each prefixed by seventy characters of
+  workspace root. What a run *read* is how it got to what it *changed*; only the second is
+  record. Reading now reports itself as one line that replaces itself while the run works — the
+  spinner a chat has — and leaves nothing behind.
+- **The step's state, four times.** `Stopped — Specify was stopped mid-run` in the header,
+  `Specify · stopped` over the thread, `Specify … stopped` in the rail, `→ SPECIFY · stopped after
+  2 attempts` over the input. Each place now says what the others do not.
+- **The repository was the one real place on the screen and the only thing not a link.** It is a
+  link, marked as a repository, with the task's pull request beside it — which the task detail
+  endpoint did not carry and now does.
+- **The rail was unreadable.** `opus-5 · high` with nothing saying what it qualified; `Pl…` where
+  `Planning` did not fit beside a model badge; a commit hash in a column too narrow to read it;
+  and seven of the ten nodes folded into `+4 more`. The rail is the walk: every node, in order,
+  its state as a mark, and one fact about what it cost. Nodes that have not run are shown and not
+  activatable — there is no step behind them to read.
+- **The documents were a wall.** A gate rendered its brief and its decision log open and
+  full-length, so a decision log reading `No decisions have been raised on this task yet` took a
+  screenful and pushed the console under the fold. They are a shelf now: named, sized, one open at
+  a time, clamped, with the whole of it a click away.
+
+The thread also takes the shape of a transcript rather than a log table: `Edited(src/foo.ts)` for
+a tool use, a sentence with a branch beneath it for what happened to the run, and no column of
+clocks — a step is read as a sequence, and the width that column took is the width the paths need.
+
 ## Capabilities
 
 ### New Capabilities
@@ -86,7 +142,8 @@ arrives.
   become tabs. Routes gain `/tasks/:id/files` and `/tasks/:id/docs`; `/tasks/:id/artifacts` and
   `/tasks/:id/diff` stop being screens.
 - `apps/api` — the feedback endpoint writes an intervention where there is a node to target, and
-  emits an event either way so the text appears in the thread it was typed into.
+  emits an event either way so the text appears in the thread it was typed into. The task detail
+  endpoint carries the task's pull request, which the header links.
 - `apps/orchestrator` — a stage that ends any way but accepted releases the guidance it claimed.
 - No schema change: the target and the claim are columns that already exist.
 

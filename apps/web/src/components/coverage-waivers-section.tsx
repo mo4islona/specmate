@@ -24,9 +24,9 @@ export function CoverageWaiversSection() {
   const waived = repositories.data?.repositories.filter((repository) => repository.coverageWaiver)
 
   return (
-    <section className="panel space-y-5 p-5 sm:p-7">
+    <section className="panel space-y-5">
       <div>
-        <p className="micro-label text-cyan">Remembered across tasks</p>
+        <p className="micro-label text-info">Remembered across tasks</p>
         <h2 className="mt-2 text-lg font-semibold">Coverage waivers</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
           Repositories accepted as under-covered. A later task against one of them proceeds without
@@ -57,7 +57,7 @@ export function CoverageWaiversSection() {
         {waived?.map((repository) => (
           <li
             key={repository.id}
-            className="flex flex-wrap items-start justify-between gap-3 border border-border p-3"
+            className="subpanel flex flex-wrap items-start justify-between gap-3"
           >
             <div className="min-w-0">
               <p className="break-all font-mono text-xs text-muted">{repository.repoUrl}</p>
@@ -67,7 +67,7 @@ export function CoverageWaiversSection() {
                     Accepted on{' '}
                     <Link
                       href={`/tasks/${repository.coverageWaiver.originTaskId}`}
-                      className="text-cyan underline-offset-4 hover:underline"
+                      className="text-info underline-offset-4 hover:underline"
                     >
                       {repository.coverageWaiver.originTitle ??
                         repository.coverageWaiver.originTaskId.slice(0, 8)}

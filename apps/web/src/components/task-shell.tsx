@@ -9,11 +9,13 @@ import {
   listTasks,
 } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { surfaceContext } from '../lib/repo-link.ts'
+import { surfaceRef } from '../lib/repo-link.ts'
+import { usePublishStreamStatus } from '../lib/stream-status.ts'
 import { taskStateSentence } from '../lib/task-state.ts'
 import { HarnessBadge } from './harness-badge.tsx'
 import { PlanBadge } from './plan-badge.tsx'
 import { ErrorState, LoadingState } from './query-state.tsx'
+import { RepoRef } from './repo-ref.tsx'
 import { TaskHeader } from './task-header.tsx'
 import { TaskLineage } from './task-lineage.tsx'
 import { TaskNav, type TaskSurface } from './task-nav.tsx'
@@ -31,14 +33,16 @@ interface TaskShellProps {
  * surface that happens to want it.
  */
 export function TaskShell({ taskId, active, children }: TaskShellProps) {
-  const connection = useTaskStream(taskId)
+  // Opened here, reported in the sidebar: the shell's mark is what says whether
+  // the screen is keeping up, so the state has to leave this tree.
+  usePublishStreamStatus(useTaskStream(taskId))
   const detail = useQuery({
     queryKey: queryKeys.task(taskId),
     queryFn: ({ signal }) => getTask(taskId, signal),
   })
   const decisions = useQuery({
     queryKey: queryKeys.decisions(taskId),
-    queryFn: () => listDecisions(taskId),
+    queryFn: ({ signal }) => listDecisions(taskId, signal),
   })
   const artifacts = useQuery({
     queryKey: queryKeys.artifacts(taskId),
@@ -72,15 +76,14 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
     decisions: decisions.data?.decisions ?? [],
     spend: detail.data.spend,
   })
-  const context = surfaceContext(active, task.repoUrl, task.baseBranch)
+  const ref = surfaceRef(active, task.baseBranch)
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 xl:h-[calc(100vh-5rem)]">
+    <div className="shell-column flex min-w-0 flex-col gap-3">
       <div className="shrink-0">
         <TaskHeader
           title={task.title}
           state={state}
-          connection={connection}
           badges={
             <span className="flex flex-wrap items-center gap-2">
               <HarnessBadge status={task.harnessStatus} />
@@ -89,7 +92,7 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
           }
         />
 
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-x-5 gap-y-1 border-b border-border">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-5 gap-y-1">
           <TaskNav
             taskId={taskId}
             active={active}
@@ -97,7 +100,7 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
             docCount={artifacts.data?.artifacts.length ?? null}
           />
 
-          <p className="min-w-0 truncate pb-2 font-mono text-[0.62rem] text-muted">{context}</p>
+          <RepoRef repoUrl={task.repoUrl} ref={ref} pullRequest={detail.data.pullRequest} />
         </div>
 
         <TaskLineage

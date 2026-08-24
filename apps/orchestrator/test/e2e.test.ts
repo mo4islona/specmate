@@ -75,6 +75,10 @@ describeDb('the loop against a real repository', () => {
   afterAll(async () => {
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created))
     await cleanupTempDirs()
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   // The poll is global: a task left runnable would steal the next test's slot.

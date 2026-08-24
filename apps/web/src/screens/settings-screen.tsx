@@ -1,5 +1,4 @@
 import {
-  AGENT_ROLES,
   type AgentRole,
   DEFAULT_MODEL_BINDINGS,
   type ModelId,
@@ -10,7 +9,9 @@ import { CoverageWaiversSection } from '../components/coverage-waivers-section.t
 import { DefaultRepositorySection } from '../components/default-repository-section.tsx'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
+import { RoleBindings } from '../components/role-bindings.tsx'
 import { SpecConventionsSection } from '../components/spec-conventions-section.tsx'
+import { ThemeSection } from '../components/theme-section.tsx'
 import { ApiRequestError, getModelDefaults, updateModelDefaults } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 
@@ -56,11 +57,11 @@ function ModelDefaultsSection() {
   const failedRole = save.isError ? save.variables?.role : undefined
 
   return (
-    <section className="panel space-y-5 p-5 sm:p-7">
+    <section className="panel">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="micro-label text-cyan">Model defaults</p>
-          <h2 className="mt-2 text-lg font-semibold">Default model and effort per role</h2>
+          <h2 className="text-lg font-semibold">Model and effort per role</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Every change saves as you make it.</p>
         </div>
         <button
           type="button"
@@ -77,45 +78,45 @@ function ModelDefaultsSection() {
         </p>
       )}
 
-      <dl className="grid gap-4 sm:grid-cols-2">
-        {AGENT_ROLES.map((role) => {
-          const binding = defaults.data.modelDefaults[role]
+      <div className="mt-5">
+        <RoleBindings>
+          {(role) => {
+            const binding = defaults.data.modelDefaults[role]
 
-          return (
-            <div key={role} className="border border-border p-3">
-              <p className="field-label">{role}</p>
-              <ModelSelectPair
-                role={role}
-                modelValue={binding.model}
-                reasoningEffortValue={binding.reasoningEffort}
-                disabled={savingRole === role}
-                onModelChange={(value) => value && save.mutate({ role, model: value })}
-                onReasoningEffortChange={(value) =>
-                  value && save.mutate({ role, reasoningEffort: value })
-                }
-              />
-              {savingRole === role && (
-                <p className="mt-1 font-mono text-[0.68rem] text-muted">Saving…</p>
-              )}
-              {failedRole === role && (
-                <p className="field-error">
-                  {save.error instanceof ApiRequestError ? save.error.message : 'Save failed'}
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </dl>
+            return (
+              <>
+                <ModelSelectPair
+                  role={role}
+                  modelValue={binding.model}
+                  reasoningEffortValue={binding.reasoningEffort}
+                  disabled={savingRole === role}
+                  onModelChange={(value) => value && save.mutate({ role, model: value })}
+                  onReasoningEffortChange={(value) =>
+                    value && save.mutate({ role, reasoningEffort: value })
+                  }
+                />
+                {savingRole === role && (
+                  <p className="mt-1 font-mono text-[0.62rem] text-muted">Saving…</p>
+                )}
+                {failedRole === role && (
+                  <p className="field-error">
+                    {save.error instanceof ApiRequestError ? save.error.message : 'Save failed'}
+                  </p>
+                )}
+              </>
+            )
+          }}
+        </RoleBindings>
+      </div>
     </section>
   )
 }
 
 export function SettingsScreen() {
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
-      <header className="border-b border-border pb-6">
-        <p className="micro-label text-phosphor">Settings</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Settings</h1>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <header>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Settings</h1>
         <p className="mt-3 text-sm leading-6 text-muted">
           Applies to tasks created after a save; a task already running keeps the model and
           reasoning effort it started with.
@@ -129,6 +130,8 @@ export function SettingsScreen() {
       <CoverageWaiversSection />
 
       <SpecConventionsSection />
+
+      <ThemeSection />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
+import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef } from 'react'
 import type { ConsoleDestination, ConsoleTone } from '../lib/task-console.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
@@ -28,32 +28,49 @@ interface TaskComposerProps {
   readonly error?: string
   readonly onSubmit: () => void
   readonly question?: OpenQuestion | null
+  /** Stopping the run that is under way, where one is (REQ-914). */
+  readonly stop?: ReactNode
   /** The verbs the state owns — a gate's rework and redirect. */
   readonly actions?: ReactNode
-  /** Quiet ways out, at the trailing end of the footer. */
+  /** Quiet ways out, at the trailing end of the control row. */
   readonly escapes?: ReactNode
 }
 
-const TONE_FRAME: Record<ConsoleTone, string> = {
-  asking: 'border-amber/45 border-l-2 border-l-amber bg-amber/[0.03]',
-  running: 'border-border-bright border-l-2 border-l-phosphor',
-  stopped: 'border-border-bright border-l-2 border-l-danger',
-  spent: 'border-border border-l-2 border-l-border-bright opacity-85',
-  plain: 'border-border-bright',
+/** The slab's accent variable, set once and read by the mark and the focus ring. */
+const TONE_SLAB: Record<ConsoleTone, string> = {
+  asking: 'console-asking',
+  running: '',
+  stopped: 'console-stopped',
+  spent: 'console-spent',
+  plain: '',
 }
 
-const HEAD_TONE: Record<ConsoleTone, string> = {
-  asking: 'text-amber',
-  running: 'text-phosphor',
+const TONE_MARK: Record<ConsoleTone, string> = {
+  asking: 'text-attention',
+  running: 'dot-live text-accent',
   stopped: 'text-danger',
   spent: 'text-muted',
-  plain: 'text-phosphor',
+  plain: 'text-muted',
+}
+
+const TONE_TEXT: Record<ConsoleTone, string> = {
+  asking: 'text-attention',
+  running: 'text-accent',
+  stopped: 'text-danger',
+  spent: 'text-muted',
+  plain: 'text-accent',
 }
 
 /**
- * One input, and one line saying where the text goes (REQ-921). No mode to set
- * and no target to pick: the previous composer asked for two decisions before a
- * word could be typed, and neither reached any agent.
+ * One input, and one row of verbs on it (REQ-921). No mode to set and no target
+ * to pick: the previous composer asked for two decisions before a word could be
+ * typed, and neither reached any agent.
+ *
+ * Everything that acts sits in that one row — stop, send, and whatever the
+ * state owns — because a second strip outside the block was where the sentences
+ * nobody reads accumulated. The row sits under the field, on the block's own
+ * surface, the way it does anywhere else a person writes something and then
+ * decides what to do with it.
  *
  * An open question is the console's own head rather than a card above it
  * (REQ-912) — the question and the field that answers it are one thing, and
@@ -67,11 +84,22 @@ export function TaskComposer({
   error,
   onSubmit,
   question,
+  stop,
   actions,
   escapes,
 }: TaskComposerProps) {
   const disabled = destination.unavailable !== null
   const urgent = destination.tone === 'asking' || destination.tone === 'stopped'
+  const field = useRef<HTMLTextAreaElement | null>(null)
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the text is the trigger, not an input — the field is measured *because* what is in it changed.
+  useEffect(() => {
+    const node = field.current
+    if (!node) return
+
+    node.style.height = 'auto'
+    node.style.height = `${node.scrollHeight}px`
+  }, [value])
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -86,18 +114,21 @@ export function TaskComposer({
   }
 
   return (
-    <form className={`border bg-surface ${TONE_FRAME[destination.tone]}`} onSubmit={submit}>
+    <form className={`console ${TONE_SLAB[destination.tone]}`} onSubmit={submit}>
       {question ? (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-3 py-2">
-          <p className="micro-label text-amber">
-            {question.label} · question {question.index + 1} of {question.total}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 pt-3">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-mono text-[0.72rem] leading-5">
+            <Mark tone={destination.tone} />
+            <span className="min-w-0 text-attention">
+              {question.label} · question {question.index + 1} of {question.total}
+            </span>
 
-          {question.stopped ? (
-            <p className="font-mono text-[0.62rem] text-danger" role="status">
-              The task is stopped on this.
-            </p>
-          ) : null}
+            {question.stopped && (
+              <span className="text-danger" role="status">
+                The task is stopped on this.
+              </span>
+            )}
+          </p>
 
           {question.total > 1 && (
             <Pager
@@ -110,31 +141,34 @@ export function TaskComposer({
         </div>
       ) : (
         destination.head && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-3 py-2">
-            <p className="micro-label flex items-center gap-1.5 text-muted">
-              <span aria-hidden="true">→</span>
-              <span className={HEAD_TONE[destination.tone]}>{destination.head.to}</span>
-              <span className="font-normal normal-case tracking-normal">
-                · {destination.head.note}
-              </span>
-            </p>
-          </div>
+          <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] leading-5 text-muted">
+            <Mark tone={destination.tone} />
+            <span className="min-w-0">
+              {destination.head.to && (
+                <span className={TONE_TEXT[destination.tone]}>{destination.head.to} · </span>
+              )}
+              {destination.head.note}
+            </span>
+          </p>
         )
       )}
 
       {question && (
-        <div className="artifact-document px-3 pb-1 pt-3 text-[0.92rem] leading-7">
+        <div className="artifact-document px-4 pt-3 text-[0.92rem] leading-7">
           <ArtifactMarkdown content={question.promptMd} />
         </div>
       )}
 
       {question?.options}
 
-      {/* Bottom-aligned: a primary button stretched to a resized textarea is a
-          slab of accent colour where a verb should be. */}
-      <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-end">
+      {/* The frame around the console is the field's own box. A bordered input
+          inside a bordered form drew the same rectangle twice, and the inner
+          one carried nothing the outer one did not already say. */}
+      <div className="px-4 pb-1 pt-3">
         <textarea
-          className="control min-h-14 w-full min-w-0 flex-1 resize-y text-sm disabled:cursor-not-allowed disabled:border-dashed disabled:text-muted"
+          ref={field}
+          rows={1}
+          className="console-field"
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
           onKeyDown={onKeyDown}
@@ -142,16 +176,16 @@ export function TaskComposer({
           aria-label={destination.label}
           disabled={disabled}
         />
-        <button
-          className={`${urgent ? 'button-attention' : 'button-primary'} shrink-0 sm:w-28`}
-          type="submit"
-          disabled={disabled || !value.trim() || busy}
-        >
-          {busy ? 'Sending…' : destination.submit}
-        </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-2 py-1.5">
+      {(error || question?.error) && (
+        <p className="field-error px-4 pb-1">{error ?? question?.error}</p>
+      )}
+
+      {/* The one row that acts, under the one field that types. */}
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 pb-3 pl-1.5 pr-4">
+        {stop}
+
         {question && (
           <>
             <button
@@ -176,23 +210,28 @@ export function TaskComposer({
         )}
 
         {actions}
+        {escapes}
 
         <span className="flex-1" />
 
-        {destination.line && (
-          <p className="font-mono text-[0.62rem] leading-4 text-muted">
-            {destination.line}
-            {!disabled && <span className="text-muted/60"> · ⌘↵ to send</span>}
-          </p>
-        )}
-
-        {escapes}
+        <button
+          className={`${urgent ? 'button-attention' : 'button-primary'} min-h-9 shrink-0 py-1.5`}
+          type="submit"
+          disabled={disabled || !value.trim() || busy}
+        >
+          {busy ? 'Sending…' : destination.submit}
+        </button>
       </div>
-
-      {(error || question?.error) && (
-        <p className="field-error px-3 pb-2">{error ?? question?.error}</p>
-      )}
     </form>
+  )
+}
+
+/** The console's mood in one character — breathing while a node runs. */
+function Mark({ tone }: { tone: ConsoleTone }) {
+  return (
+    <span className={`shrink-0 leading-none ${TONE_MARK[tone]}`} aria-hidden="true">
+      ●
+    </span>
   )
 }
 
@@ -210,11 +249,11 @@ function Pager({
   const steps = Array.from({ length: total }, (_value, position) => position)
 
   return (
-    <div className="flex items-center gap-1.5 font-mono text-[0.7rem] text-muted">
+    <div className="flex items-center gap-1 font-mono text-[0.7rem] text-muted">
       <button
         type="button"
         aria-label="Previous question"
-        className="px-1 disabled:opacity-40"
+        className="px-1 disabled:opacity-30"
         disabled={disabled || index === 0}
         onClick={() => onPage(index - 1)}
       >
@@ -227,10 +266,10 @@ function Pager({
           aria-label={`Question ${step + 1}`}
           aria-current={step === index ? 'true' : undefined}
           disabled={disabled}
-          className={`grid h-[1.1rem] w-[1.1rem] place-items-center border text-[0.6rem] font-semibold ${
+          className={`grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors ${
             step === index
-              ? 'border-amber bg-amber text-ground'
-              : 'border-border-bright text-muted hover:text-text'
+              ? 'bg-attention font-semibold text-on-attention'
+              : 'text-muted hover:bg-text/8 hover:text-text'
           }`}
           onClick={() => onPage(step)}
         >
@@ -240,7 +279,7 @@ function Pager({
       <button
         type="button"
         aria-label="Next question"
-        className="px-1 disabled:opacity-40"
+        className="px-1 disabled:opacity-30"
         disabled={disabled || index === total - 1}
         onClick={() => onPage(index + 1)}
       >

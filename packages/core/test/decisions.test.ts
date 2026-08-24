@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { Spend } from '../src/budgets.ts'
 import {
   type BudgetExhaustionInput,

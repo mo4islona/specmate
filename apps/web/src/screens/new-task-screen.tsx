@@ -1,14 +1,10 @@
-import {
-  AGENT_ROLES,
-  type AgentRole,
-  type ModelBinding,
-  type ModelId,
-  type ReasoningEffort,
-} from '@specmate/core'
+import type { AgentRole, ModelBinding, ModelId, ReasoningEffort } from '@specmate/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
+import { RoleBindings } from '../components/role-bindings.tsx'
+import { type SizeChoice, SizePicker } from '../components/size-picker.tsx'
 import { ApiRequestError, type CreateTaskInput, createTask } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { repoLabel } from '../lib/repo-link.ts'
@@ -18,6 +14,7 @@ export interface NewTaskForm {
   description: string
   repoUrl: string
   baseBranch: string
+  planSize: SizeChoice
   modelBindings: CreateTaskInput['modelBindings']
 }
 
@@ -25,6 +22,7 @@ const INITIAL_FORM: NewTaskForm = {
   description: '',
   repoUrl: '',
   baseBranch: '',
+  planSize: 'auto',
   modelBindings: {},
 }
 
@@ -42,6 +40,7 @@ export function buildCreateTaskPayload(form: NewTaskForm): CreateTaskInput {
     description: form.description.trim(),
     repoUrl: form.repoUrl.trim() || undefined,
     baseBranch: form.baseBranch.trim() || undefined,
+    planSize: form.planSize === 'auto' ? undefined : form.planSize,
     modelBindings: hasOverride ? modelBindings : undefined,
   }
 }
@@ -86,7 +85,7 @@ export function RepositoryChoice({
   onSelect,
 }: RepositoryChoiceProps) {
   return (
-    <div className="border border-danger/35 bg-danger/10 p-4">
+    <div className="subpanel bg-danger/10">
       <p className="field-label">Which repository?</p>
       <p className="mt-1 text-xs text-muted">
         {detail ?? 'The request did not name one, and there is no default set.'}
@@ -125,6 +124,17 @@ export function NewTaskScreen() {
   const [, navigate] = useLocation()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<NewTaskForm>(INITIAL_FORM)
+  const request = useRef<HTMLTextAreaElement | null>(null)
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the text is the trigger, not an input — the field is measured *because* what is in it changed.
+  useEffect(() => {
+    const node = request.current
+    if (!node) return
+
+    node.style.height = 'auto'
+    node.style.height = `${node.scrollHeight}px`
+  }, [form.description])
+
   const launch = useMutation({
     mutationFn: createTask,
     onSuccess: async ({ task }) => {
@@ -147,29 +157,30 @@ export function NewTaskScreen() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
-      <header className="border-b border-border pb-6">
-        <p className="micro-label text-phosphor">Task intake</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Launch work</h1>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <header>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Launch work</h1>
         <p className="mt-3 text-sm leading-6 text-muted">
           Say what you want done. The repository comes out of the request; planning names the task
           once it has read the code.
         </p>
       </header>
 
-      <form className="panel space-y-6 p-5 sm:p-7" onSubmit={submit} noValidate>
-        <div>
-          <label className="field-label" htmlFor="task-description">
-            Request
-          </label>
+      {/* The same block the task's console is: this app has one input, and
+          launching is the first time the owner uses it. */}
+      <form className="console" onSubmit={submit} noValidate>
+        <div className="px-4 pt-4">
           <textarea
             id="task-description"
+            ref={request}
+            rows={3}
             // biome-ignore lint/a11y/noAutofocus: the screen exists for this one field
             autoFocus
-            className="control mt-2 min-h-40 w-full resize-y"
+            className="console-field text-[0.95rem]"
             value={form.description}
             onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
             placeholder="Fix the login redirect in specmate — it lands on the homepage instead of the dashboard."
+            aria-label="Request"
             aria-invalid={Boolean(fieldError('description'))}
             aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
           />
@@ -181,20 +192,44 @@ export function NewTaskScreen() {
         </div>
 
         {repositoryAsked && (
-          <RepositoryChoice
-            candidates={rejection?.candidates ?? []}
-            selected={form.repoUrl}
-            detail={fieldError('repoUrl')}
-            onSelect={(repoUrl) => setForm({ ...form, repoUrl })}
-          />
+          <div className="px-4 pt-4">
+            <RepositoryChoice
+              candidates={rejection?.candidates ?? []}
+              selected={form.repoUrl}
+              detail={fieldError('repoUrl')}
+              onSelect={(repoUrl) => setForm({ ...form, repoUrl })}
+            />
+          </div>
         )}
 
-        <details className="border-t border-border pt-5">
-          <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted">
-            Advanced
-          </summary>
+        {launch.isError && !rejection && (
+          <p className="field-error px-4 pt-3">{launch.error.message}</p>
+        )}
 
-          <div className="mt-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-4 pt-4">
+          <SizePicker
+            value={form.planSize}
+            onChange={(planSize) => setForm({ ...form, planSize })}
+          />
+
+          <span className="flex-1" />
+
+          <button className="button-primary shrink-0" type="submit" disabled={launch.isPending}>
+            {launch.isPending ? 'Launching…' : 'Launch task'}
+          </button>
+        </div>
+      </form>
+
+      <details className="group">
+        <summary className="button-ghost w-fit cursor-pointer list-none">
+          <span className="transition-transform group-open:rotate-90" aria-hidden="true">
+            ›
+          </span>
+          Advanced
+        </summary>
+
+        <div className="mt-4 space-y-6">
+          <div>
             <label className="field-label" htmlFor="base-branch">
               Base branch
             </label>
@@ -210,59 +245,48 @@ export function NewTaskScreen() {
             {fieldError('baseBranch') && <p className="field-error">{fieldError('baseBranch')}</p>}
           </div>
 
-          <p className="field-label mt-5">Override models for this task</p>
-          {fieldError('modelBindings') && (
-            <p className="field-error mt-2">{fieldError('modelBindings')}</p>
-          )}
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            {AGENT_ROLES.map((role) => (
-              <div key={role} className="border border-border p-3">
-                <p className="field-label">{role}</p>
-                <ModelSelectPair
-                  role={role}
-                  includeUseDefault
-                  modelValue={form.modelBindings?.[role]?.model ?? ''}
-                  reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
-                  onModelChange={(value) =>
-                    setForm({
-                      ...form,
-                      modelBindings: setOverrideField(
-                        form.modelBindings,
-                        role,
-                        'model',
-                        (value || undefined) as ModelId | undefined,
-                      ),
-                    })
-                  }
-                  onReasoningEffortChange={(value) =>
-                    setForm({
-                      ...form,
-                      modelBindings: setOverrideField(
-                        form.modelBindings,
-                        role,
-                        'reasoningEffort',
-                        (value || undefined) as ReasoningEffort | undefined,
-                      ),
-                    })
-                  }
-                />
-              </div>
-            ))}
+          <div>
+            <p className="field-label">Override models for this task</p>
+            {fieldError('modelBindings') && (
+              <p className="field-error mt-2">{fieldError('modelBindings')}</p>
+            )}
+            <div className="mt-4">
+              <RoleBindings>
+                {(role) => (
+                  <ModelSelectPair
+                    role={role}
+                    includeUseDefault
+                    modelValue={form.modelBindings?.[role]?.model ?? ''}
+                    reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
+                    onModelChange={(value) =>
+                      setForm({
+                        ...form,
+                        modelBindings: setOverrideField(
+                          form.modelBindings,
+                          role,
+                          'model',
+                          (value || undefined) as ModelId | undefined,
+                        ),
+                      })
+                    }
+                    onReasoningEffortChange={(value) =>
+                      setForm({
+                        ...form,
+                        modelBindings: setOverrideField(
+                          form.modelBindings,
+                          role,
+                          'reasoningEffort',
+                          (value || undefined) as ReasoningEffort | undefined,
+                        ),
+                      })
+                    }
+                  />
+                )}
+              </RoleBindings>
+            </div>
           </div>
-        </details>
-
-        {launch.isError && !rejection && (
-          <p className="border border-danger/35 bg-danger/10 p-3 text-sm text-danger">
-            {launch.error.message}
-          </p>
-        )}
-
-        <div className="flex justify-end border-t border-border pt-5">
-          <button className="button-primary" type="submit" disabled={launch.isPending}>
-            {launch.isPending ? 'Launching…' : 'Launch task'}
-          </button>
         </div>
-      </form>
+      </details>
     </div>
   )
 }

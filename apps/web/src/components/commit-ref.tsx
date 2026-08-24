@@ -25,7 +25,7 @@ export function CommitRef({ sha, repoUrl, className = '' }: CommitRefProps) {
 
   return (
     <a
-      className={`${classes} underline decoration-border-bright underline-offset-2 hover:text-phosphor`}
+      className={`${classes} underline decoration-border-bright underline-offset-2 hover:text-accent`}
       href={href}
       title={sha}
       target="_blank"

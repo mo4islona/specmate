@@ -15,14 +15,15 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test apps/api apps/orchestrator packages && bun run --cwd apps/web test",
+    "test": "bun run vitest run && bun run test:bun && bun run --cwd apps/web test",
     "db:generate": "bun run --cwd packages/db generate",
     "db:migrate": "bun run --cwd packages/db migrate",
     "spec:validate": "openspec validate --all --strict",
     "spec:lint": "bun scripts/lint-spec-ids.ts",
     "spec:next-id": "bun scripts/lint-spec-ids.ts --next",
     "spec:list": "openspec list",
-    "ci": "bun run check && bun run typecheck && bun run test && bun run spec:validate && bun run spec:lint"
+    "ci": "bun run check && bun run typecheck && bun run test && bun run spec:validate && bun run spec:lint",
+    "test:bun": "bun test apps/api apps/orchestrator packages/db packages/runner packages/workspace"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

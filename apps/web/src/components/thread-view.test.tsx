@@ -1,11 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
-import type { FeedEntry } from '../lib/task-thread.ts'
+import { describe, expect, test } from 'vitest'
+import type { LineEntry, TurnEntry } from '../lib/task-thread.ts'
 import { ThreadView } from './thread-view.tsx'
 
-function entry(overrides: Partial<FeedEntry> = {}): FeedEntry {
+function turn(overrides: Partial<TurnEntry> = {}): TurnEntry {
   return {
+    kind: 'turn',
     id: 'event-1',
     at: '2026-08-16T10:00:00.000Z',
     author: 'owner',
@@ -13,8 +14,21 @@ function entry(overrides: Partial<FeedEntry> = {}): FeedEntry {
     title: 'Owner comment',
     label: 'You',
     body: 'Keep the migration reversible.',
-    nodeKey: null,
     decisionId: null,
+    ...overrides,
+  }
+}
+
+function line(overrides: Partial<LineEntry> = {}): LineEntry {
+  return {
+    kind: 'line',
+    id: 'event-2',
+    at: '2026-08-16T10:00:30.000Z',
+    shape: 'call',
+    action: 'Edited',
+    target: 'packages/core/src/state.ts',
+    tone: 'plain',
+    live: false,
     ...overrides,
   }
 }
@@ -23,9 +37,9 @@ const LONG_ANSWER =
   'One field, and the planner infers the repository, the base branch and the budget from it — ' +
   'each of them confirmed at the kickoff gate before anything runs, so nothing is guessed silently.'
 
-describe('ThreadView (REQ-919)', () => {
+describe('ThreadView (REQ-919, REQ-915)', () => {
   test('the owner’s side carries no name, and the moment is not on the screen', () => {
-    render(<ThreadView entries={[entry()]} onOpenNode={() => {}} />)
+    render(<ThreadView entries={[turn()]} />)
 
     expect(screen.getByText('Keep the migration reversible.')).not.toBeNull()
     // The side says whose turn it is; the label would be the same word twice.
@@ -35,10 +49,7 @@ describe('ThreadView (REQ-919)', () => {
 
   test('a node speaks under its own name', () => {
     render(
-      <ThreadView
-        entries={[entry({ author: 'task', label: 'Kickoff gate', verb: 'asked' })]}
-        onOpenNode={() => {}}
-      />,
+      <ThreadView entries={[turn({ author: 'task', label: 'Kickoff gate', verb: 'asked' })]} />,
     )
 
     expect(screen.getByText('Kickoff gate')).not.toBeNull()
@@ -47,8 +58,7 @@ describe('ThreadView (REQ-919)', () => {
   test('an entry with nothing said is a neutral marker with the time on it', () => {
     render(
       <ThreadView
-        entries={[entry({ body: null, verb: 'launched this task', title: 'Task launched' })]}
-        onOpenNode={() => {}}
+        entries={[turn({ body: null, verb: 'launched this task', title: 'Task launched' })]}
       />,
     )
 
@@ -59,20 +69,8 @@ describe('ThreadView (REQ-919)', () => {
     expect(screen.getByRole('listitem').querySelector('[data-balloon]')).toBeNull()
   })
 
-  test('what the machine said is left where it is, with no balloon of its own', () => {
-    render(
-      <ThreadView
-        entries={[entry({ author: 'task', label: 'Kickoff gate', verb: 'asked' })]}
-        onOpenNode={() => {}}
-      />,
-    )
-
-    expect(screen.getByText('Keep the migration reversible.')).not.toBeNull()
-    expect(screen.getByRole('listitem').querySelector('[data-balloon]')).toBeNull()
-  })
-
   test('a plain comment is the balloon, with no verb repeating what it already is', () => {
-    render(<ThreadView entries={[entry()]} onOpenNode={() => {}} />)
+    render(<ThreadView entries={[turn()]} />)
 
     expect(screen.getByRole('listitem').querySelector('[data-balloon]')).not.toBeNull()
     expect(screen.queryByText('commented')).toBeNull()
@@ -81,10 +79,7 @@ describe('ThreadView (REQ-919)', () => {
   test('an answered question is clamped until the owner opens it (AC-958)', async () => {
     const user = userEvent.setup()
     render(
-      <ThreadView
-        entries={[entry({ decisionId: 'decision-1', verb: 'answered', body: LONG_ANSWER })]}
-        onOpenNode={() => {}}
-      />,
+      <ThreadView entries={[turn({ decisionId: 'd1', verb: 'answered', body: LONG_ANSWER })]} />,
     )
 
     const body = screen.getByText(LONG_ANSWER).closest('div')
@@ -96,35 +91,81 @@ describe('ThreadView (REQ-919)', () => {
 
   test('an exchange that already fits is not offered a control that opens nothing', () => {
     render(
-      <ThreadView
-        entries={[entry({ decisionId: 'decision-1', verb: 'answered', body: 'One field.' })]}
-        onOpenNode={() => {}}
-      />,
+      <ThreadView entries={[turn({ decisionId: 'd1', verb: 'answered', body: 'One field.' })]} />,
     )
 
     expect(screen.queryByRole('button', { name: /read the whole thing/i })).toBeNull()
   })
 
-  test('a line the machine produced offers its run log rather than explaining itself', async () => {
-    const user = userEvent.setup()
-    const onOpenNode = vi.fn()
+  test('a tool use reads as the verb and its object, with the moment off the screen', () => {
+    render(<ThreadView entries={[line()]} />)
+
+    expect(screen.getByText('Edited')).not.toBeNull()
+    expect(screen.getByText('(packages/core/src/state.ts)')).not.toBeNull()
+    // No control to open anything: this is the log, not a link to one.
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('listitem').getAttribute('title')).toMatch(/\d/)
+  })
+
+  test('something that happened to the run is a sentence with its particulars beneath it', () => {
     render(
       <ThreadView
-        entries={[
-          entry({ author: 'task', label: 'Implement', verb: 'failed', nodeKey: 'implement' }),
-        ]}
-        onOpenNode={onOpenNode}
+        entries={[line({ shape: 'event', action: 'Stage accepted', target: 'fd07a56' })]}
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /run log/i }))
-    expect(onOpenNode).toHaveBeenCalledWith('implement')
+    expect(screen.getByText('Stage accepted')).not.toBeNull()
+    expect(screen.getByText('fd07a56')).not.toBeNull()
+    // The branch, not a second bullet: it belongs to the line above it.
+    expect(screen.getByText('└')).not.toBeNull()
+  })
+
+  test('what a run is doing right now is marked as in progress (AC-940)', () => {
+    render(<ThreadView entries={[line({ live: true }), line({ id: 'event-3', live: false })]} />)
+
+    const items = screen.getAllByRole('listitem')
+    expect(items[0]?.getAttribute('data-live')).toBe('')
+    expect(items[1]?.getAttribute('data-live')).toBeNull()
+  })
+
+  test('a person’s turn and the machine’s record share one column, in order', () => {
+    render(<ThreadView entries={[line(), turn({ id: 'event-3' })]} />)
+
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]?.getAttribute('data-feed-kind')).toBe('line')
+    expect(items[1]?.getAttribute('data-feed-kind')).toBe('owner')
   })
 
   test('a thread with one entry renders that entry and no empty state', () => {
-    render(<ThreadView entries={[entry()]} onOpenNode={() => {}} />)
+    render(<ThreadView entries={[turn()]} />)
 
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.queryByText(/nothing/i)).toBeNull()
+  })
+})
+
+describe('the live line (REQ-915)', () => {
+  test('what the run is doing now is one line at the end, with no clock on it', () => {
+    render(
+      <ThreadView
+        entries={[line({ action: 'Edited', target: 'src/ui/YAxis.tsx' })]}
+        live={{ action: 'Reading', target: 'src/series/pie.ts', stageId: 'stage-1' }}
+      />,
+    )
+
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[1]?.getAttribute('data-feed-kind')).toBe('live')
+    expect(items[1]?.textContent).toContain('Reading…')
+    expect(items[1]?.textContent).toContain('src/series/pie.ts')
+    // It is now, so it carries no moment of its own.
+    expect(items[1]?.getAttribute('title')).toBeNull()
+  })
+
+  test('a step with no run under way carries no live line', () => {
+    render(<ThreadView entries={[line()]} live={null} />)
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })
 })

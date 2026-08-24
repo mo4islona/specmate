@@ -1,7 +1,7 @@
 import type { ModelBindings } from '@specmate/core'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import type { TaskDetail } from './api-client.ts'
-import { bindingBaseline, buildPipelineNodes, shortModel } from './task-pipeline.ts'
+import { buildPipelineNodes, nodeSpend, shortModel } from './task-pipeline.ts'
 
 type Stage = TaskDetail['stages'][number]
 type PinnedNode = NonNullable<TaskDetail['graph']>['dag']['nodes'][number]
@@ -98,24 +98,6 @@ describe('buildPipelineNodes', () => {
   })
 })
 
-describe('bindingBaseline', () => {
-  test('the baseline is what most roles run, so only an override stands out', () => {
-    const nodes = buildPipelineNodes({
-      nodes: NODES,
-      stages: [],
-      status: 'research',
-      resumeStatus: null,
-      modelBindings: BINDINGS,
-    })
-
-    expect(bindingBaseline(nodes)).toEqual({ model: 'claude-opus-5', reasoningEffort: 'high' })
-  })
-
-  test('a graph with no stage roles has no baseline to state', () => {
-    expect(bindingBaseline([])).toBeNull()
-  })
-})
-
 test('a model id is shortened to the name, not the release stamp', () => {
   expect(shortModel('claude-haiku-4-5-20251001')).toBe('haiku-4-5')
   expect(shortModel('claude-opus-5')).toBe('opus-5')
@@ -198,5 +180,73 @@ describe('a skipped node', () => {
     const skipped = nodes.find((node) => node.key === 'spec_review')
     expect(skipped?.state).toBe('skipped')
     expect(skipped?.reason).toContain('2 scenario')
+  })
+})
+
+describe('nodeSpend', () => {
+  const node = (runs: Stage[]) =>
+    buildPipelineNodes({
+      nodes: NODES,
+      stages: runs,
+      status: 'implement',
+      resumeStatus: null,
+      modelBindings: BINDINGS,
+    })[0] as NonNullable<ReturnType<typeof buildPipelineNodes>[number]>
+
+  it('adds up every attempt, because that is what the budget was charged', () => {
+    const spend = nodeSpend(
+      node([
+        stage({
+          id: 'a',
+          attempt: 0,
+          status: 'failed',
+          startedAt: '2026-08-16T10:00:00.000Z',
+          finishedAt: '2026-08-16T10:01:00.000Z',
+          telemetry: {
+            model: 'claude-opus-5',
+            tokens: { input_tokens: 100, cache_read_input_tokens: 4_000 },
+            costUsd: 0.5,
+          },
+        } as unknown as Stage),
+        stage({
+          id: 'b',
+          attempt: 1,
+          startedAt: '2026-08-16T10:01:00.000Z',
+          finishedAt: '2026-08-16T10:03:00.000Z',
+          telemetry: {
+            model: 'claude-opus-5',
+            tokens: { input_tokens: 200, output_tokens: 900 },
+            costUsd: 1.25,
+          },
+        } as unknown as Stage),
+      ]),
+    )
+
+    expect(spend).toMatchObject({
+      attempts: 2,
+      durationMs: 180_000,
+      tokenTotal: 5_200,
+      costUsd: 1.75,
+      model: 'claude-opus-5',
+    })
+    expect(spend.tokens).toEqual({
+      input_tokens: 300,
+      output_tokens: 900,
+      cache_read_input_tokens: 4_000,
+    })
+  })
+
+  it('reports absence as absence: a run that recorded no usage is not a run that spent zero', () => {
+    const spend = nodeSpend(node([stage({ telemetry: null } as Partial<Stage>)]))
+
+    expect(spend.tokens).toBeNull()
+    expect(spend.tokenTotal).toBeNull()
+    expect(spend.costUsd).toBeNull()
+    // The role's binding still names a model, even when nothing answered under it.
+    expect(spend.model).toBe('claude-opus-5')
+  })
+
+  it('a node with no attempt at all has nothing to report', () => {
+    expect(nodeSpend(node([]))).toMatchObject({ attempts: 0, durationMs: null, tokenTotal: null })
   })
 })

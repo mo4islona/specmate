@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'wouter'
 import { listAttention, listTasks, type TaskSummary } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { StatusChip } from './status-chip.tsx'
+import { nodeLabel } from '../lib/task-thread.ts'
+import { statusTone, toneDot } from './status-tone.ts'
 
 const GROUPS = ['Needs input', 'Active', 'Queued', 'Complete'] as const
 type TaskGroup = (typeof GROUPS)[number]
@@ -36,10 +37,10 @@ export function TaskNavigation() {
   }
 
   if (tasks.isPending || attention.isPending) {
-    return <p className="px-3 py-4 font-mono text-xs text-muted">Loading task index…</p>
+    return <p className="py-4 font-mono text-xs text-muted">Loading task index…</p>
   }
   if (tasks.isError || attention.isError) {
-    return <p className="px-3 py-4 text-sm text-danger">Task index unavailable.</p>
+    return <p className="py-4 text-sm text-danger">Task index unavailable.</p>
   }
 
   return (
@@ -52,28 +53,37 @@ export function TaskNavigation() {
 
         return (
           <section key={group}>
-            <h2 className="micro-label px-3 text-muted">{group}</h2>
-            <ul className="mt-2 space-y-1">
+            <h2 className="micro-label text-muted">{group}</h2>
+            <ul className="mt-2 space-y-0.5">
               {rows.map((task) => {
                 const isActive = location.startsWith(`/tasks/${task.id}`)
-                const needsInput = taskGroup(task, attentionTaskIds) === 'Needs input'
+                const needsInput = group === 'Needs input'
+                const live = group === 'Active'
 
                 return (
                   <li key={task.id}>
                     <Link
                       href={`/tasks/${task.id}`}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`block border-l-2 px-3 py-2.5 transition-colors ${
+                      title={task.title}
+                      className={`rail-row flex gap-2.5 rounded-lg py-2 transition-colors ${
                         isActive
-                          ? 'border-phosphor bg-phosphor/8 text-text'
-                          : 'border-transparent text-muted hover:border-border-bright hover:bg-elevated hover:text-text'
+                          ? 'bg-accent/[0.09] text-text'
+                          : 'text-muted hover:bg-text/[0.05] hover:text-text'
                       } ${needsInput ? 'attention-pulse' : ''}`}
                     >
-                      <span className="block truncate text-sm font-medium">{task.title}</span>
-                      <span className="mt-1.5 flex items-center justify-between gap-2">
-                        <StatusChip status={task.status} />
-                        <span className="truncate font-mono text-[0.62rem] text-muted">
-                          {task.slug}
+                      <span
+                        className={`mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full ${toneDot(
+                          statusTone(task.status),
+                        )} ${live ? 'dot-live' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.82rem] leading-5">
+                          {task.title}
+                        </span>
+                        <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted">
+                          {nodeLabel(task.status)}
                         </span>
                       </span>
                     </Link>
@@ -85,7 +95,7 @@ export function TaskNavigation() {
         )
       })}
       {(tasks.data?.tasks.length ?? 0) === 0 && (
-        <p className="px-3 text-sm text-muted">No tasks launched yet.</p>
+        <p className="text-sm text-muted">No tasks launched yet.</p>
       )}
     </nav>
   )

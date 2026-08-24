@@ -3,8 +3,8 @@ import { formatClock } from '../lib/format.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 const AUTHORS: Record<ConversationMessage['role'], { label: string; tone: string }> = {
-  owner: { label: 'you', tone: 'text-phosphor' },
-  assistant: { label: 'guide', tone: 'text-cyan' },
+  owner: { label: 'you', tone: 'text-accent' },
+  assistant: { label: 'guide', tone: 'text-info' },
   system: { label: 'system', tone: 'text-muted' },
 }
 
@@ -19,7 +19,7 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
 
   return (
     <li
-      className={`py-2 ${isPending ? 'attention-pulse border-l-2 border-l-amber/50 pl-3' : ''}`}
+      className={`py-2 ${isPending ? 'attention-pulse rounded-xl px-3' : ''}`}
       data-timeline-kind="conversation-message"
     >
       <div className="flex items-baseline gap-2">
@@ -42,8 +42,8 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
       )}
 
       {isPending && (
-        <p className="mt-2 flex items-center gap-2 font-mono text-xs text-amber" role="status">
-          <span className="dot-live h-1.5 w-1.5 rounded-full bg-amber" aria-hidden="true" />
+        <p className="mt-2 flex items-center gap-2 font-mono text-xs text-attention" role="status">
+          <span className="dot-live h-1.5 w-1.5 rounded-full bg-attention" aria-hidden="true" />
           {message.status === 'responding' ? 'Responding…' : 'Waiting for a response slot…'}
         </p>
       )}

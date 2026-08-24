@@ -17,42 +17,52 @@ function runLabel(nodeKey: string, attempt: number): string {
  * REQ-914/AC-931: stopping is always one click away while a stage runs, and the
  * click before the last one states the cost of stopping — the exact stage, the
  * provider spend already committed, and the uncommitted work that goes away.
- * It lives under the running node in the rail, because that is where the run
- * itself is reported and a fact belongs in one place.
+ * It lives in the console's control row, beside Send: the two things an owner
+ * does to a running task are one reach apart, and the confirmation opens over
+ * the field rather than in a column they had to look away to find.
  */
 export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopControlProps) {
   const [confirming, setConfirming] = useState(false)
 
   return (
-    <div>
-      <button
-        type="button"
-        className="button-ghost min-h-7 px-0 text-[0.62rem]"
-        disabled={stopping}
-        onClick={() => setConfirming((open) => !open)}
-      >
-        {stopping ? 'Stopping…' : confirming ? '← Keep running' : '■ Stop'}
-      </button>
+    <>
+      <div className="relative">
+        <button
+          type="button"
+          className="button-ghost button-ghost-danger"
+          disabled={stopping}
+          aria-expanded={confirming}
+          onClick={() => setConfirming((open) => !open)}
+        >
+          {stopping ? 'Stopping…' : '■ Stop'}
+        </button>
 
-      {confirming && (
-        <div className="mt-1">
-          <p className="text-[0.72rem] leading-5 text-muted">
-            Stopping <span className="text-text">{runLabel(nodeKey, attempt)}</span> may still incur
-            provider cost. Every uncommitted change from this attempt is discarded; accepted commits
-            stay.
-          </p>
-          <button
-            type="button"
-            className="button-danger mt-2 min-h-8 py-1 text-[0.62rem]"
-            disabled={stopping}
-            onClick={onStop}
-          >
-            Confirm stop
-          </button>
-        </div>
-      )}
+        {confirming && (
+          <div className="console-popover absolute bottom-full left-0 z-10 mb-2 w-[21rem] p-3.5">
+            <p className="text-[0.78rem] leading-6 text-muted">
+              Stopping <span className="text-text">{runLabel(nodeKey, attempt)}</span> may still
+              incur provider cost. Every uncommitted change from this attempt is discarded; accepted
+              commits stay.
+            </p>
 
-      {error && <p className="field-error text-[0.72rem]">{error}</p>}
-    </div>
+            <div className="mt-3 flex items-center justify-end gap-1">
+              <button
+                type="button"
+                className="button-ghost"
+                disabled={stopping}
+                onClick={() => setConfirming(false)}
+              >
+                Keep running
+              </button>
+              <button type="button" className="button-danger" disabled={stopping} onClick={onStop}>
+                Confirm stop
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="field-error w-full px-2.5 text-[0.72rem]">{error}</p>}
+    </>
   )
 }

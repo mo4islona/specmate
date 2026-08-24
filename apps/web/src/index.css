@@ -1,45 +1,62 @@
 @import "tailwindcss";
+@import "./theme/theme.css";
 
+/* The roles the app paints with. The values here are One Dark Pro's, the
+   default theme — they exist so a utility can be generated and so the page has
+   a palette before `data-theme` is on the document. Every one of them is
+   overridden by the theme block the owner picked, which is unlayered and so
+   outranks this whole layer. Change a colour in `theme.css`, never here. */
 @theme {
-  --color-ground: #07100c;
-  --color-surface: #0b1711;
-  --color-elevated: #112219;
-  --color-text: #d8f3df;
-  --color-muted: #7f9b88;
-  --color-phosphor: #74f49a;
-  --color-amber: #f2bd5a;
-  --color-danger: #ff6f6f;
-  --color-cyan: #65cbd4;
-  --color-border: #1f3929;
-  --color-border-bright: #37654a;
-  --color-status-active: #74f49a;
-  --color-status-parked: #f2bd5a;
-  --color-status-failed: #ff6f6f;
-  --color-status-done: #65cbd4;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  --font-sans: "Inter", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --color-ground: #282c34;
+  --color-surface: #31353e;
+  --color-elevated: #393d46;
+  --color-border: #444851;
+  --color-border-bright: #5a5f68;
+  --color-text: #c3cad5;
+  --color-muted: #8b95a3;
+  --color-accent: #61afef;
+  --color-attention: #e5c07b;
+  --color-danger: #e06c75;
+  --color-info: #56b6c2;
+  --color-success: #98c379;
+  --color-on-accent: #1e2127;
+  --color-on-attention: #1e2127;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  /* A status wears a role rather than a colour of its own: what "parked" looks
+     like is decided once, by whichever theme is on. */
+  --color-status-active: var(--color-accent);
+  --color-status-parked: var(--color-attention);
+  --color-status-failed: var(--color-danger);
+  --color-status-done: var(--color-info);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
-  min-height: 100%;
-}
-
+/* A definite height, so the `min-height: 100%` under it resolves to something.
+   A percentage minimum against an automatic height resolves to nothing, which
+   left the shell as tall as its content — and that is what ended the sidebar's
+   surface partway down the screen. */
 html {
-  background: var(--color-ground);
-  color-scheme: dark;
+  height: 100%;
+  /* Clipped here and nowhere else. `overflow-x` on `body` makes body a scroll
+     container of its own, and a `sticky` child then measures against a box that
+     never scrolls: the sidebar rode the page down instead of staying put. */
   overflow-x: hidden;
 }
 
+/* `color-scheme` is the theme's to declare: it is what turns the scrollbars and
+   the form controls the browser draws itself light or dark with the rest. */
 body {
+  min-height: 100%;
   min-width: 20rem;
   margin: 0;
-  overflow-x: hidden;
   background:
     linear-gradient(
       to right,
@@ -58,387 +75,719 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+/* Not `100%`: body's own height is automatic, so a percentage here would go the
+   same way the one above did. */
+#root {
+  min-height: 100vh;
 }
 
-button,
-a,
-summary,
-select {
-  -webkit-tap-highlight-color: transparent;
+/* ── Rhythm ────────────────────────────────────────────────────────────────
+   Four insets, and the app uses no others: the gutter the page is set in, the
+   sidebar's, a panel's, and the inset of a block nested inside a panel. They
+   are variables rather than a set of utilities because one of them is needed in
+   arithmetic — the task column's height is the viewport less the gutter it sits
+   in, and a literal in each place is a literal that drifts. */
+:root {
+  --shell-gutter: 1rem;
+  --rail-gutter: 1rem;
+  --panel-inset: 1.25rem;
+  --block-inset: 0.75rem;
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-cyan);
-  outline-offset: 2px;
-}
-
-.panel {
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
-}
-
-.micro-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  line-height: 1.25;
-  text-transform: uppercase;
-}
-
-.field-label {
-  display: block;
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.control {
-  border: 1px solid var(--color-border-bright);
-  border-radius: 2px;
-  background: var(--color-ground);
-  color: var(--color-text);
-  min-height: 2.65rem;
-  padding: 0.62rem 0.75rem;
-}
-
-.control::placeholder {
-  color: color-mix(in srgb, var(--color-muted) 72%, transparent);
-}
-
-.control:hover {
-  border-color: color-mix(in srgb, var(--color-phosphor) 55%, var(--color-border));
-}
-
-.control[aria-invalid="true"] {
-  border-color: var(--color-danger);
-}
-
-.field-error {
-  margin-top: 0.45rem;
-  color: var(--color-danger);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-/* A way out of the state, not a verb of it: readable, and quieter than a button. */
-.link-quiet {
-  border-bottom: 1px solid color-mix(in srgb, var(--color-cyan) 30%, transparent);
-  color: color-mix(in srgb, var(--color-cyan) 85%, transparent);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-}
-
-.link-quiet:hover {
-  border-bottom-color: var(--color-cyan);
-  color: var(--color-cyan);
-}
-
-.button-primary,
-.button-attention,
-.button-secondary,
-.button-danger {
-  display: inline-flex;
-  min-height: 2.5rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid;
-  padding: 0.55rem 0.9rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.25;
-  text-transform: uppercase;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.button-primary {
-  border-color: var(--color-phosphor);
-  background: var(--color-phosphor);
-  color: var(--color-ground);
-}
-
-.button-primary:hover {
-  background: color-mix(in srgb, var(--color-phosphor) 82%, white);
-}
-
-/* The primary verb of a state that is waiting on the owner: same weight as
-   `.button-primary`, in the colour the rest of the screen uses for "your turn". */
-.button-attention {
-  border-color: var(--color-amber);
-  background: var(--color-amber);
-  color: var(--color-ground);
-}
-
-.button-attention:hover {
-  background: color-mix(in srgb, var(--color-amber) 82%, white);
-}
-
-.button-secondary {
-  border-color: var(--color-border-bright);
-  background: var(--color-elevated);
-  color: var(--color-text);
-}
-
-.button-secondary:hover {
-  border-color: var(--color-phosphor);
-  color: var(--color-phosphor);
-}
-
-.button-danger {
-  border-color: color-mix(in srgb, var(--color-danger) 70%, var(--color-border));
-  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-ground));
-  color: var(--color-danger);
-}
-
-.button-danger:hover {
-  background: color-mix(in srgb, var(--color-danger) 20%, var(--color-ground));
-}
-
-.button-primary:disabled,
-.button-attention:disabled,
-.button-secondary:disabled,
-.button-danger:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.button-ghost {
-  display: inline-flex;
-  min-height: 2.1rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  padding: 0.35rem 0.7rem;
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.25;
-  text-transform: uppercase;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.button-ghost:hover {
-  border-color: var(--color-border-bright);
-  color: var(--color-text);
-}
-
-.button-ghost:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-/* Scroll panes inside the page (thread, rail) — visible, but not furniture. */
-.scroll-thin {
-  scrollbar-color: var(--color-border-bright) transparent;
-  scrollbar-width: thin;
-}
-
-.scroll-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.scroll-thin::-webkit-scrollbar-thumb {
-  background: var(--color-border-bright);
-}
-
-.attention-pulse {
-  animation: attention-border 2.8s ease-in-out infinite;
-}
-
-/* Live markers breathe instead of blinking: the eye finds them without being pulled to them. */
-.dot-live {
-  animation: dot-breath 1.8s ease-in-out infinite;
-}
-
-@keyframes dot-breath {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
+@media (min-width: 640px) {
+  :root {
+    --shell-gutter: 1.5rem;
+    --panel-inset: 1.5rem;
   }
 }
 
-@keyframes attention-border {
-  0%,
-  100% {
-    border-color: color-mix(in srgb, var(--color-amber) 42%, var(--color-border));
-  }
-  50% {
-    border-color: color-mix(in srgb, var(--color-amber) 86%, var(--color-border));
+@media (min-width: 1280px) {
+  :root {
+    --shell-gutter: 2rem;
   }
 }
 
-.artifact-document {
-  color: var(--color-text);
-  font-size: 0.95rem;
-  line-height: 1.75;
+/* In `base`, and that matters: `font: inherit` on a bare `button` outside every
+   layer outranks `.button-primary` inside one, and resets the face and the size
+   the class had just set. Everything the app dresses an element in belongs in a
+   layer under the one that dresses it. */
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button,
+  a,
+  summary,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-info);
+    outline-offset: 2px;
+  }
+
+  /* A field being typed into already says so — it has the caret, and its own
+     frame answers. The ring the rest of the app needs for keyboard focus reads
+     as an error box drawn around a textarea, and it fires on a plain click. */
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
 }
 
-/* The block's own padding owns its edges. Leaving the last child's margin
-   standing is what made a one-line balloon sit low in its own bubble. */
-.artifact-document > :first-child {
-  margin-top: 0;
-}
+/* ── The parts ─────────────────────────────────────────────────────────────
+   In Tailwind's `components` layer, and that placement is load-bearing: layered
+   rules lose to unlayered ones no matter how specific either is, so a class
+   defined outside every layer quietly beat every utility a caller wrote beside
+   it. `panel border-danger/35` drew a plain border. `chip py-2` kept the chip's
+   own. `subpanel bg-danger/10` came out grey. Inside the layer, a utility
+   written next to one of these means what it says. */
+@layer components {
+  .shell-main {
+    padding: var(--shell-gutter);
+  }
 
-.artifact-document > :last-child {
-  margin-bottom: 0;
-}
+  /* The task screen is a column that ends where the viewport does, so its
+     thread and its rail scroll inside it rather than the page scrolling under
+     them. */
+  @media (min-width: 1280px) {
+    .shell-column {
+      height: calc(100vh - 2 * var(--shell-gutter));
+    }
+  }
 
-.artifact-document h1,
-.artifact-document h2,
-.artifact-document h3 {
-  margin-top: 1.8em;
-  margin-bottom: 0.65em;
-  color: var(--color-text);
-  font-weight: 650;
-  line-height: 1.25;
-}
+  /* A panel carries its own inset. Six call sites each choosing one is how a
+     settings page ended up with four different left edges down one column. */
+  .panel {
+    border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    padding: var(--panel-inset);
+  }
 
-.artifact-document h1 {
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 0.45em;
-  font-size: 1.75rem;
-}
+  /* For the panels whose contents run to the frame: a scrolling document, a list
+     whose rows are the full width. */
+  .panel-flush {
+    padding: 0;
+  }
 
-.artifact-document h2 {
-  font-size: 1.35rem;
-}
+  /* Below `.panel-flush` deliberately. Both set `padding`, both are one class
+     deep, so whichever is written last in this file wins — and a rail set in a
+     panel says `panel panel-flush rail-inset`, meaning the rail's gutter. Above
+     it, the flush rule zeroed the inset and the list ran into its own border. */
+  .rail-inset {
+    padding: var(--rail-gutter);
+  }
 
-.artifact-document h3 {
-  color: var(--color-phosphor);
-  font-size: 1.1rem;
-}
+  /* A row reaches past the gutter, so its hover box has edges to show; its text
+     starts on the gutter, so every line down the column begins on one edge. */
+  .rail-row {
+    margin-inline: calc(var(--rail-gutter) / -2);
+    padding-inline: calc(var(--rail-gutter) / 2);
+  }
 
-.artifact-document p,
-.artifact-document ul,
-.artifact-document ol,
-.artifact-document blockquote,
-.artifact-document pre,
-.artifact-document table {
-  margin: 1em 0;
-}
+  /* One step in from a panel — a waiver, a repository, a question. Not `.block`:
+     that is Tailwind's own display utility, and taking the name painted a
+     background on every element in the app that asked to be a block. */
+  .subpanel {
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--color-text) 3.5%, transparent);
+    padding: var(--block-inset);
+  }
 
-.artifact-document ul,
-.artifact-document ol {
-  padding-left: 1.5rem;
-}
+  .micro-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
 
-.artifact-document ul {
-  list-style: square;
-}
+  .field-label {
+    display: block;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
 
-.artifact-document ol {
-  list-style: decimal;
-}
+  /* The same height as the buttons it stands next to. A field 0.25rem taller than
+     the Save beside it is a row that never quite lines up. */
+  .control {
+    border: 1px solid var(--color-border-bright);
+    border-radius: 0.5rem;
+    background: var(--color-ground);
+    color: var(--color-text);
+    min-height: 2.4rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
 
-.artifact-document a {
-  color: var(--color-cyan);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
+  /* The browser draws its own arrow inside the box and tells nobody how wide it
+     is. Without the room, the arrow sat on the last two glyphs of the value —
+     which is how `claude-sonnet-5` came to read as `claude-sonnet-!`. */
+  select.control {
+    padding-right: 1.75rem;
+    text-overflow: ellipsis;
+  }
 
-.artifact-document code {
-  border: 1px solid var(--color-border);
-  background: var(--color-ground);
-  padding: 0.12em 0.35em;
-  color: var(--color-phosphor);
-  font-family: var(--font-mono);
-  font-size: 0.88em;
-}
+  .control::placeholder {
+    color: var(--color-muted);
+  }
 
-.artifact-document pre {
-  max-width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--color-border);
-  background: var(--color-ground);
-  padding: 1rem;
-}
+  .control:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  }
 
-.artifact-document pre code {
-  border: 0;
-  padding: 0;
-}
+  .control:focus {
+    border-color: color-mix(in srgb, var(--color-accent) 62%, var(--color-border-bright));
+  }
 
-.artifact-document blockquote {
-  border-left: 2px solid var(--color-amber);
-  padding-left: 1rem;
-  color: var(--color-muted);
-}
+  .control[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
 
-.artifact-document table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-}
+  .field-error {
+    margin-top: 0.45rem;
+    color: var(--color-danger);
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
 
-.artifact-document th,
-.artifact-document td {
-  border: 1px solid var(--color-border);
-  padding: 0.5rem 0.7rem;
-  text-align: left;
-}
+  /* A way out of the state, not a verb of it: readable, and quieter than a button. */
+  .link-quiet {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
+    color: var(--color-info);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+  }
 
-.artifact-document th {
-  background: var(--color-elevated);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-}
+  .link-quiet:hover {
+    border-bottom-color: var(--color-info);
+    color: var(--color-info);
+  }
 
-.diff-document {
-  overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  line-height: 1.6;
-}
+  /* ── Buttons ───────────────────────────────────────────────────────────────
+     Five weights and nothing else: the verb that acts, the same verb when the
+     task is waiting on this click, the one that undoes, the alternative, and the
+     quiet one. All mono, all sentence case — uppercase on every control left the
+     screen with no way to tell a heading from a button. */
+  .button-primary,
+  .button-attention,
+  .button-danger,
+  .button-secondary {
+    display: inline-flex;
+    min-height: 2.4rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.95rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.25;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+  }
 
-.diff-line {
-  white-space: pre;
-  padding: 0 1.25rem;
-}
+  .button-primary {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+  }
 
-.diff-line-add {
-  background: color-mix(in srgb, var(--color-phosphor) 12%, transparent);
-  color: var(--color-phosphor);
-}
+  .button-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-accent) 84%, var(--color-hover-tint));
+  }
 
-.diff-line-remove {
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
-  color: var(--color-danger);
-}
+  /* A state waiting on the owner wears the colour the rest of the screen uses
+     for "your turn" — never the red of the thing that went wrong. */
+  .button-attention {
+    background: var(--color-attention);
+    color: var(--color-on-attention);
+  }
 
-.diff-line-hunk {
-  margin-top: 0.5rem;
-  color: var(--color-cyan);
-}
+  .button-attention:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-attention) 84%, var(--color-hover-tint));
+  }
 
-.diff-line-meta {
-  color: var(--color-muted);
-}
+  .button-danger {
+    background: var(--color-danger);
+    color: var(--color-on-accent);
+  }
 
-.diff-line-context {
-  color: var(--color-text);
-}
+  .button-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-danger) 84%, var(--color-hover-tint));
+  }
+
+  .button-secondary {
+    border-color: color-mix(in srgb, var(--color-border-bright) 70%, transparent);
+    background: color-mix(in srgb, var(--color-text) 4%, transparent);
+    color: var(--color-text);
+  }
+
+  .button-secondary:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+    color: var(--color-accent);
+  }
+
+  /* No frame until you point at it: a hover border on every quiet control is
+     what made a row of them read as a toolbar. */
+  .button-ghost {
+    display: inline-flex;
+    min-height: 1.95rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 0.5rem;
+    padding: 0.3rem 0.65rem;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .button-ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-text) 7%, transparent);
+    color: var(--color-text);
+  }
+
+  .button-ghost-danger {
+    color: var(--color-danger);
+  }
+
+  .button-ghost-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    color: var(--color-danger);
+  }
+
+  /* Something to pick: an offered answer, a document on the step's shelf. */
+  .chip {
+    display: inline-flex;
+    min-height: 2rem;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid color-mix(in srgb, var(--color-border-bright) 55%, transparent);
+    border-radius: 0.625rem;
+    background: color-mix(in srgb, var(--color-text) 3%, transparent);
+    padding: 0.35rem 0.75rem;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.73rem;
+    line-height: 1.35;
+    text-align: left;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .chip:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  }
+
+  .chip[aria-expanded="true"] {
+    border-color: color-mix(in srgb, var(--color-info) 50%, transparent);
+    background: color-mix(in srgb, var(--color-info) 9%, transparent);
+  }
+
+  /* One of a set, chosen. */
+  .chip[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+  }
+
+  .button-primary:disabled,
+  .button-attention:disabled,
+  .button-danger:disabled,
+  .button-secondary:disabled,
+  .button-ghost:disabled,
+  .chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+  }
+
+  /* A tone worn as a word rather than a control: a status, a size, a gap.
+
+     The pill is cut into the page rather than laid over it. A wash of the tone
+     composited on the panel moves the background *toward* the word written on it,
+     which in a dark theme is the wrong direction — it is what left a stopped
+     badge at 3.3:1. Mixing the same tone into the ground keeps the pill darker
+     than the surface it sits on, and the word keeps its colour. */
+  .badge {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--badge-tone) 8%, var(--color-ground));
+    padding: 0.15rem 0.6rem;
+    color: var(--badge-tone);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.45;
+  }
+
+  .badge-active {
+    --badge-tone: var(--color-status-active);
+  }
+
+  .badge-parked {
+    --badge-tone: var(--color-status-parked);
+  }
+
+  .badge-failed {
+    --badge-tone: var(--color-status-failed);
+  }
+
+  .badge-done {
+    --badge-tone: var(--color-status-done);
+  }
+
+  .badge-muted {
+    --badge-tone: var(--color-muted);
+  }
+
+  .badge-warning {
+    --badge-tone: var(--color-attention);
+  }
+
+  /* ── The console ───────────────────────────────────────────────────────────
+     Where the owner speaks. It wears the material and the corner of the balloon
+     their words become in the thread, so sending reads as one thing moving
+     rather than two widgets exchanging text.
+
+     Depth carries what a frame used to carry, and the state's colour appears in
+     two places only — the mark that opens the block, and the button that acts.
+     The rail down the left side said the same thing a third time. */
+  .console {
+    --console-tone: var(--color-accent);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    background: var(--color-elevated);
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .console:focus-within {
+    border-color: color-mix(in srgb, var(--console-tone) 22%, var(--color-border));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--console-tone) 6%, transparent);
+  }
+
+  .console-asking {
+    --console-tone: var(--color-attention);
+  }
+
+  .console-stopped {
+    --console-tone: var(--color-danger);
+  }
+
+  .console-spent {
+    --console-tone: var(--color-muted);
+  }
+
+  /* The thread has no floor. Its last lines dissolve into the console rather
+     than stopping at a rule: reading and writing are one column. */
+  .console-dock {
+    position: relative;
+  }
+
+  /* Shorter than the padding the thread reserves under its last line, so the
+     fade lands on empty space. At 2rem against no reserve it was washing out
+     the bottom half of whatever line the record ended on. */
+  .console-dock::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    left: 0;
+    height: 1.5rem;
+    background: linear-gradient(to top, var(--color-ground), transparent);
+    pointer-events: none;
+  }
+
+  .console-field {
+    display: block;
+    width: 100%;
+    min-height: 2.4rem;
+    max-height: 38vh;
+    overflow-y: auto;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--color-text);
+    font-size: 0.9rem;
+    line-height: 1.65;
+    /* Its height is what is in it. A fixed box with a drag handle in the corner
+       is furniture, and nobody drags it. */
+    resize: none;
+  }
+
+  .console-field::placeholder {
+    color: var(--color-muted);
+  }
+
+  .console-field:disabled {
+    cursor: not-allowed;
+    color: var(--color-muted);
+  }
+
+  /* Something the console opens over itself — a rework target, a confirmation. */
+  .console-popover {
+    border: 1px solid var(--color-border-bright);
+    border-radius: 0.75rem;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+
+  /* Scroll panes inside the page (thread, rail) — visible, but not furniture. */
+  .scroll-thin {
+    scrollbar-color: var(--color-border-bright) transparent;
+    scrollbar-width: thin;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--color-border-bright);
+  }
+
+  /* A ring rather than a border, so a row that carries no frame can still ask. */
+  .attention-pulse {
+    animation: attention-ring 2.8s ease-in-out infinite;
+  }
+
+  /* Live markers breathe instead of blinking: the eye finds them without being pulled to them. */
+  .dot-live {
+    animation: dot-breath 1.8s ease-in-out infinite;
+  }
+
+  /* ── The mark as the connection light ──────────────────────────────────────
+     The three chevrons stepping out of the spec's brackets already ramp from
+     faint to solid, which is the shape of a signal. So the mark carries the state
+     of the event stream: reaching, and reached. It is the only place in the app
+     that says so, which is why the word travels with it rather than sitting in
+     the corner of whatever screen happens to be open. */
+  .mark-reach path {
+    animation: mark-reach 1.5s ease-in-out infinite;
+  }
+
+  .mark-reach path:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  .mark-reach path:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+
+  @keyframes mark-reach {
+    0%,
+    70%,
+    100% {
+      opacity: 0.16;
+    }
+    22% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes dot-breath {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  @keyframes attention-ring {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-attention) 22%, transparent);
+    }
+    50% {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-attention) 65%, transparent);
+    }
+  }
+
+  .artifact-document {
+    color: var(--color-text);
+    font-size: 0.95rem;
+    line-height: 1.75;
+  }
+
+  /* The block's own padding owns its edges. Leaving the last child's margin
+     standing is what made a one-line balloon sit low in its own bubble. */
+  .artifact-document > :first-child {
+    margin-top: 0;
+  }
+
+  .artifact-document > :last-child {
+    margin-bottom: 0;
+  }
+
+  .artifact-document h1,
+  .artifact-document h2,
+  .artifact-document h3 {
+    margin-top: 1.8em;
+    margin-bottom: 0.65em;
+    color: var(--color-text);
+    font-weight: 650;
+    line-height: 1.25;
+  }
+
+  .artifact-document h1 {
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.45em;
+    font-size: 1.75rem;
+  }
+
+  .artifact-document h2 {
+    font-size: 1.35rem;
+  }
+
+  .artifact-document h3 {
+    color: var(--color-accent);
+    font-size: 1.1rem;
+  }
+
+  .artifact-document p,
+  .artifact-document ul,
+  .artifact-document ol,
+  .artifact-document blockquote,
+  .artifact-document pre,
+  .artifact-document table {
+    margin: 1em 0;
+  }
+
+  .artifact-document ul,
+  .artifact-document ol {
+    padding-left: 1.5rem;
+  }
+
+  .artifact-document ul {
+    list-style: square;
+  }
+
+  .artifact-document ol {
+    list-style: decimal;
+  }
+
+  .artifact-document a {
+    color: var(--color-info);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .artifact-document code {
+    border: 1px solid var(--color-border);
+    background: var(--color-ground);
+    padding: 0.12em 0.35em;
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+  }
+
+  .artifact-document pre {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    background: var(--color-ground);
+    padding: 1rem;
+  }
+
+  .artifact-document pre code {
+    border: 0;
+    padding: 0;
+  }
+
+  .artifact-document blockquote {
+    border-left: 2px solid var(--color-attention);
+    padding-left: 1rem;
+    color: var(--color-muted);
+  }
+
+  .artifact-document table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .artifact-document th,
+  .artifact-document td {
+    border: 1px solid var(--color-border);
+    padding: 0.5rem 0.7rem;
+    text-align: left;
+  }
+
+  .artifact-document th {
+    background: var(--color-elevated);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .diff-document {
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .diff-line {
+    white-space: pre;
+    padding: 0 1.25rem;
+  }
+
+  /* A line added is green and a line removed is red under every theme — the
+     accent is the theme's, and in half of them it is not green. The tint is mixed
+     into the ground rather than washed over the page for the reason a badge is:
+     a wash walks the background toward the text sitting on it. */
+  .diff-line-add {
+    background: color-mix(in srgb, var(--color-success) 9%, var(--color-ground));
+    color: var(--color-success);
+  }
+
+  .diff-line-remove {
+    background: color-mix(in srgb, var(--color-danger) 9%, var(--color-ground));
+    color: var(--color-danger);
+  }
+
+  .diff-line-hunk {
+    margin-top: 0.5rem;
+    color: var(--color-info);
+  }
+
+  .diff-line-meta {
+    color: var(--color-muted);
+  }
+
+  .diff-line-context {
+    color: var(--color-text);
+  }
+} /* @layer components */
 
 @media (prefers-reduced-motion: reduce) {
   *,

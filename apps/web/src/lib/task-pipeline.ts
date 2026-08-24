@@ -1,6 +1,6 @@
 import { isTerminal, type ModelBinding, type TaskState } from '@specmate/core'
 import type { TaskDetail } from './api-client.ts'
-import { nodeLabel } from './task-thread.ts'
+import { nodeLabel, stageDuration } from './task-thread.ts'
 
 type Stage = TaskDetail['stages'][number]
 type ModelBindings = TaskDetail['task']['modelBindings']
@@ -131,36 +131,53 @@ function nodeState(input: {
   return passed ? 'done' : 'pending'
 }
 
-/**
- * Folds the per-role model table into the pipeline: one baseline for the whole
- * run, and a value on the individual node only where it departs from it. A
- * task left on its defaults says so once instead of nine times; an override is
- * visible exactly where it takes effect.
- */
-export function bindingBaseline(nodes: readonly PipelineNodeView[]): ModelBinding | null {
-  const counts = new Map<string, { binding: ModelBinding; count: number }>()
-  for (const node of nodes) {
-    if (!node.binding) continue
-    const key = `${node.binding.model}/${node.binding.reasoningEffort}`
-    const entry = counts.get(key) ?? { binding: node.binding, count: 0 }
-    counts.set(key, { binding: entry.binding, count: entry.count + 1 })
-  }
-
-  const ranked = [...counts.values()].sort((left, right) => right.count - left.count)
-
-  return ranked[0]?.binding ?? null
-}
-
-export function isBaselineBinding(
-  binding: ModelBinding | null,
-  baseline: ModelBinding | null,
-): boolean {
-  if (!binding || !baseline) return true
-
-  return binding.model === baseline.model && binding.reasoningEffort === baseline.reasoningEffort
-}
-
 /** `claude-haiku-4-5-20251001` is a release id, not a name the owner reads at a glance. */
 export function shortModel(model: string): string {
   return model.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+}
+
+/**
+ * What the node has cost so far, over every attempt at it rather than the last
+ * one. A stage that failed twice before it held spent three runs' worth of
+ * tokens, and the number the owner is checking against the budget is the sum.
+ */
+export interface NodeSpend {
+  readonly attempts: number
+  /** Null until an attempt has started; counts up while one is running. */
+  readonly durationMs: number | null
+  /** The CLI's own usage keys, added across attempts. Null when none reported any. */
+  readonly tokens: Readonly<Record<string, number>> | null
+  readonly tokenTotal: number | null
+  readonly costUsd: number | null
+  /** What actually answered, which is not always what the role is bound to. */
+  readonly model: string | null
+}
+
+export function nodeSpend(node: PipelineNodeView, now = Date.now()): NodeSpend {
+  const tokens: Record<string, number> = {}
+  let durationMs: number | null = null
+  let costUsd: number | null = null
+
+  for (const run of node.runs) {
+    const elapsed = stageDuration(run, now)
+    if (elapsed !== null) durationMs = (durationMs ?? 0) + elapsed
+
+    const cost = run.telemetry?.costUsd
+    if (typeof cost === 'number') costUsd = (costUsd ?? 0) + cost
+
+    for (const [key, value] of Object.entries(run.telemetry?.tokens ?? {})) {
+      tokens[key] = (tokens[key] ?? 0) + value
+    }
+  }
+
+  const counted = Object.values(tokens)
+
+  return {
+    attempts: node.runs.length,
+    durationMs,
+    tokens: counted.length > 0 ? tokens : null,
+    tokenTotal: counted.length > 0 ? counted.reduce((total, value) => total + value, 0) : null,
+    costUsd,
+    model: node.latest?.telemetry?.model ?? node.binding?.model ?? null,
+  }
 }

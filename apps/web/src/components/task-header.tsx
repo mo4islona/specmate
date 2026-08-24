@@ -2,23 +2,17 @@ import type { ReactNode } from 'react'
 import type { StateTone, TaskStateSentence } from '../lib/task-state.ts'
 
 const TONE_TEXT: Record<StateTone, string> = {
-  running: 'text-phosphor',
-  attention: 'text-amber',
+  running: 'text-accent',
+  attention: 'text-attention',
   stopped: 'text-danger',
   done: 'text-muted',
 }
 
 const TONE_DOT: Record<StateTone, string> = {
-  running: 'bg-phosphor dot-live',
-  attention: 'bg-amber dot-live',
+  running: 'bg-accent dot-live',
+  attention: 'bg-attention dot-live',
   stopped: 'bg-danger',
   done: 'bg-muted',
-}
-
-const STREAM_DOT: Record<string, string> = {
-  live: 'bg-phosphor',
-  connecting: 'bg-amber',
-  stale: 'bg-danger',
 }
 
 interface TaskHeaderProps {
@@ -26,19 +20,19 @@ interface TaskHeaderProps {
   readonly state: TaskStateSentence
   /** What qualifies the state and nothing else — the harness gap, the plan size. */
   readonly badges?: ReactNode
-  readonly connection: string
 }
 
 /**
- * One row. The state reads as a sentence because `BLOCKED` and
- * `HARNESS GAP: PARTIAL` were chips that had to be decoded; the trailing dot is
- * labelled because a task waiting on the owner is amber while its event stream
- * is perfectly healthy, and the two must not read as one claim.
+ * One row, about the task and nothing else. The event stream used to report
+ * here too, and it was the wrong header for it twice over: the state of the
+ * connection is not the state of the work, and a `reconnecting` appearing in
+ * the corner pushed the repository onto a second line every time the stream
+ * blinked. The shell's mark carries it now.
  */
-export function TaskHeader({ title, state, badges, connection }: TaskHeaderProps) {
+export function TaskHeader({ title, state, badges }: TaskHeaderProps) {
   return (
     <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-      <h1 className="min-w-0 shrink-0 break-words text-lg font-semibold tracking-tight">{title}</h1>
+      <h1 className="min-w-0 break-words text-lg font-semibold tracking-tight">{title}</h1>
 
       <p className={`flex min-w-0 items-baseline gap-1.5 text-[0.82rem] ${TONE_TEXT[state.tone]}`}>
         <span
@@ -52,17 +46,6 @@ export function TaskHeader({ title, state, badges, connection }: TaskHeaderProps
       </p>
 
       {badges}
-
-      <span
-        className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-widest text-muted"
-        title={`event stream ${connection}`}
-      >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${STREAM_DOT[connection] ?? 'bg-muted'}`}
-          aria-hidden="true"
-        />
-        stream
-      </span>
     </header>
   )
 }

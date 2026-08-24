@@ -22,9 +22,9 @@ export function ArtifactReader({ taskId, artifactId, onClose }: ArtifactReaderPr
   })
 
   return (
-    <section className="flex min-h-0 flex-col border border-border">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
-        <p className="min-w-0 flex-1 truncate font-mono text-[0.7rem] text-cyan">
+    <section className="panel panel-flush flex min-h-0 flex-col overflow-hidden">
+      <header className="flex shrink-0 items-center gap-3 bg-elevated/55 px-3.5 py-2">
+        <p className="min-w-0 flex-1 truncate font-mono text-[0.7rem] text-info">
           {artifact.data?.artifact.path ?? 'Loading…'}
         </p>
         {artifact.data && (
@@ -37,7 +37,7 @@ export function ArtifactReader({ taskId, artifactId, onClose }: ArtifactReaderPr
         </button>
       </header>
 
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         {artifact.isPending && <p className="font-mono text-xs text-muted">Loading document…</p>}
         {artifact.isError && (
           <p className="field-error">Artifact unavailable: {artifact.error.message}</p>

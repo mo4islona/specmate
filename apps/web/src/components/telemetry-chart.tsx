@@ -31,50 +31,71 @@ export interface TelemetryAttempt {
 const CHART_START = Date.UTC(2026, 0, 1)
 const CHART_STEP_MS = 60_000
 
+/**
+ * The canvas paints itself from the page's own palette, so a theme change moves
+ * both together. It watches the document rather than the theme context: the
+ * attribute is the truth either way, and the chart stays renderable anywhere.
+ */
 function useMissionControlChartTheme(): ChartTheme | null {
   const [theme, setTheme] = useState<ChartTheme | null>(null)
 
   useEffect(() => {
-    const styles = getComputedStyle(document.documentElement)
-    const token = (name: string) => styles.getPropertyValue(name).trim()
-    setTheme(
-      createTheme({
-        name: 'SpecMate mission control',
-        background: token('--color-surface'),
-        chartGradient: [token('--color-elevated'), token('--color-surface')],
-        typography: {
-          fontFamily: token('--font-mono'),
-          fontSize: 11,
-          axisFontSize: 10,
-          yFontSize: 10,
-          tooltipFontSize: 11,
-        },
-        grid: { color: token('--color-border'), style: 'dashed' },
-        line: {
-          color: token('--color-cyan'),
-          areaTopColor: token('--color-cyan'),
-          areaBottomColor: token('--color-surface'),
-        },
-        seriesColors: [
-          token('--color-phosphor'),
-          token('--color-amber'),
-          token('--color-cyan'),
-          token('--color-status-active'),
-        ],
-        crosshair: {
-          color: token('--color-phosphor'),
-          labelBackground: token('--color-elevated'),
-          labelTextColor: token('--color-text'),
-        },
-        axis: { textColor: token('--color-muted') },
-        tooltip: {
-          background: token('--color-elevated'),
-          textColor: token('--color-text'),
-          borderColor: token('--color-border-bright'),
-        },
-        fontUrl: null,
-      }).theme,
-    )
+    const root = document.documentElement
+
+    function readPalette(): void {
+      const styles = getComputedStyle(root)
+      const token = (name: string) => styles.getPropertyValue(name).trim()
+      setTheme(
+        createTheme({
+          name: 'SpecMate mission control',
+          background: token('--color-surface'),
+          chartGradient: [token('--color-elevated'), token('--color-surface')],
+          typography: {
+            fontFamily: token('--font-mono'),
+            fontSize: 11,
+            axisFontSize: 10,
+            yFontSize: 10,
+            tooltipFontSize: 11,
+          },
+          grid: { color: token('--color-border'), style: 'dashed' },
+          line: {
+            color: token('--color-info'),
+            areaTopColor: token('--color-info'),
+            areaBottomColor: token('--color-surface'),
+          },
+          seriesColors: [
+            token('--color-accent'),
+            token('--color-attention'),
+            token('--color-info'),
+            token('--color-success'),
+          ],
+          crosshair: {
+            color: token('--color-accent'),
+            labelBackground: token('--color-elevated'),
+            labelTextColor: token('--color-text'),
+          },
+          axis: { textColor: token('--color-muted') },
+          tooltip: {
+            background: token('--color-elevated'),
+            textColor: token('--color-text'),
+            borderColor: token('--color-border-bright'),
+          },
+          fontUrl: null,
+        }).theme,
+      )
+    }
+
+    readPalette()
+
+    // The canvas draws its own text, so it has to be told again once the
+    // theme's face has arrived — otherwise the chart keeps the fallback the
+    // page had for the first few hundred milliseconds.
+    document.fonts?.ready.then(readPalette)
+
+    const observer = new MutationObserver(readPalette)
+    observer.observe(root, { attributeFilter: ['data-theme'] })
+
+    return () => observer.disconnect()
   }, [])
 
   return theme
@@ -191,7 +212,7 @@ export function TelemetryChart({
   const absentCostCount = recorded.filter((attempt) => attempt.costUsd === null).length
 
   return (
-    <section className="border-t border-border p-4">
+    <section className="border-t border-border/60 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="micro-label text-muted">Budget trace by attempt</p>
         <p className="font-mono text-xs text-muted">
@@ -254,7 +275,7 @@ export function TelemetryChart({
                 />
               </ChartContainer>
             ) : (
-              <div className="grid h-72 place-items-center border border-border text-sm text-muted">
+              <div className="grid h-72 place-items-center rounded-xl bg-text/[0.035] text-sm text-muted">
                 Telemetry metadata exists, but no token or duration values were recorded.
               </div>
             )}
@@ -268,7 +289,7 @@ export function TelemetryChart({
                 : null
 
               return (
-                <li key={attempt.id} className="border border-border bg-ground/45 p-3">
+                <li key={attempt.id} className="rounded-xl bg-ground/45 p-3">
                   <p className="truncate text-text">{attempt.label}</p>
                   <p className="mt-1 text-muted">
                     {totalTokens === null
@@ -279,7 +300,7 @@ export function TelemetryChart({
                   <p className="mt-1 text-muted">
                     {attempt.costUsd === null ? 'cost absent' : `$${attempt.costUsd.toFixed(4)}`}
                   </p>
-                  <p className="mt-1 truncate text-cyan">{attempt.model ?? attempt.provider}</p>
+                  <p className="mt-1 truncate text-info">{attempt.model ?? attempt.provider}</p>
                 </li>
               )
             })}
@@ -288,7 +309,7 @@ export function TelemetryChart({
       )}
 
       {absent.length > 0 && (
-        <div className="mt-5 border-t border-border pt-4">
+        <div className="mt-5 border-t border-border/60 pt-4">
           <p className="micro-label text-muted">No telemetry</p>
           <p className="mt-2 font-mono text-xs leading-6 text-muted">
             {absent.map((stage) => `${stage.nodeKey}#${stage.attempt}`).join(' · ')}
