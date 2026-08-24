@@ -16,14 +16,14 @@ describe('harness badge', () => {
 
     expect(rendered).toContain('harness gap: partial')
     expect(rendered).toContain('data-harness-status="partial"')
-    expect(rendered).toContain('text-amber')
+    expect(rendered).toContain('badge-warning')
   })
 
   test('states a missing gap the same way as partial', () => {
     const rendered = renderToStaticMarkup(<HarnessBadge status="missing" />)
 
     expect(rendered).toContain('harness gap: missing')
-    expect(rendered).toContain('text-amber')
+    expect(rendered).toContain('badge-warning')
   })
 
   test('a waiver is visually distinct from an open, undecided gap — REQ-1405, AC-1416', () => {
@@ -31,6 +31,6 @@ describe('harness badge', () => {
 
     expect(rendered).toContain('harness: waived')
     expect(rendered).toContain('data-harness-status="waived"')
-    expect(rendered).not.toContain('text-amber')
+    expect(rendered).not.toContain('badge-warning')
   })
 })

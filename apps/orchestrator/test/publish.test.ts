@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { createDb, type Database, events, pullRequests, tasks } from '@specmate/db'
 import {
   Git,
@@ -45,6 +45,12 @@ describeDb('publish action', () => {
 
   beforeAll(() => {
     db = createDb(url)
+  })
+
+  // Ten connections handed back. A suite that keeps its pool is a suite the
+  // ones after it pay for, against a server that allows a hundred in total.
+  afterAll(async () => {
+    await db.$client.close()
   })
 
   afterEach(async () => {

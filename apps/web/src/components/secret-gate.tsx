@@ -28,8 +28,8 @@ export function SecretGate({ children }: SecretGateProps) {
 
   return (
     <main className="grid min-h-full place-items-center bg-ground p-5 text-text">
-      <section className="panel w-full max-w-md border-phosphor/35 p-6 sm:p-8">
-        <p className="micro-label text-phosphor">Owner channel</p>
+      <section className="panel w-full max-w-md border-accent/35">
+        <p className="micro-label text-accent">Owner channel</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Authenticate SpecMate</h1>
         <p className="mt-3 text-sm leading-6 text-muted">
           Enter the owner secret. It stays in this browser and is sent only in request headers.

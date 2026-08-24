@@ -26,10 +26,10 @@ describe('TaskNav (REQ-920)', () => {
     expect(screen.getByRole('link', { name: /files/i }).textContent).toBe('Files')
   })
 
-  test('the surface that is coming is drawn and marked unavailable, not omitted', () => {
+  test('every tab opens something — a placeholder is not a surface', () => {
     render(<TaskNav taskId="task-1" active="thread" fileCount={0} docCount={0} />)
 
-    expect(screen.getByText('Guide').closest('[aria-disabled]')).not.toBeNull()
-    expect(screen.queryByRole('link', { name: /guide/i })).toBeNull()
+    expect(screen.getAllByRole('link')).toHaveLength(3)
+    expect(screen.queryByText(/guide|soon/i)).toBeNull()
   })
 })

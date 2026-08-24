@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { isHumanGate, isTerminal, TASK_STATES, TERMINAL_STATES } from '../src/state.ts'
 
 // Transition legality is graph-derived and lives in pipeline.test.ts; what

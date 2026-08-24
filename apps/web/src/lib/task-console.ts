@@ -11,6 +11,7 @@ export type DestinationKind =
   | 'question'
   | 'gate'
   | 'restart'
+  | 'step-note'
   | 'running-node'
   | 'next-node'
   | 'nowhere'
@@ -19,8 +20,12 @@ export type DestinationKind =
 export type ConsoleTone = 'asking' | 'running' | 'stopped' | 'spent' | 'plain'
 
 export interface ConsoleHead {
-  /** What receives the text: a node, a gate, or plainly `nowhere`. */
-  readonly to: string
+  /**
+   * What receives the text: a node, a gate, or plainly `nowhere`. Null where
+   * that is the step the thread is already headed by — the console restating
+   * the node above it is the same fact a third time.
+   */
+  readonly to: string | null
   readonly note: string
 }
 
@@ -30,8 +35,6 @@ export interface ConsoleDestination {
   readonly nodeKey: string | null
   /** The input's own name, read by anyone who cannot see the layout. */
   readonly label: string
-  /** The sentence under the input: what receives the text, and when. */
-  readonly line: string
   /** Set when the state has no destination — the input is unavailable and says why. */
   readonly unavailable: string | null
   readonly tone: ConsoleTone
@@ -39,10 +42,11 @@ export interface ConsoleDestination {
   readonly submit: string
   readonly placeholder: string
   /**
-   * The destination stated above the input. Null while a question is open or a
-   * node is running: those states head the console with the question itself or
-   * say it in the footer, and a second copy above a footer that already states
-   * it is the duplication this pass removes.
+   * The destination stated above the input, and only where the state needs
+   * qualifying: a discussion the owner is inside, a cap that is spent, a stop
+   * whose work is already gone. Null while a question is open, or while the
+   * placeholder already names the node the text goes to — a sentence repeating
+   * the field beneath it is the line this pass deletes.
    */
   readonly head: ConsoleHead | null
 }
@@ -59,6 +63,41 @@ interface ConsoleInput {
   readonly spend: TaskDetail['spend']
   /** A discussion the owner opened from a question — not a mode they set. */
   readonly discussingDecision: DecisionItem | null
+  /**
+   * A step the owner pinned themselves, older than the one the task stands on
+   * (REQ-906). Typing while reading what a stage did is how a comment is pinned
+   * to that stage — there is no list of stages to choose from anywhere.
+   */
+  readonly readingStep?: { readonly nodeKey: string; readonly label: string } | null
+  /** The step the thread is headed by, whose name the console must not repeat. */
+  readonly stepKey?: string | null
+}
+
+function startedAt(stage: Stage): number {
+  return stage.startedAt ? new Date(stage.startedAt).getTime() : 0
+}
+
+/**
+ * The stop the task is still standing on, if it is standing on one.
+ *
+ * An interrupted stage keeps that status for the rest of the task's life, so
+ * the newest interrupted row is a fact about the past rather than the present:
+ * after a restart it is still there, and the console went on wearing the red
+ * edge and offering to restart a run that had already resumed. The server takes
+ * a restart only while the task is paused on that node (REQ-914) — the same
+ * pair is what makes a stop current here.
+ */
+export function parkedStop(
+  task: Pick<TaskDetail['task'], 'status' | 'resumeStatus'> | null,
+  stages: readonly Stage[],
+): Stage | null {
+  if (task?.status !== 'paused' || !task.resumeStatus) return null
+
+  const stopped = stages.filter(
+    (stage) => stage.status === 'interrupted' && stage.nodeKey === task.resumeStatus,
+  )
+
+  return stopped.sort((left, right) => startedAt(right) - startedAt(left))[0] ?? null
 }
 
 /** What the cap says it spent, in the unit the owner set it in. */
@@ -79,8 +118,20 @@ function spentNote(
  * owner never picks a destination, so this is the only thing standing between
  * what they type and where it lands — which is why it is here, testable, and
  * not spread through the screen's JSX.
+ *
+ * What it says about that destination is trimmed against what the screen has
+ * already said: the step's header names the node, so the console names only
+ * what the header does not — the qualifier, the loss, the cap.
  */
-export function consoleDestination({
+export function consoleDestination(input: ConsoleInput): ConsoleDestination {
+  const destination = destinationFor(input)
+  const repeatsStep = destination.nodeKey !== null && destination.nodeKey === input.stepKey
+  if (!repeatsStep || !destination.head) return destination
+
+  return { ...destination, head: { ...destination.head, to: null } }
+}
+
+function destinationFor({
   task,
   stages,
   nodes,
@@ -90,6 +141,7 @@ export function consoleDestination({
   interruptedStage,
   spend,
   discussingDecision,
+  readingStep = null,
 }: ConsoleInput): ConsoleDestination {
   // Opening a question's discussion is not a mode: the owner acted on a
   // specific question, and the input follows what they opened. Closing the
@@ -99,7 +151,6 @@ export function consoleDestination({
       kind: 'discussion',
       nodeKey: discussingDecision.nodeKey ?? null,
       label: 'Question for the guide',
-      line: 'Asking the guide about this question',
       unavailable: null,
       tone: 'plain',
       submit: 'Ask',
@@ -113,7 +164,6 @@ export function consoleDestination({
       kind: 'nowhere',
       nodeKey: null,
       label: 'Note on the record',
-      line: 'This task is finished. Nothing will read a new message.',
       unavailable: 'The task is finished.',
       tone: 'spent',
       submit: 'Send',
@@ -122,16 +172,12 @@ export function consoleDestination({
     }
   }
 
-  const [question, ...rest] = openDecisions
+  const [question] = openDecisions
   if (question) {
-    const after = rest.length
-    const target = question.nodeKey ? nodeLabel(question.nodeKey) : 'the task'
-
     return {
       kind: 'question',
       nodeKey: question.nodeKey ?? null,
       label: 'Your answer',
-      line: `Unblocks ${target}${after > 0 ? ` · ${after} question${after > 1 ? 's' : ''} after this one` : ''}`,
       unavailable: null,
       tone: 'asking',
       submit: 'Answer',
@@ -147,12 +193,14 @@ export function consoleDestination({
       kind: 'gate',
       nodeKey: gateKey,
       label: 'Gate comment',
-      line: redirect ? `${left} of ${redirect.limit} redirects left` : '',
       unavailable: null,
       tone: 'asking',
       submit: 'Approve',
       placeholder: 'Say why, if it needs saying…',
-      head: { to: nodeLabel(gateKey), note: 'your call' },
+      head: {
+        to: nodeLabel(gateKey),
+        note: redirect ? `${left} of ${redirect.limit} redirects left` : 'your call',
+      },
     }
   }
 
@@ -164,16 +212,15 @@ export function consoleDestination({
       kind: 'restart',
       nodeKey: interruptedStage.nodeKey,
       label: 'Guidance for the restart',
-      // REQ-914 wants the loss stated plainly, and this is the moment it is
-      // about to happen — not a panel the owner has to open to find it.
-      line: `Carried into the restart as guidance · ${node}'s uncommitted work is already gone`,
       unavailable: null,
       tone: 'stopped',
       submit: 'Restart',
       placeholder: 'What should it do differently this time…',
+      // REQ-914 wants the loss stated plainly, and this is the moment it is
+      // about to happen — not a panel the owner has to open to find it.
       head: {
         to: node,
-        note: attempts > 1 ? `stopped after ${attempts} attempts` : 'stopped mid-run',
+        note: `${attempts > 1 ? `stopped after ${attempts} attempts` : 'stopped mid-run'} · uncommitted work is already gone`,
       },
     }
   }
@@ -184,12 +231,27 @@ export function consoleDestination({
       kind: 'nowhere',
       nodeKey: null,
       label: 'Note on the record',
-      line: 'Nothing will run until the cap moves',
       unavailable: 'The budget is spent.',
       tone: 'spent',
       submit: 'Send',
       placeholder: 'Raise the cap to send anything',
       head: { to: 'nowhere', note: spentNote(spend, task.budgets, spent) },
+    }
+  }
+
+  // Nothing is being asked of the owner and they have gone back to read an
+  // older step: the text is about what they are reading. It is stored against
+  // that stage as commentary — no run will read it, and saying so is the point.
+  if (readingStep) {
+    return {
+      kind: 'step-note',
+      nodeKey: readingStep.nodeKey,
+      label: `Note on ${readingStep.label.toLowerCase()}`,
+      unavailable: null,
+      tone: 'plain',
+      submit: 'Note',
+      placeholder: `Note what ${readingStep.label} did…`,
+      head: { to: readingStep.label, note: 'pinned to this run · no run reads it' },
     }
   }
 
@@ -201,8 +263,6 @@ export function consoleDestination({
       kind: 'running-node',
       nodeKey: running.nodeKey,
       label: `Message to ${node.toLowerCase()}`,
-      // A stage seals its prompt at dispatch, so this is the honest tense.
-      line: `Picked up by ${node} on its next run`,
       unavailable: null,
       tone: 'running',
       submit: 'Send',
@@ -217,7 +277,6 @@ export function consoleDestination({
       kind: 'next-node',
       nodeKey: next.key,
       label: `Message to ${next.label.toLowerCase()}`,
-      line: `Picked up by ${next.label} when it starts · nothing runs now`,
       unavailable: null,
       tone: 'plain',
       submit: 'Send',
@@ -230,7 +289,6 @@ export function consoleDestination({
     kind: 'nowhere',
     nodeKey: null,
     label: 'Note on the record',
-    line: 'No stage is left to read this.',
     unavailable: 'Nothing is left to run.',
     tone: 'spent',
     submit: 'Send',

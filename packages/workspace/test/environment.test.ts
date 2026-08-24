@@ -26,6 +26,10 @@ describeDb('workspace execution environment', () => {
       await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
     }
     await cleanupTempDirs()
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   test('pins once at provision and records an explicit re-pin', async () => {

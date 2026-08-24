@@ -21,14 +21,12 @@ function node(overrides: Partial<PipelineNodeView> = {}): PipelineNodeView {
 }
 
 const props = {
-  baseline: null,
-  repoUrl: 'https://github.com/owner/repo',
   selectedKey: null,
   onSelect: () => {},
 }
 
 describe('PipelineRail (REQ-914)', () => {
-  test('nodes that have not run fold into one line naming how many', () => {
+  test('every node of the walk is listed, but only the ones with a step to read open', () => {
     render(
       <PipelineRail
         {...props}
@@ -43,11 +41,57 @@ describe('PipelineRail (REQ-914)', () => {
       />,
     )
 
+    expect(screen.getAllByRole('listitem')).toHaveLength(6)
+    expect(screen.getByText('Verify')).not.toBeNull()
+    expect(screen.queryByText(/more/)).toBeNull()
+    // A node with no runs has no step; offering to open one opens an empty room.
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.getByText(/Research, Spec review, Spec gate, \+2 more/)).not.toBeNull()
   })
 
-  test('a stopped node keeps its place and states the reason', () => {
+  test('the state is a mark beside the name, not a word in the column that costs', () => {
+    render(
+      <PipelineRail
+        {...props}
+        nodes={[
+          node({ key: 'human_kickoff_gate', label: 'Kickoff gate', kind: 'gate', state: 'done' }),
+          node({ key: 'specify', label: 'Specify', state: 'stopped', reason: 'stopped' }),
+        ]}
+      />,
+    )
+
+    expect(screen.queryByText('passed')).toBeNull()
+    // The word survives only for a screen reader, which cannot see the mark.
+    expect(screen.getByText('stopped').className).toContain('sr-only')
+    expect(screen.getByTitle('done')).not.toBeNull()
+    expect(screen.getByTitle('stopped')).not.toBeNull()
+  })
+
+  test('a row carries the node’s name and one fact, never a model or a commit', () => {
+    render(
+      <PipelineRail
+        {...props}
+        nodes={[
+          node({
+            key: 'planning',
+            label: 'Planning',
+            state: 'done',
+            binding: { model: 'claude-opus-5', reasoningEffort: 'max' },
+            latest: {
+              startedAt: '2026-08-16T10:00:00.000Z',
+              finishedAt: '2026-08-16T10:07:06.000Z',
+              acceptedCommit: 'fd07a5612ab',
+            },
+          } as Partial<PipelineNodeView>),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('7m 6s')).not.toBeNull()
+    expect(screen.queryByText(/opus-5/)).toBeNull()
+    expect(screen.queryByText(/fd07a56/)).toBeNull()
+  })
+
+  test('a stop with more to say than the mark keeps its reason', () => {
     render(
       <PipelineRail
         {...props}

@@ -36,9 +36,9 @@ export function DefaultRepositorySection() {
   }
 
   return (
-    <section className="panel space-y-5 p-5 sm:p-7">
+    <section className="panel space-y-5">
       <div>
-        <p className="micro-label text-cyan">Launch defaults</p>
+        <p className="micro-label text-info">Launch defaults</p>
         <h2 className="mt-2 text-lg font-semibold">Default repository</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
           Where a task goes when its request names no repository. A request that names one — by URL

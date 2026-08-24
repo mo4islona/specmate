@@ -31,22 +31,27 @@ export function ListDetailPanel({
   children,
 }: ListDetailPanelProps) {
   return (
-    <div className="grid min-w-0 gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside className="panel min-w-0 p-3">{sidebar}</aside>
+    // Each pane scrolls inside itself, because the column these sit in is as
+    // tall as the viewport and no taller. Left to overflow, a long document was
+    // simply cut off at the panel's own `overflow-hidden` with no way down.
+    <div className="grid min-h-0 min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:h-full">
+      <aside className="scroll-thin panel panel-flush rail-inset min-w-0 xl:overflow-y-auto">
+        {sidebar}
+      </aside>
 
-      <section className="panel min-w-0 overflow-hidden">
+      <section className="scroll-thin panel panel-flush min-w-0 overflow-hidden xl:overflow-y-auto">
         {!selectedId && (
-          <div className="grid min-h-96 place-items-center p-8 text-center text-sm text-muted">
+          <div className="grid min-h-96 place-items-center p-6 text-center text-sm text-muted">
             {notSelectedLabel}
           </div>
         )}
         {selectedId && isPending && (
-          <div className="grid min-h-96 place-items-center p-8 font-mono text-sm text-muted">
+          <div className="grid min-h-96 place-items-center p-6 font-mono text-sm text-muted">
             {loadingLabel}
           </div>
         )}
         {selectedId && isError && (
-          <div className="p-5">
+          <div className="p-6">
             <ErrorState title={errorTitle} detail={error?.message ?? 'Request failed'} />
           </div>
         )}

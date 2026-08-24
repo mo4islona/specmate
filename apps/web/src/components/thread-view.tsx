@@ -1,11 +1,25 @@
 import { useState } from 'react'
 import { formatClock, formatTimestamp } from '../lib/format.ts'
-import type { FeedAuthor, FeedEntry } from '../lib/task-thread.ts'
+import type {
+  FeedAuthor,
+  FeedEntry,
+  LineEntry,
+  LineTone,
+  LiveActivity,
+  TurnEntry,
+} from '../lib/task-thread.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
-  guide: 'text-cyan',
+  guide: 'text-info',
   task: 'text-muted',
+}
+
+/** The bullet carries the colour; the words stay in the reading tone. */
+const BULLET_TONE: Record<LineTone, string> = {
+  boundary: 'text-accent',
+  trouble: 'text-danger',
+  plain: 'text-muted',
 }
 
 /**
@@ -17,29 +31,114 @@ const IMPLIED_OWNER_VERB = 'commented'
 
 interface ThreadViewProps {
   readonly entries: readonly FeedEntry[]
-  /** Opens the run log of the node a line came from. */
-  readonly onOpenNode: (nodeKey: string) => void
+  /** What the run is doing at this moment, where one is under way. */
+  readonly live?: LiveActivity | null
 }
 
 /**
- * The conversation, and only the conversation (REQ-919). Five to fifteen lines
- * over a whole task, which is why there is no windowing here and no empty
- * state: a task ten seconds old has one line, and one line is the right amount
- * of screen for what is known about it.
+ * One step's history, top to bottom (REQ-919): what the run changed, what it
+ * asked, and what was said to it while it stood there. Two rhythms in one
+ * column, on purpose — the machine's record is a dense log of time, action and
+ * target, and a person's turn is a balloon on their side of it. Reading another
+ * step is the rail's job, not a filter inside this list.
  *
- * Read as a chat. What you said is a balloon on your side — the one rounded,
- * filled thing in an interface of hairlines and square corners, because it is
- * the one place a person speaks. What the machine said is left where it is,
- * under the name of the node that said it: a box around it would put the two
- * on equal footing, and they are not.
+ * The record ends where the run is now: a single line that replaces itself as
+ * the run reads and searches its way to the next change (REQ-915).
  */
-export function ThreadView({ entries, onOpenNode }: ThreadViewProps) {
+export function ThreadView({ entries, live = null }: ThreadViewProps) {
   return (
-    <ol aria-label="Task thread" className="space-y-3">
-      {entries.map((entry) => (
-        <FeedLine key={entry.id} entry={entry} onOpenNode={onOpenNode} />
-      ))}
+    <ol aria-label="Task thread">
+      {entries.map((entry) =>
+        entry.kind === 'line' ? (
+          <RunLine key={entry.id} entry={entry} />
+        ) : (
+          <FeedTurn key={entry.id} entry={entry} />
+        ),
+      )}
+
+      {live && <LiveLine live={live} />}
     </ol>
+  )
+}
+
+/**
+ * The one line every read collapses into. It carries no clock — it is now —
+ * and leaves nothing behind: what a run looked at on the way to a change is not
+ * the change. It wears a `+` rather than the record's `●` because it is not
+ * part of the record yet.
+ */
+function LiveLine({ live }: { live: LiveActivity }) {
+  return (
+    <li
+      data-feed-kind="live"
+      aria-live="polite"
+      className="flex items-baseline gap-2 py-[0.12rem] font-mono text-[0.72rem] leading-5"
+    >
+      <span className="dot-live shrink-0 leading-none text-accent" aria-hidden="true">
+        +
+      </span>
+
+      <span className="min-w-0 break-all">
+        <span className="text-accent">{live.action}…</span>
+        {live.target && <span className="text-muted"> {live.target}</span>}
+      </span>
+    </li>
+  )
+}
+
+/**
+ * One thing the run did. A tool use reads as `Edited(src/foo.ts)` — the verb
+ * and its object in one breath, the way a transcript reads. Anything that
+ * happened *to* the run is a sentence with its particulars on a branch beneath
+ * it. Neither carries a clock on the screen: a step is read as a sequence, and
+ * a column of timestamps down the left was buying an ordering the order already
+ * gives. The exact moment stays in the tooltip and in an `sr-only` `<time>`.
+ */
+function RunLine({ entry }: { entry: LineEntry }) {
+  const call = entry.shape === 'call'
+
+  return (
+    <li
+      data-feed-kind="line"
+      data-live={entry.live ? '' : undefined}
+      title={formatTimestamp(entry.at)}
+      className="py-[0.12rem] font-mono text-[0.72rem] leading-5"
+    >
+      <time className="sr-only" dateTime={String(entry.at)}>
+        {formatTimestamp(entry.at)}
+      </time>
+
+      <p className="flex items-baseline gap-2">
+        <span
+          className={`shrink-0 leading-none ${entry.live ? 'dot-live text-accent' : BULLET_TONE[entry.tone]}`}
+          aria-hidden="true"
+        >
+          ●
+        </span>
+
+        {call ? (
+          <span className="min-w-0 break-all">
+            <span className="text-text">{entry.action}</span>
+            <span className="text-muted">({entry.target})</span>
+          </span>
+        ) : (
+          <span
+            className={`min-w-0 break-words ${entry.tone === 'trouble' ? 'text-danger' : 'text-text'}`}
+          >
+            {entry.action}
+          </span>
+        )}
+      </p>
+
+      {!call && entry.target && (
+        <p className="flex items-baseline gap-2 pl-2 text-muted">
+          <span className="shrink-0 text-muted" aria-hidden="true">
+            └
+          </span>
+          <span className="min-w-0 break-words">{entry.target}</span>
+        </p>
+      )}
+    </li>
   )
 }
 
@@ -48,13 +147,14 @@ function isLong(body: string | null): boolean {
   return body !== null && (body.length > 160 || body.includes('\n'))
 }
 
-function FeedLine({
-  entry,
-  onOpenNode,
-}: {
-  entry: FeedEntry
-  onOpenNode: (nodeKey: string) => void
-}) {
+/**
+ * Read as a chat. What you said is a balloon on your side — the one rounded,
+ * filled thing in an interface of hairlines and square corners, because it is
+ * the one place a person speaks. What the machine said is left where it is,
+ * under the name of the node that said it: a box around it would put the two on
+ * equal footing, and they are not.
+ */
+function FeedTurn({ entry }: { entry: TurnEntry }) {
   // A resolved question is two lines until asked otherwise: history must not
   // shout over the thing that still needs an answer. An exchange that already
   // fits gets no control, since there is nothing behind it to open.
@@ -69,12 +169,12 @@ function FeedLine({
   const balloon = mine && said
   const verb = balloon && entry.verb === IMPLIED_OWNER_VERB ? null : entry.verb
   // A marker is nothing but its line. A balloon drops the line entirely when
-  // there is no name, no verb and no run to open behind it.
-  const carriesSomething = verb !== null || entry.author !== 'owner' || entry.nodeKey !== null
+  // there is no name and no verb left to carry.
+  const carriesSomething = verb !== null || entry.author !== 'owner'
   const showsLine = !said || carriesSomething
 
   return (
-    <li className="flex" data-feed-kind={entry.author} title={formatTimestamp(entry.at)}>
+    <li className="flex py-2" data-feed-kind={entry.author} title={formatTimestamp(entry.at)}>
       <div
         className={`flex min-w-0 max-w-[42rem] flex-col gap-1 ${
           mine ? 'ml-auto items-end' : 'mr-auto items-start'
@@ -101,20 +201,10 @@ function FeedLine({
             ) : (
               <>
                 <span>{entry.title}</span>
-                <time dateTime={String(entry.at)} className="text-muted/70">
+                <time dateTime={String(entry.at)} className="text-muted">
                   {formatClock(entry.at)}
                 </time>
               </>
-            )}
-
-            {entry.nodeKey && (
-              <button
-                type="button"
-                onClick={() => entry.nodeKey && onOpenNode(entry.nodeKey)}
-                className="border-b border-cyan/35 text-cyan hover:border-cyan"
-              >
-                run log
-              </button>
             )}
           </p>
         )}
@@ -134,7 +224,7 @@ function FeedLine({
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="mt-1 font-mono text-[0.62rem] text-cyan hover:underline"
+                className="mt-1 font-mono text-[0.62rem] text-info hover:underline"
               >
                 {expanded ? 'clamp it back' : 'read the whole thing →'}
               </button>

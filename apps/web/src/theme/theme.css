@@ -1,0 +1,273 @@
+/* ── Themes ─────────────────────────────────────────────────────────────────
+   Every colour and typeface the app can wear lives here and nowhere else. A
+   component names a role — accent, attention, danger, info, success, the four
+   greys, mono and sans — and this file decides what that role looks like under
+   the theme the owner picked.
+
+   Themes are seeded from the `@wick-charts/react` presets, so the telemetry
+   canvas and the page around it come from one source; each theme's typefaces
+   are its preset's own, paired with a companion for the role the preset does
+   not fill. What the presets give a chart is not enough for an application, so
+   each theme adds the parts a chart never needs: three elevation steps, two
+   border weights, the text colour that sits *on* a filled accent, and the
+   direction a hover moves.
+
+   The colours are not the presets' verbatim. Each one was walked toward the
+   theme's own extreme — white in a dark theme, black in a light one — until it
+   cleared WCAG AA on every backdrop the app actually renders it on: the three
+   surfaces, and the washes under a badge, a selected row, a diff line. Hue and
+   chroma are the preset's; only the lightness moved. Editing a colour by hand
+   means re-checking those pairs, which is what the contrast audit does.
+
+   `--color-hover-tint` is what a filled control mixes toward when pointed at:
+   white in a dark theme lifts it, black in a light theme deepens it. Mixing
+   toward white in both is what made light buttons wash out. */
+
+[data-theme="one-dark-pro"] {
+  color-scheme: dark;
+
+  --color-ground: #282c34;
+  --color-surface: #2e323a;
+  --color-elevated: #31353e;
+  --color-border: #41454e;
+  --color-border-bright: #535861;
+
+  --color-text: #c3cad5;
+  --color-muted: #a9b1bb;
+
+  --color-accent: #79bbf1;
+  --color-attention: #e5c07b;
+  --color-danger: #e5828a;
+  --color-info: #6fc1cb;
+  --color-success: #99c47a;
+
+  --color-on-accent: #1e2127;
+  --color-on-attention: #1e2127;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="night-owl"] {
+  color-scheme: dark;
+
+  --color-ground: #011627;
+  --color-surface: #0a1e2f;
+  --color-elevated: #102435;
+  --color-border: #233646;
+  --color-border-bright: #3d4e5e;
+
+  --color-text: #d6deeb;
+  --color-muted: #879aaa;
+
+  --color-accent: #82aaff;
+  --color-attention: #ecc48d;
+  --color-danger: #f17580;
+  --color-info: #7fdbca;
+  --color-success: #addb67;
+
+  --color-on-accent: #01111d;
+  --color-on-attention: #01111d;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="dracula"] {
+  color-scheme: dark;
+
+  --color-ground: #282a36;
+  --color-surface: #30323e;
+  --color-elevated: #373843;
+  --color-border: #494b54;
+  --color-border-bright: #62646b;
+
+  --color-text: #f8f8f2;
+  --color-muted: #a8b0ce;
+
+  --color-accent: #c7a3fa;
+  --color-attention: #ffb86c;
+  --color-danger: #ff808a;
+  --color-info: #8be9fd;
+  --color-success: #50fa7b;
+
+  --color-on-accent: #1e2029;
+  --color-on-attention: #1e2029;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="catppuccin"] {
+  color-scheme: dark;
+
+  --color-ground: #1e1e2e;
+  --color-surface: #252536;
+  --color-elevated: #2a2b3c;
+  --color-border: #3a3b4e;
+  --color-border-bright: #4f5265;
+
+  --color-text: #cdd6f4;
+  --color-muted: #9da1b7;
+
+  --color-accent: #89b4fa;
+  --color-attention: #f9e2af;
+  --color-danger: #f38ca9;
+  --color-info: #94e2d5;
+  --color-success: #a6e3a1;
+
+  --color-on-accent: #171723;
+  --color-on-attention: #171723;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Outfit", "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="gruvbox"] {
+  color-scheme: dark;
+
+  --color-ground: #282828;
+  --color-surface: #302f2e;
+  --color-elevated: #32312f;
+  --color-border: #47453e;
+  --color-border-bright: #5f5a4f;
+
+  --color-text: #ebdbb2;
+  --color-muted: #b7aa99;
+
+  --color-accent: #99b5ab;
+  --color-attention: #fabd2f;
+  --color-danger: #fc6a59;
+  --color-info: #8ec07c;
+  --color-success: #b8bb26;
+
+  --color-on-accent: #1e1e1e;
+  --color-on-attention: #1e1e1e;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="ayu-mirage"] {
+  color-scheme: dark;
+
+  --color-ground: #1f2430;
+  --color-surface: #262b36;
+  --color-elevated: #2b303b;
+  --color-border: #3b3f48;
+  --color-border-bright: #4f535a;
+
+  --color-text: #cbccc6;
+  --color-muted: #a6abb1;
+
+  --color-accent: #73d0ff;
+  --color-attention: #ffd580;
+  --color-danger: #f48d96;
+  --color-info: #95e6cb;
+  --color-success: #bae67e;
+
+  --color-on-accent: #171b24;
+  --color-on-attention: #171b24;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Outfit", "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* The one theme that is not a text editor's palette, and the one that departs
+   from its preset twice. The preset is monochrome green down to the losing
+   candle, which an application cannot use: a stopped node has to be red and a
+   gate has to be amber, or the rail says nothing. And its typeface is
+   Silkscreen, a pixel face that stops being readable at the size a label is
+   set in — the whole screen goes mono instead, which is the same idea. */
+[data-theme="matrix"] {
+  color-scheme: dark;
+
+  --color-ground: #000000;
+  --color-surface: #0d120e;
+  --color-elevated: #161f18;
+  --color-border: #243328;
+  --color-border-bright: #3e5744;
+
+  --color-text: #b6ffc8;
+  --color-muted: #56a068;
+
+  --color-accent: #00ff41;
+  --color-attention: #ffb000;
+  --color-danger: #ff5d5d;
+  --color-info: #5cffb1;
+  --color-success: #00e639;
+
+  --color-on-accent: #000000;
+  --color-on-attention: #000000;
+  --color-hover-tint: #ffffff;
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
+
+  --font-mono: "Share Tech Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Share Tech Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+[data-theme="github-light"] {
+  color-scheme: light;
+
+  --color-ground: #f2f4f6;
+  --color-surface: #f8f9fa;
+  --color-elevated: #fbfcfc;
+  --color-border: #d9dbdd;
+  --color-border-bright: #bfc2c5;
+
+  --color-text: #1f2328;
+  --color-muted: #5b626c;
+
+  --color-accent: #085fc4;
+  --color-attention: #845900;
+  --color-danger: #bc1f2a;
+  --color-info: #176c72;
+  --color-success: #177131;
+
+  --color-on-accent: #ffffff;
+  --color-on-attention: #ffffff;
+  --color-hover-tint: #000000;
+  --shadow-popover: 0 12px 32px #1f232829;
+
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "IBM Plex Sans", "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="solarized-light"] {
+  color-scheme: light;
+
+  --color-ground: #f3ecd8;
+  --color-surface: #f8f5ea;
+  --color-elevated: #fbf9f3;
+  --color-border: #ddd9c8;
+  --color-border-bright: #c8c6b8;
+
+  --color-text: #3f4f52;
+  --color-muted: #53646b;
+
+  --color-accent: #1c6499;
+  --color-attention: #795c00;
+  --color-danger: #b42926;
+  --color-info: #1c6b64;
+  --color-success: #596600;
+
+  --color-on-accent: #ffffff;
+  --color-on-attention: #ffffff;
+  --color-hover-tint: #000000;
+  --shadow-popover: 0 12px 32px #3f4f5229;
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}

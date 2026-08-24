@@ -62,7 +62,7 @@ export function App() {
           </Route>
 
           <Route>
-            <section className="panel p-8 text-center">
+            <section className="panel text-center">
               <p className="micro-label text-danger">404 / no route</p>
               <h1 className="mt-3 text-2xl font-semibold">Channel not found</h1>
             </section>

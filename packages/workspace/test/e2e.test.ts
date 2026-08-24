@@ -30,6 +30,10 @@ describeDb('a task from provisioning to release', () => {
       await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
     }
     await cleanupTempDirs()
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   test('walks the whole way with a restarted process at every step', async () => {

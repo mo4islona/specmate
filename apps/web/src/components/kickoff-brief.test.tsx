@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { KickoffBrief } from './kickoff-brief.tsx'
 
 const BRIEF = `## What and Why
@@ -26,12 +26,12 @@ Small; one iteration.
 `
 
 describe('KickoffBrief', () => {
-  test('accents the key-points block and renders the rest as plain document sections', () => {
+  it('accents the key-points block and renders the rest as plain document sections', () => {
     const rendered = renderToStaticMarkup(<KickoffBrief content={BRIEF} />)
 
-    expect(rendered).toContain('border-l-amber')
+    expect(rendered).toContain('data-brief-accent')
     // The accented Key Points wrapper carries the risk bullet.
-    const accentedIndex = rendered.indexOf('border-l-amber')
+    const accentedIndex = rendered.indexOf('data-brief-accent')
     const riskIndex = rendered.indexOf('Risk: low')
     expect(riskIndex).toBeGreaterThan(accentedIndex)
 
@@ -42,18 +42,18 @@ describe('KickoffBrief', () => {
     expect(rendered).toContain('Small; one iteration')
   })
 
-  test('falls back to the raw document when the content has no sections', () => {
+  it('falls back to the raw document when the content has no sections', () => {
     const rendered = renderToStaticMarkup(<KickoffBrief content="plain text, no headings" />)
 
     expect(rendered).toContain('plain text, no headings')
-    expect(rendered).not.toContain('border-l-amber')
+    expect(rendered).not.toContain('data-brief-accent')
   })
 
-  test('accents Key Points even with irregular internal spacing, matching the backend check', () => {
+  it('accents Key Points even with irregular internal spacing, matching the backend check', () => {
     const rendered = renderToStaticMarkup(
       <KickoffBrief content={BRIEF.replace('## Key Points', '## Key   Points')} />,
     )
 
-    expect(rendered).toContain('border-l-amber')
+    expect(rendered).toContain('data-brief-accent')
   })
 })

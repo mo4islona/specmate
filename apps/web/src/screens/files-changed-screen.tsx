@@ -24,7 +24,7 @@ export function StatCounts({ file }: { file: DiffFileSummary }) {
 
   return (
     <span className="font-mono text-[0.65rem]">
-      <span className="text-phosphor">+{file.additions}</span>{' '}
+      <span className="text-success">+{file.additions}</span>{' '}
       <span className="text-danger">-{file.deletions}</span>
     </span>
   )
@@ -55,7 +55,7 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
   return (
     <div className="min-h-0 min-w-0 flex-1 space-y-4">
       {rows.length === 0 && (
-        <div className="panel grid min-h-48 place-items-center p-8 text-center">
+        <div className="panel grid min-h-48 place-items-center text-center">
           <p className="text-sm text-muted">No product-code changes have been committed yet.</p>
         </div>
       )}
@@ -70,16 +70,16 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
           loadingLabel="Loading diff…"
           errorTitle="Diff unavailable"
           sidebar={
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               {rows.map((file) => (
                 <li key={file.path}>
                   <button
                     type="button"
                     onClick={() => setSelected(file.path)}
-                    className={`block w-full min-w-0 border-l-2 px-2 py-2 text-left text-sm transition-colors ${
+                    className={`block w-full min-w-0 rail-row rounded-lg py-2 text-left text-sm transition-colors ${
                       selected === file.path
-                        ? 'border-phosphor bg-phosphor/8 text-text'
-                        : 'border-transparent text-muted hover:bg-elevated hover:text-text'
+                        ? 'bg-accent/[0.09] text-text'
+                        : 'text-muted hover:bg-text/[0.05] hover:text-text'
                     }`}
                   >
                     <span className="block truncate font-mono text-xs">{file.path}</span>
@@ -95,10 +95,10 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
         >
           {diff.data && (
             <>
-              <header className="border-b border-border bg-elevated px-4 py-4 sm:px-6">
-                <p className="break-all font-mono text-xs text-cyan">{diff.data.path}</p>
+              <header className="sticky top-0 z-10 bg-elevated px-4 py-3 sm:px-6">
+                <p className="break-all font-mono text-xs text-info">{diff.data.path}</p>
               </header>
-              <div className="min-w-0 overflow-x-auto p-5 sm:p-8">
+              <div className="min-w-0 overflow-x-auto py-4">
                 <DiffViewer diff={diff.data.diff} />
               </div>
             </>

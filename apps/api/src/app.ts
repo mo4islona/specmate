@@ -9,6 +9,7 @@ import {
   listConversations,
   ModelBindingsOverride,
   openConversation,
+  PlanSize,
   readConversation,
   SpecConventionSetting,
   TaskState,
@@ -28,6 +29,7 @@ import {
   getModelDefaults,
   getSpecConventions,
   ping,
+  pullRequests,
   runGraphs,
   type Stage,
   SuitePathRequiredError,
@@ -116,6 +118,9 @@ const CreateTask = z.object({
   type: z.enum(['feature', 'bugfix']).optional(),
   repoUrl: z.url().optional(),
   baseBranch: z.string().trim().min(1).optional(),
+  // The owner declaring how much process the work gets, before anyone has read
+  // the code. Absent is `auto`: planning declares it instead (REQ-1306).
+  planSize: PlanSize.optional(),
   modelBindings: ModelBindingsOverride.optional(),
 })
 
@@ -852,7 +857,8 @@ export function createApp({
     })
 
     .post('/tasks', validator('json', validateJson(CreateTask)), async (c) => {
-      const { title, description, type, repoUrl, baseBranch, modelBindings } = c.req.valid('json')
+      const { title, description, type, repoUrl, baseBranch, planSize, modelBindings } =
+        c.req.valid('json')
       const [known, defaultRepoUrl] = await Promise.all([
         knownRepositories(db),
         getDefaultRepository(db),
@@ -880,6 +886,7 @@ export function createApp({
         type: type ?? 'feature',
         repoUrl: resolution.repoUrl,
         baseBranch,
+        planSize,
         modelBindings,
       })
 
@@ -890,9 +897,20 @@ export function createApp({
       const id = c.req.param('id')
       const task = await requireTask(id)
 
-      // Spend depends only on task.id, not on the graph/stages lookup below,
-      // so it runs alongside that sequential chain rather than after it.
+      // Spend and the pull request depend only on task.id, not on the
+      // graph/stages lookup below, so they run alongside that sequential chain
+      // rather than after it.
       const spendPromise = taskSpend(db, task.id)
+      const pullRequestPromise = db
+        .select({
+          url: pullRequests.url,
+          state: pullRequests.state,
+          checksState: pullRequests.checksState,
+        })
+        .from(pullRequests)
+        .where(eq(pullRequests.taskId, task.id))
+        .orderBy(desc(pullRequests.updatedAt))
+        .limit(1)
 
       const [graph] = await db
         .select()
@@ -916,6 +934,7 @@ export function createApp({
             .orderBy(asc(runGraphs.version), asc(stages.nodeKey), asc(stages.attempt))
         : []
       const spend = await spendPromise
+      const [pullRequest] = await pullRequestPromise
 
       return c.json({
         task,
@@ -925,6 +944,7 @@ export function createApp({
           graphVersion: row.graphVersion,
         })),
         spend,
+        pullRequest: pullRequest ?? null,
       })
     })
 

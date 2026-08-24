@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'wouter'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
+import { FileIcon } from '../components/icons.tsx'
 import { ListDetailPanel } from '../components/list-detail-panel.tsx'
 import { ErrorState, LoadingState } from '../components/query-state.tsx'
 import { type ArtifactSummary, getArtifact, listArtifacts } from '../lib/api-client.ts'
@@ -56,44 +57,60 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
         sidebar={
           <>
             {[...grouped.entries()].map(([kind, rows]) => (
-              <section key={kind} className="mb-5 last:mb-0">
-                <h2 className="micro-label px-2 text-muted">{kind}</h2>
-                <ul className="mt-2 space-y-1">
-                  {rows.map((row) => (
-                    <li key={row.id}>
-                      <Link
-                        href={`/tasks/${taskId}/docs/${row.id}`}
-                        className={`block min-w-0 border-l-2 px-2 py-2 text-sm transition-colors ${
-                          artifactId === row.id
-                            ? 'border-phosphor bg-phosphor/8 text-text'
-                            : 'border-transparent text-muted hover:bg-elevated hover:text-text'
-                        }`}
-                      >
-                        <span className="block truncate">{row.path.split('/').at(-1)}</span>
-                        <span className="mt-1 block truncate font-mono text-[0.65rem] text-muted">
-                          {row.path}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
+              <section key={kind} className="mb-4 last:mb-0">
+                <h2 className="micro-label text-muted">{kind.replaceAll('_', ' ')}</h2>
+                <ul className="mt-1.5 space-y-0.5">
+                  {rows.map((row) => {
+                    const open = artifactId === row.id
+
+                    return (
+                      <li key={row.id}>
+                        {/* The same row the step's own shelf draws: a page glyph,
+                            then the name in the face every path in this app is
+                            set in. Two places, one thing, one treatment. */}
+                        <Link
+                          href={`/tasks/${taskId}/docs/${row.id}`}
+                          className={`rail-row flex min-w-0 items-center gap-2.5 rounded-lg py-2 transition-colors ${
+                            open ? 'bg-accent/[0.09]' : 'hover:bg-text/[0.05]'
+                          }`}
+                        >
+                          <FileIcon
+                            className={`h-3.5 w-3.5 shrink-0 ${open ? 'text-info' : 'text-muted'}`}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={`block truncate font-mono text-[0.74rem] ${
+                                open ? 'text-text' : 'text-muted'
+                              }`}
+                            >
+                              {row.path.split('/').at(-1)}
+                            </span>
+                            <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-muted">
+                              {row.path}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
               </section>
             ))}
             {artifacts.data.artifacts.length === 0 && (
-              <p className="p-3 text-sm text-muted">No artifacts have been indexed.</p>
+              <p className="text-sm text-muted">No artifacts have been indexed.</p>
             )}
           </>
         }
       >
         {artifact.data && (
           <>
-            <header className="border-b border-border bg-elevated px-4 py-4 sm:px-6">
-              <p className="break-all font-mono text-xs text-cyan">{artifact.data.artifact.path}</p>
-              <p className="mt-2 font-mono text-[0.65rem] text-muted">
+            <header className="sticky top-0 z-10 bg-elevated px-4 py-3 sm:px-6">
+              <p className="break-all font-mono text-xs text-info">{artifact.data.artifact.path}</p>
+              <p className="mt-1 font-mono text-[0.62rem] text-muted">
                 snapshot updated {formatTimestamp(artifact.data.artifact.updatedAt)}
               </p>
             </header>
-            <article className="artifact-document min-w-0 overflow-x-auto p-5 sm:p-8">
+            <article className="artifact-document min-w-0 overflow-x-auto p-4 sm:p-6">
               <ArtifactMarkdown content={artifact.data.artifact.content ?? ''} />
             </article>
           </>

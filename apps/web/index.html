@@ -1,10 +1,35 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>SpecMate</title>
+
+    <!-- Every theme's faces in one request. The browser downloads only the ones
+         the active theme actually renders, and every token keeps a system
+         fallback for when this host cannot be reached. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..700&family=Outfit:wght@400..700&family=Share+Tech+Mono&display=swap"
+    />
+    <script>
+      // The theme has to be on the document before the first paint, or the app
+      // opens in the default palette and swaps once the bundle runs. The key and
+      // the fallback mirror src/theme/themes.ts.
+      {
+        let stored = null
+        try {
+          stored = localStorage.getItem('specmate.theme')
+        } catch {
+          stored = null
+        }
+        document.documentElement.dataset.theme = stored || 'one-dark-pro'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

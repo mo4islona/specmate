@@ -46,8 +46,8 @@ export function GateVerbs({
         <details className="relative">
           <summary className="button-ghost cursor-pointer list-none">Rework ⌄</summary>
 
-          <div className="absolute bottom-full left-0 z-10 mb-2 w-72 border border-amber/35 bg-surface p-3">
-            <p className="font-mono text-[0.62rem] leading-4 text-muted">
+          <div className="console-popover absolute bottom-full left-0 z-10 mb-2 w-[19rem] p-3.5">
+            <p className="text-[0.78rem] leading-6 text-muted">
               {nodeLabel(gateKey)} · rework needs the comment you are typing.
             </p>
 
@@ -67,7 +67,7 @@ export function GateVerbs({
 
             <button
               type="button"
-              className="button-danger mt-2 w-full"
+              className="button-danger mt-2.5 w-full"
               disabled={!comment.trim() || !reworkTarget || busy}
               onClick={onRework}
             >
@@ -80,7 +80,7 @@ export function GateVerbs({
       {redirect &&
         (redirect.spent ? (
           <span
-            className="button-ghost cursor-not-allowed opacity-50"
+            className="button-ghost cursor-not-allowed opacity-45"
             title={`${redirect.used} of ${redirect.limit} ${redirect.cap.replaceAll('_', ' ')} used`}
             role="status"
           >
@@ -98,7 +98,7 @@ export function GateVerbs({
           </button>
         ))}
 
-      {error && <p className="field-error w-full">{error}</p>}
+      {error && <p className="field-error w-full px-2.5">{error}</p>}
     </>
   )
 }

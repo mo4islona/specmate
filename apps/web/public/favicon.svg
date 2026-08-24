@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <title>SpecMate</title>
+  <!-- The mark the app draws, in the app's own default palette. The export it
+       replaced was a #12D39A chevron on near-black — a green that appears in no
+       theme, at a brightness nothing else on the screen is set at. -->
+  <rect width="100" height="100" rx="22" fill="#282c34"></rect>
+  <g fill="none" stroke="#c3cad5" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M39 22 H22 V78 H39"></path>
+    <path d="M61 22 H78 V78 H61"></path>
+  </g>
+  <path
+    d="M45 36 L54 50 L45 64"
+    fill="none"
+    stroke="#79bbf1"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  ></path>
+</svg>

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { SPEC_REVIEW_SCENARIO_FLOOR } from '@specmate/core'
 import { createDb, type Database, events, stages, tasks } from '@specmate/db'
 import { asc, eq, inArray } from 'drizzle-orm'
@@ -15,6 +15,12 @@ describeDb('a conditional node', () => {
 
   beforeAll(() => {
     db = createDb(url)
+  })
+
+  // Ten connections handed back. A suite that keeps its pool is a suite the
+  // ones after it pay for, against a server that allows a hundred in total.
+  afterAll(async () => {
+    await db.$client.close()
   })
 
   async function cleanup() {

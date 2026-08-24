@@ -17,7 +17,6 @@ function ratioAgainst(spend: Spend, budgets: Budgets, key: BudgetKey): number {
   return cap > 0 ? spendAgainstBudget(spend, key) / cap : 0
 }
 
-/** REQ-1505: incomplete cost is shown as incomplete, never silently as a bare number. */
 function budgetRows(budgets: Budgets, spend: Spend): BudgetRow[] {
   return [
     {
@@ -35,35 +34,49 @@ function budgetRows(budgets: Budgets, spend: Spend): BudgetRow[] {
   ]
 }
 
+/**
+ * Two meters, one line each. It is the smallest section on the screen and was
+ * drawn like the largest — a heading, a label, a value, a bar and a sentence
+ * per row. The sentence is now the `≈` the number wears: incomplete cost still
+ * reads as incomplete (REQ-1505), it just no longer takes four lines to say so.
+ */
 export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend }) {
   const rows = budgetRows(budgets, spend)
 
   return (
     <section aria-label="Budget">
       <h2 className="micro-label text-muted">Spend</h2>
-      <dl className="mt-3 space-y-3">
+
+      <dl className="mt-2.5 space-y-2">
         {rows.map((row) => {
           const near = row.ratio >= 0.8
 
           return (
             <div key={row.label}>
-              <div className="flex items-baseline justify-between gap-2">
-                <dt className="text-[0.72rem] text-muted">{row.label}</dt>
-                <dd className={`font-mono text-[0.7rem] ${near ? 'text-amber' : 'text-text'}`}>
+              <div className="flex items-baseline justify-between gap-2 font-mono text-[0.7rem]">
+                <dt className="text-muted">{row.label}</dt>
+                <dd
+                  className={near ? 'text-attention' : 'text-text'}
+                  title={row.incomplete ? 'incomplete — some runs reported no cost' : undefined}
+                >
+                  {row.incomplete && (
+                    <span className="text-attention" aria-hidden="true">
+                      ≈{' '}
+                    </span>
+                  )}
                   {row.display}
+                  {row.incomplete && <span className="sr-only"> — incomplete</span>}
                 </dd>
               </div>
-              <div className="mt-1.5 h-0.5 w-full bg-border">
+
+              {/* A meter, not a table rule: the hairline under the number read
+                  as an underline, which is what a spend row must not look like. */}
+              <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-border/70">
                 <div
-                  className={`h-0.5 ${near ? 'bg-amber' : 'bg-phosphor/60'}`}
+                  className={`h-full rounded-full ${near ? 'bg-attention' : 'bg-accent/70'}`}
                   style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
                 />
               </div>
-              {row.incomplete && (
-                <p className="mt-1.5 text-[0.62rem] leading-4 text-amber">
-                  incomplete — some runs reported no cost
-                </p>
-              )}
             </div>
           )
         })}

@@ -72,7 +72,7 @@ export function SpecConventionsSection() {
   }
 
   return (
-    <section className="panel space-y-5 p-5 sm:p-7">
+    <section className="panel space-y-5">
       <div>
         <p className="micro-label text-cyan">Remembered across tasks</p>
         <h2 className="mt-2 text-lg font-semibold">Specification conventions</h2>
@@ -107,10 +107,7 @@ export function SpecConventionsSection() {
 
       <ul className="space-y-3">
         {entries.map(([key, setting]) => (
-          <li
-            key={key}
-            className="flex flex-wrap items-start justify-between gap-3 border border-border p-3"
-          >
+          <li key={key} className="subpanel flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="break-all font-mono text-xs text-muted">{key}</p>
               <p className="mt-1 text-xs text-muted">

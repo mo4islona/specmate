@@ -27,6 +27,21 @@ export function repoLabel(repoUrl: string): string {
   return parseRemote(repoUrl)?.path ?? repoUrl
 }
 
+/** The repository as a person opens it. Null for a host we cannot address over the web. */
+export function repoWebUrl(repoUrl: string): string | null {
+  const remote = parseRemote(repoUrl)
+  if (!remote || !WEB_HOSTS.has(remote.host)) return null
+
+  return `https://${remote.host}/${remote.path}`
+}
+
+/** `#412` — what a pull request is called, taken from the end of its own URL. */
+export function pullRequestNumber(url: string): string | null {
+  const number = /\/(?:pull|merge_requests)\/(\d+)/.exec(url)?.[1]
+
+  return number ? `#${number}` : null
+}
+
 /** Null for a host whose web URL scheme we cannot know — a bad guess links nowhere. */
 export function commitUrl(repoUrl: string, sha: string): string | null {
   const remote = parseRemote(repoUrl)
@@ -42,15 +57,15 @@ export function shortCommit(sha: string): string {
 /**
  * AC-960: one fact per surface, never both. The thread and the documents are
  * about a repository on a branch; the changed files are about a comparison.
+ * The repository itself is the same on every surface and is named beside this,
+ * as a link — only the ref it is read at belongs here.
  */
-export function surfaceContext(
+export function surfaceRef(
   surface: 'thread' | 'files' | 'docs',
-  repoUrl: string,
   baseBranch: string | null,
 ): string {
-  const repo = repoLabel(repoUrl)
   // Null until provisioning resolved the repository's default (REQ-703).
   const base = baseBranch ?? 'default branch'
 
-  return surface === 'files' ? `${repo} · ${base} … head` : `${repo} · ${base}`
+  return surface === 'files' ? `${base} … head` : base
 }

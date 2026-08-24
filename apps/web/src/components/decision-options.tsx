@@ -29,7 +29,7 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
   if (options.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-2 px-3 pt-3">
+    <div className="flex flex-wrap gap-2 px-4 pt-3">
       {options.map((option) => {
         const raiseBudget = budgetFromRaiseOption(option.id)
         if (!raiseBudget) {
@@ -37,7 +37,7 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
             <button
               key={option.id}
               type="button"
-              className="button-secondary min-h-9 py-1"
+              className="chip"
               disabled={busy}
               onClick={() => onAnswer(option.id)}
             >
@@ -55,7 +55,7 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
               type="number"
               min={isMinutes ? '1' : '0.01'}
               step={isMinutes ? '1' : 'any'}
-              className="control min-h-9 w-28 py-1"
+              className="control min-h-8 w-28 py-1"
               value={value}
               onChange={(event) =>
                 setRaiseValues((prev) => ({ ...prev, [option.id]: event.currentTarget.value }))
@@ -65,7 +65,7 @@ export function DecisionOptions({ options, busy, onAnswer }: DecisionOptionsProp
             />
             <button
               type="button"
-              className="button-secondary min-h-9 py-1"
+              className="chip"
               disabled={busy || !isValidRaiseValue(raiseBudget, value)}
               onClick={() => onAnswer(option.id, value.trim())}
             >

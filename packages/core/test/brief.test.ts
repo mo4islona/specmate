@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { checkBrief, splitBriefSections } from '../src/brief.ts'
 
 const COMPLETE = `## What and Why

@@ -141,3 +141,87 @@ running stage reported in three places at once.
 - [ ] 8.7 The Files surface still renders the pre-pass-3 list-detail panel. Drawing 4 — tree with
       filter, stacked per-file cards, `Viewed` and `n / N viewed`, hunk expanders, unified/split —
       is the change that amends REQ-916/AC-944 and is not this one.
+
+## 9. Pass 4 — the column is the step
+
+Pass 3 emptied the middle column and filled the rail: a task running for a minute showed one line
+of thread, while the node's activity, its stop control and its facts were stacked into a 17rem
+column beside it. The rule inverts — **the column is the step the owner is reading**, the rail is
+the switch between steps — and the console loses the sentences that were restating what the field
+already says.
+
+- [x] 9.1 Scope the thread to one step and give every entry a home: a stage event to its stage's
+      node, a named event to the node it names, everything else to the node the task stood on
+      (`assignSteps`, `buildStepFeed`) — REQ-919, AC-959, AC-969, AC-990. Verify:
+      `bun run --cwd apps/web test src/lib/task-thread.test.ts`.
+- [x] 9.2 Render the machine's record and a person's turn in one column — time/action/target lines
+      beside balloons — and mark the newest action of a live run as in progress — REQ-915,
+      AC-940, AC-941. Verify: `bun run --cwd apps/web test src/components/thread-view.test.tsx`.
+- [x] 9.3 Head the thread with the step's own facts (state, duration, model, spend, role, commit)
+      and the cleanup notice that used to sit under the rail's row — REQ-914, AC-967. Verify:
+      open a running task; the rail row carries the walk, the header carries the facts.
+- [x] 9.4 Delete the run-log layer: activating a node switches the thread instead of opening over
+      it, on the phone too — REQ-914, REQ-911, AC-968. Verify: `grep -rn "run-log" apps/web/src`
+      returns nothing.
+- [x] 9.5 Move Stop into the console's control row beside Send, on the field's own surface, and
+      delete the strip outside it — REQ-921, REQ-914, AC-931, AC-991. Verify:
+      `bun run --cwd apps/web test src/components/task-composer.test.tsx`.
+- [x] 9.6 Drop `ConsoleDestination.line` and the `⌘↵` hint; the placeholder names the destination
+      and only a state that qualifies it keeps a line above the field — REQ-921, AC-962. Verify:
+      `bun run --cwd apps/web test src/lib/task-console.test.ts`.
+- [x] 9.7 Restore the kickoff brief at its gate: pass 3 dropped the call site and left an Approve
+      button with nothing to read — REQ-913, AC-926. Verify: open a task parked at its kickoff
+      gate; the brief renders in the gate's own chapter above the console.
+- [x] 9.8 Pin a comment by reading the step it is about: an older step the owner opened takes the
+      input as a note on that run, while any state that is asking something keeps it — REQ-906,
+      AC-912. Verify: `bun run --cwd apps/web test src/lib/task-console.test.ts`.
+- [x] 9.9 End a step with the documents its runs wrote, rendered in place, and let a gate show
+      the documents of the step it judges — REQ-919, REQ-907, REQ-913, AC-989. Verify:
+      `bun run --cwd apps/web test src/lib/task-documents.test.ts`.
+- [ ] 9.10 Walk a live task: a running node streaming activity into the thread, a finished node
+      opened from the rail, and a gate with its brief. Not yet done against a real task.
+
+## 10. Pass 5 — say each thing once, and only what changed
+
+Pass 4's screen was legible and still said the step's state four times, filled a stopped step's
+column with twenty-five lines of `Reading`, and folded seven of the ten pipeline nodes into
+`+4 more`. This pass is what the owner asked for after reading a real task on it.
+
+- [x] 10.1 Split activity into what changes and what does not: reads, searches, fetches and plan
+      revisions report as one live line that replaces itself and leaves no record; a change keeps
+      its line, in the past tense, naming what it changed; an unrecognized tool is treated as a
+      change — REQ-915, AC-978, AC-979. Verify:
+      `bun run --cwd apps/web test src/lib/task-thread.test.ts`.
+- [x] 10.2 Render a target as its path within the repository, not as the sandbox absolute path
+      every line would otherwise repeat — AC-980. Verify: same command.
+- [x] 10.3 Give the thread a transcript's grammar: `Edited(src/foo.ts)` for a tool use, a sentence
+      with a branch beneath it for what happened to the run, the clock off the screen and into the
+      entry and an `sr-only` `<time>` — REQ-919. Verify:
+      `bun run --cwd apps/web test src/components/thread-view.test.tsx`.
+- [x] 10.4 Stop the step's head restating the page header's state where the two are about the same
+      node, and name the model with the effort it is bound at — REQ-914, AC-983. Verify:
+      `bun run --cwd apps/web test src/components/step-header.test.tsx`.
+- [x] 10.5 Stop the console naming the node the step's head has named — REQ-921, AC-985. Verify:
+      `bun run --cwd apps/web test src/lib/task-console.test.ts`.
+- [x] 10.6 Rebuild the rail: every node in order, the state as a mark, one fact about what it
+      cost, no model and no commit, and nodes that have not run shown but not activatable —
+      REQ-914, AC-981, AC-982. This reverses 3.2 and retires 0.3's `bindingBaseline` /
+      `isBaselineBinding`, which had no caller left once the baseline line went. Verify:
+      `bun run --cwd apps/web test src/components/pipeline-rail.test.tsx`.
+- [x] 10.7 Make the step's documents a shelf: named, sized, one open at a time, clamped, with the
+      whole of it in place and a way to the Docs surface — REQ-907, AC-986. Verify:
+      `bun run --cwd apps/web test src/components/step-documents.test.tsx`.
+- [x] 10.8 Carry the task's pull request on the task detail endpoint and make the repository line a
+      marked link with the pull request beside it — REQ-920, AC-984. Verify:
+      `bun test apps/api/test/app.test.ts` and
+      `bun run --cwd apps/web test src/components/repo-ref.test.tsx src/lib/repo-link.test.ts`.
+- [ ] 10.9 Walk a live task: a running node with the live line replacing itself, a stopped node
+      whose column carries only what it changed, and a gate with its documents on the shelf. Not
+      yet done against a real task.
+- [x] 10.10 Explain each step on the rail, after the pointer rests and at once on focus, drawn
+      into the document body so the rail's own scrolling and border cannot crop it — REQ-914,
+      AC-987. Verify: `bun run --cwd apps/web test src/components/hover-hint.test.tsx`.
+- [x] 10.11 Stop the rail shuffling on selection: a row's geometry is the same selected or not,
+      and selecting the row already being read keeps the selection there instead of handing it to
+      whichever node the task stands on — REQ-914, AC-988. Verify: pin an earlier step, click its
+      row again; the selection stays on it.

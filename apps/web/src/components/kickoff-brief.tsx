@@ -19,23 +19,27 @@ export function KickoffBrief({ content }: { content: string }) {
 
   return (
     <div className="mt-4 space-y-4">
-      {sections.map((section, index) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: sections are recomputed fresh from `content` every render; the index only disambiguates a heading a brief repeats.
-          key={`${section.heading}-${index}`}
-          className={
-            normalizeBriefHeading(section.heading) === normalizeBriefHeading(BRIEF_ACCENT_HEADING)
-              ? 'border-l-2 border-l-amber bg-amber/5 p-4'
-              : ''
-          }
-        >
-          <div className="artifact-document text-sm">
-            <ArtifactMarkdown
-              content={section.heading ? `## ${section.heading}\n\n${section.body}` : section.body}
-            />
+      {sections.map((section, index) => {
+        const accented =
+          normalizeBriefHeading(section.heading) === normalizeBriefHeading(BRIEF_ACCENT_HEADING)
+
+        return (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: sections are recomputed fresh from `content` every render; the index only disambiguates a heading a brief repeats.
+            key={`${section.heading}-${index}`}
+            data-brief-accent={accented ? '' : undefined}
+            className={accented ? 'rounded-xl bg-attention/[0.07] px-4 py-3' : ''}
+          >
+            <div className="artifact-document text-sm">
+              <ArtifactMarkdown
+                content={
+                  section.heading ? `## ${section.heading}\n\n${section.body}` : section.body
+                }
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

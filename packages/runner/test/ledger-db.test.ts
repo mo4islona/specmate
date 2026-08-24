@@ -54,6 +54,10 @@ describeDb('ledger snapshot', () => {
 
   afterAll(async () => {
     if (taskId) await db.delete(tasks).where(eq(tasks.id, taskId))
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   test('reads the task and its rounds', async () => {

@@ -37,6 +37,10 @@ describeDb('task store', () => {
 
   afterAll(async () => {
     if (created.length > 0) await db.delete(tasks).where(inArray(tasks.id, created))
+
+    // Last, and unconditional: the cleanup above needs the connection, and
+    // the next suite needs it back.
+    await db.$client.close()
   })
 
   async function make(at?: 'specify') {

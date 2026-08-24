@@ -1,5 +1,4 @@
-import { describe, expect, test } from 'bun:test'
-import assert from 'node:assert/strict'
+import { assert, describe, expect, test } from 'vitest'
 import {
   appendOwnerMessage,
   type ConversationActionRecord,

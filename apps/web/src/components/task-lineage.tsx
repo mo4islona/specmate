@@ -14,7 +14,7 @@ function titleFor(tasks: readonly TaskSummary[] | undefined, id: string): string
 
 function TaskLink({ id, tasks }: { id: string; tasks: readonly TaskSummary[] | undefined }) {
   return (
-    <Link href={`/tasks/${id}`} className="text-cyan underline-offset-4 hover:underline">
+    <Link href={`/tasks/${id}`} className="text-info underline-offset-4 hover:underline">
       {titleFor(tasks, id)}
     </Link>
   )

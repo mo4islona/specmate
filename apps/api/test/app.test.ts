@@ -21,6 +21,7 @@ import {
   events,
   feedback,
   getModelDefaults,
+  pullRequests,
   runGraphs,
   stages,
   tasks,
@@ -977,6 +978,35 @@ describeDb('api', () => {
       spend: { costUsd: number; costComplete: boolean; agentMinutes: number }
     }
     expect(body.spend).toEqual({ costUsd: 2, costComplete: false, agentMinutes: 3 })
+  })
+
+  test('task detail carries the pull request the task opened, so the screen can link it', async () => {
+    const { task } = await createOrchestratedTask(db, {
+      slug: `pr-${crypto.randomUUID().slice(0, 8)}`,
+      title: 'Pull request fixture',
+      type: 'feature',
+      repoUrl: 'https://github.com/example/pr-fixture',
+      at: 'specify',
+    })
+    createdTaskIds.push(task.id)
+
+    const before = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
+    expect(((await before.json()) as { pullRequest: unknown }).pullRequest).toBeNull()
+
+    await db.insert(pullRequests).values({
+      taskId: task.id,
+      url: `https://github.com/example/pr-fixture/pull/${Math.floor(Math.random() * 100_000)}`,
+      state: 'open',
+      checksState: 'passing',
+    })
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
+    const body = (await response.json()) as {
+      pullRequest: { url: string; state: string; checksState: string | null } | null
+    }
+
+    expect(body.pullRequest).toMatchObject({ state: 'open', checksState: 'passing' })
+    expect(body.pullRequest?.url).toMatch(/\/pull\/\d+$/)
   })
 
   test('aggregates gate, failure, and stall attention without healthy tasks', async () => {

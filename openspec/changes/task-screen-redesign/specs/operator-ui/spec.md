@@ -5,21 +5,34 @@
 
 ## ADDED Requirements
 
-### Requirement: REQ-919 — The task's thread is what people said
+### Requirement: REQ-919 — The task's thread is the step's own history
 
-The task view's thread SHALL carry only what a person said, what was asked of them, and the
-outcomes addressed to them: questions raised for the owner, the owner's answers and comments, the
-guide's replies, the outcome of each gate, and a run whose failure is still the last word at its
-node. A failure a later attempt recovered from MUST NOT appear — it is the machine's own record,
-not a thing the owner was told. Stage lifecycle, tool activity, accepted commits, durations, token
-use, and cost MUST NOT appear in the thread either: they belong to the pipeline node that produced
-them, and are read there (REQ-914). A line the thread carries about a run SHALL offer that run's
-log rather than explaining itself in place. Every entry SHALL name who wrote it and when. A question the owner has already
+The task view's thread SHALL read one pipeline step at a time, and SHALL carry that step's whole
+record: what its runs did — each action and what it acted on — what it asked of the owner, what
+the owner said to it, the guide's replies, and how the step ended. The step being read SHALL be
+the one the task stands on, until the owner selects another in the rail (REQ-914); selecting
+another SHALL replace what the thread carries with that step's record. Every entry SHALL belong
+to exactly one step: an entry a stage produced belongs to that stage's node, an entry naming a
+node belongs to that node, and everything else belongs to the step the task stood on when it
+happened — so a task's whole history is reachable one step at a time and no entry is homeless.
+The thread SHALL distinguish what a person said from what the machine did without splitting them
+into two regions: a turn SHALL name who wrote it, a line of the machine's record SHALL name what
+the run did, and the two SHALL share one column in the order they happened. A line SHALL read as
+a transcript reads: one tool use as the verb and its object together — `Edited(src/foo.ts)` —
+and anything that happened to the run as a sentence with its particulars on a branch beneath it.
+A line MUST NOT reserve a column for its clock: a step is read as a sequence, and a column of
+timestamps buys an ordering the order already gives, at the width the line needs for what it
+names. The exact moment SHALL remain available on the entry and to a screen reader. A question
+the owner has already
 resolved SHALL be rendered as its exchange in no more than two clamped lines with a control that
 opens the whole of it, and MUST NOT be presented with the border, label, or resolution footer
 that marks a question still open (REQ-912). The thread SHALL be one scrolling region: no part of
 it, and nothing above it, SHALL scroll inside a region of its own. New entries SHALL appear
-without a reload and MUST NOT move the view away from what the owner is reading. A task with one
+without a reload and MUST NOT move the view away from what the owner is reading. A step SHALL end
+with the documents its runs wrote, rendered in place rather than named and linked away; a gate,
+whose own runs write nothing, SHALL end with the documents of the step it is judging, so that what
+is being approved is on the screen doing the approving (REQ-907). Where the step being read is the
+one the task stands on, its first document SHALL be open. A step with one
 thing to say SHALL show that one entry, with no placeholder and no empty state of its own.
 
 #### Scenario: AC-953 — Reading history while the task runs
@@ -35,17 +48,27 @@ thing to say SHALL show that one entry, with no placeholder and no empty state o
 #### Scenario: AC-958 — An answered question stops looking like a question
 
 - **WHEN** the owner reopens a task whose questions were answered
-- **THEN** each SHALL read as at most two clamped lines of the exchange with a control that opens the whole of it, and SHALL NOT carry the presentation of an open question
+- **THEN** each SHALL read as at most two clamped lines of the exchange with a control that opens the whole exchange, and SHALL NOT carry the presentation of an open question
 
-#### Scenario: AC-959 — The machine's own record is not in the thread
+#### Scenario: AC-959 — The machine's record is in the step that produced it
 
 - **WHEN** a stage starts, reports activity, and is accepted with a commit
-- **THEN** the thread SHALL gain no entry for any of it, and that stage's node SHALL carry all of it
+- **THEN** each of those SHALL read in that stage's step, and no other step's thread SHALL carry any of them
 
-#### Scenario: AC-969 — A stop is addressed to the owner; a recovered failure is not
+#### Scenario: AC-969 — A recovered failure is history of its own step
 
 - **WHEN** one attempt at a node fails and a later attempt at the same node is accepted
-- **THEN** the thread SHALL carry no entry for that failure, and a failure that no later attempt recovered from SHALL read as one line offering that run's log
+- **THEN** both SHALL read in that node's own record, and reading any other step SHALL show neither
+
+#### Scenario: AC-989 — A gate shows what it is asking about
+
+- **WHEN** the owner opens a task parked at a gate
+- **THEN** the document that gate is judging SHALL be rendered in the gate's own step, open, above the input that approves it
+
+#### Scenario: AC-990 — Switching the step switches the thread
+
+- **WHEN** the owner selects a finished node in the rail while another step is running
+- **THEN** the thread SHALL read that node's record, headed by what that node is and what it spent, and SHALL return to following the task when the owner selects the step the task stands on
 
 ### Requirement: REQ-920 — The task is one page, and its surfaces are tabs
 
@@ -53,7 +76,12 @@ The task view SHALL present one header row and a navigation row directly beneath
 header SHALL carry the task's title, its state as a sentence stating what the task is doing or
 what it needs from the owner, what qualifies that state, and an indicator of the event
 stream's own health, labelled so that it cannot be read as the state of the work. One line of
-repository context SHALL sit at the trailing end of the navigation row. The header
+repository context SHALL sit at the trailing end of the navigation row: the repository named as
+its owner and name, the ref the surface reads it at, and — once the task has opened one — its
+pull request named by number. The repository and the pull request SHALL be links to the places
+they name wherever the remote's web address is derivable, and SHALL be marked as a repository and
+a pull request rather than left as bare text; a remote whose web address cannot be derived SHALL
+be named without a link rather than linked to a guess. The header
 SHALL read the same on every one of the task's surfaces. The navigation SHALL list those
 surfaces — the thread, the changed files, and the documents — each carrying its count where one
 is known, and SHALL mark the surface being shown. It SHALL stay one row at every width,
@@ -83,26 +111,45 @@ than in the rail, which carries the pipeline and the spend and nothing else.
 - **WHEN** a task surface's URL is opened directly in a fresh browser
 - **THEN** that surface SHALL load with the task's header and navigation, without walking through another surface first
 
-### Requirement: REQ-921 — One input, and it names where the text goes
+#### Scenario: AC-984 — The repository is somewhere to go
+
+- **WHEN** the owner reads a task whose remote is on a host with a known web address, and which has opened a pull request
+- **THEN** the repository SHALL be a link to it and the pull request SHALL be a link named by its number, both marked as what they are
+
+### Requirement: REQ-921 — One input, one row of verbs, and it names where the text goes
 
 The task view SHALL offer exactly one text input, at the foot of the thread. The owner MUST NOT
 be required to choose a mode or a target before typing: the task's own state SHALL determine
-where the text goes, and the view SHALL state that destination in words beside the input, naming
-what will receive the text and when it will be read. The view MUST NOT offer a control that
-retargets the text to something the state did not choose. The destination SHALL be derived from
+where the text goes, and the input SHALL name that destination in its own prompt. The view MUST
+NOT offer a control that retargets the text to something the state did not choose, and MUST NOT
+restate the destination in a sentence beside a field that already names it, nor spell out the
+keystroke that sends it. Where the state qualifies the destination — a discussion the owner is
+inside, a cap that is spent, a stop whose uncommitted work is already gone, a gate's remaining
+redirects — that qualification SHALL be stated in one line above the input, and nowhere else.
+That line MUST NOT name the node when it is the step the thread is already headed by: the step's
+head (REQ-914) has named it, and a console repeating it makes one fact the third statement of
+itself on a screen that had already said it twice. Where the destination is not a step being read
+— the guide, or plainly nowhere — it SHALL be named.
+Every control the state offers — sending, stopping the run that is under way (REQ-914), a gate's
+own verbs (REQ-905), dismissing or discussing an open question, and the state's quiet ways out —
+SHALL sit in one row on the input's own surface, so that what acts and what types are one block
+rather than a field with a separate strip of controls outside it. That row SHALL follow the
+input, in the order a person works: they write, and then they decide what to do with what they
+wrote. A control that opens something — a confirmation, a rework target — SHALL open over the
+block rather than push the row it belongs to. The destination SHALL be derived from
 the task's state: while a node is running, the text is guidance for that node; while a question
 is open, it is the answer to the question shown, which SHALL be presented directly above the
 input with a way to move between questions when more than one is open; at a gate, it is the
-gate's comment, offered beside the gate's own actions (REQ-905); while a stage stands interrupted
+gate's comment; while a stage stands interrupted
 or stopped, it is guidance carried into the restart (REQ-914); when nothing is running and the
 pipeline has more to do, it is guidance for the node that runs next. A discussion the owner opened
 from a question SHALL take the input for as long as it is open, with a control that closes it and
 hands the input back — opening a discussion is an action on a specific question, not a mode set
 before typing, and the owner MUST NOT be able to reach the guide any other way while no Guide
 surface exists. Where the destination is a
-pipeline node, the text SHALL be recorded as guidance targeted at that node, and the view SHALL
-state that it is read on that node's next run — it MUST NOT claim to reach a run already under
-way. Whatever the destination, text the owner sent SHALL appear in the thread (REQ-919). Where
+pipeline node, the text SHALL be recorded as guidance targeted at that node, and the view MUST
+NOT claim to reach a run already under way. Whatever the destination, text the owner sent SHALL
+appear in the thread (REQ-919). Where
 the task's state offers no destination — its budget is spent, or it has finished — the input
 SHALL be presented as unavailable, SHALL state why, and SHALL offer the action that would
 restore one rather than accepting text that reaches nobody.
@@ -110,7 +157,12 @@ restore one rather than accepting text that reaches nobody.
 #### Scenario: AC-962 — The destination is stated, not chosen
 
 - **WHEN** the owner opens a task with a node running
-- **THEN** one input SHALL be shown with a line naming that node as its destination, and the view SHALL offer no control for choosing a different one
+- **THEN** one input SHALL be shown naming that node in its own prompt, with no sentence beneath it repeating the destination and no control for choosing a different one
+
+#### Scenario: AC-985 — The console does not restate the step it stands in
+
+- **WHEN** the owner reads the step of a stopped node, whose restart the console is offering
+- **THEN** the line above the input SHALL carry what the head does not — that the uncommitted work is gone — without naming the node the head has already named
 
 #### Scenario: AC-963 — Typed guidance reaches the node
 
@@ -131,6 +183,11 @@ restore one rather than accepting text that reaches nobody.
 
 - **WHEN** the owner opens the discussion on an unresolved question
 - **THEN** the one input SHALL address that discussion, SHALL say so, and SHALL offer closing it to go back to answering
+
+#### Scenario: AC-991 — Stopping and sending are one reach apart
+
+- **WHEN** the owner opens a task with a node running
+- **THEN** stopping that run and sending the text SHALL both be in the row directly above the input, and no control SHALL sit below it
 
 ## MODIFIED Requirements
 
@@ -157,11 +214,14 @@ opened directly.
 ### Requirement: REQ-906 — Feedback from anywhere
 
 The task view SHALL always offer a comment input — not only at gates — posting to the feedback
-capture endpoint. What a comment addresses SHALL be decided by where the owner wrote it, never
-by a target chosen from a list: text sent from the one input at the foot of the thread addresses
-the destination that input names (REQ-921), and a comment written inside a stage's run log
-addresses that stage. A posted comment SHALL appear in the thread without a reload. This input
-SHALL be present and usable on a phone-sized viewport.
+capture endpoint. What a comment addresses SHALL be decided by where the owner wrote it, never by
+a target chosen from a list: text sent while the thread is following the task addresses the
+destination the input names (REQ-921), and text sent while the owner is reading an older step's
+record (REQ-919) is pinned to that step's run as commentary. Where the task's state is asking
+something of the owner — a question, a gate, a stopped stage — that demand SHALL keep the input,
+whichever step is being read, so that an answer cannot be pinned to a run by accident. A posted
+comment SHALL appear in the thread without a reload. This input SHALL be present and usable on a
+phone-sized viewport.
 
 #### Scenario: AC-911 — Commenting mid-run
 
@@ -170,16 +230,28 @@ SHALL be present and usable on a phone-sized viewport.
 
 #### Scenario: AC-912 — Pinning a comment to a stage
 
-- **WHEN** the owner comments from inside an earlier stage's run log
-- **THEN** the stored comment SHALL address that stage, and the owner SHALL NOT have been asked to select it from a list
+- **WHEN** the owner comments while reading an earlier stage's record
+- **THEN** the stored comment SHALL be pinned to that stage, the input SHALL have said so before it was sent, and the owner SHALL NOT have been asked to select the stage from a list
 
 ### Requirement: REQ-907 — Artifacts render as documents
 
 The task's documents SHALL be one of its surfaces (REQ-920), listing the task's artifacts by
 kind and rendering a selected artifact's markdown as a readable document — headings, lists,
-tables, code blocks — not as raw text. An artifact updated by a later stage SHALL show its fresh
-content when reopened. The number of documents SHALL be carried by that surface's own tab and
-stated nowhere else.
+tables, code blocks — not as raw text. A document SHALL also be readable in the step whose runs
+wrote it (REQ-919), without leaving the thread: the surface is the index of everything the task
+holds, and the step is where its own output is read.
+
+In a step, the documents SHALL be presented as a shelf and not a stack: each named by its kind
+and its file, each stating how much of it there is — including that there is none — and at most
+one of them open at a time. An open document SHALL be clamped to a readable height with a control
+that opens the whole of it in place, and a way to open it on the documents surface. It MUST NOT
+expand inside a scrolling region of its own, because the thread is one scrolling region (REQ-919)
+and a box that scrolls within it is a fold. Rendering every document open and full-length is what
+put a decision log saying nothing at the same size as the proposal it followed, and pushed the
+console under the fold to do it.
+
+An artifact updated by a later stage SHALL show its fresh content when reopened. The number of
+documents SHALL be carried by that surface's own tab and stated nowhere else.
 
 #### Scenario: AC-913 — Reading a proposal
 
@@ -191,15 +263,20 @@ stated nowhere else.
 - **WHEN** a stage rewrites an artifact and the owner reopens it
 - **THEN** the rendered content SHALL be the updated version
 
+#### Scenario: AC-986 — A step's documents are a shelf
+
+- **WHEN** a step wrote a long proposal and a decision log with nothing in it
+- **THEN** both SHALL be named with their size, the empty one SHALL say so without being opened, and at most one SHALL be open — clamped, with a control that opens the whole of it
+
 ### Requirement: REQ-911 — Usable from a phone
 
 Every screen SHALL be usable on a phone-sized viewport: no horizontal scrolling of the page,
 actions reachable, forms and the comment input operable. The owner being able to comment on
 everything from the browser or phone is a contract, not an aspiration. On the task view the
 navigation between its surfaces SHALL remain available at every width, since it is how the owner
-leaves the thread; the pipeline rail SHALL collapse into a single disclosure rather than
-displacing the thread; and a stage's run log SHALL open as a full-height layer carrying its own
-way back.
+leaves the thread; and the pipeline rail SHALL collapse into a single disclosure rather than
+displacing the thread, selecting a step in it SHALL change the thread beneath it (REQ-919), so
+that nothing opens as a layer the owner then has to find their way back out of.
 
 #### Scenario: AC-920 — Approving from a phone
 
@@ -209,7 +286,7 @@ way back.
 #### Scenario: AC-968 — The task view on a phone
 
 - **WHEN** the owner opens a running task on a phone-sized viewport
-- **THEN** its surfaces SHALL stay reachable, the pipeline SHALL be behind one disclosure, and opening a node's run log SHALL leave a way back to the thread
+- **THEN** its surfaces SHALL stay reachable, the pipeline SHALL be behind one disclosure, and selecting a step in it SHALL change the thread rather than open a layer over it
 
 ### Requirement: REQ-912 — Decisions are cards, not log lines
 
@@ -268,7 +345,8 @@ SHALL be reachable from the question it is about; the one input at the foot of t
 NOT carry a mode that redirects text to a conversation instead of the destination it states
 (REQ-921). Restarting a stage SHALL plainly state that uncommitted work from its interrupted
 attempt was discarded. A direct `Stop current run` control SHALL be visible whenever a stage is
-running, independently of conversation content; its confirmation SHALL name the stage and the
+running, independently of conversation content, and SHALL sit in the console's own row of verbs
+beside sending (REQ-921) rather than in the rail; its confirmation SHALL name the stage and the
 loss of uncommitted work, and its progress SHALL remain visible until the task is safely paused.
 Restart SHALL be a separate control whose form SHALL accept optional guidance entered there or
 selected from a conversation proposal, and confirmation SHALL show the exact instruction the
@@ -280,17 +358,43 @@ and stopped — and SHALL mark the node the task stands on together with its liv
 `stopping`, `paused`, or terminal state. A stopped node — one whose attempts are spent, whose run
 was found orphaned, or whose task is paused with its budget exhausted — SHALL keep the facts a
 finished node carries and SHALL state the reason it stopped in their place; it MUST NOT revert to
-the presentation of a node that has not run. Nodes that have not run SHALL be summarised together
-in a single line naming how many there are, rather than listed one by one. Activating a node
-SHALL reveal, in place, that node's run log: each run with its status, duration, token use, cost,
-model, and accepted commit; the activity that run reported (REQ-915); and a control to comment on
-that run (REQ-906). For a stage node the run log SHALL name the role that runs it. A model binding
-SHALL be named on a node only where it departs from the task's baseline binding, which the rail
-SHALL state once. An attempt SHALL be numbered only where its node has run more than once. An
+the presentation of a node that has not run.
+
+Every node of the pinned pipeline SHALL be listed, in the order it runs, including the nodes that
+have not run yet: what happens next is the question a pipeline is read to answer, and a count of
+what was folded away does not answer it. A node that has not run SHALL NOT be activatable — it
+has no step to read, and offering to open one offers an empty room.
+
+A rail row SHALL explain, on request, what its step is for in the owner's terms — not the role
+that runs it or the edges it has, but why a person should care that it exists. That explanation
+SHALL appear after the pointer has rested on the row, so that crossing the rail on the way
+elsewhere does not set ten of them flashing, and at once on focus, since arriving by keyboard is
+already deliberate. It MUST NOT be clipped by the rail's own scrolling or borders. A node with
+nothing worth saying SHALL offer no explanation rather than a generic one.
+
+Selecting a row SHALL land on the row that was selected. A row MUST NOT change its own geometry
+when selected, and selecting the row already being read MUST NOT move the selection to another
+row: both are movement the owner did not ask for, in a column read by position.
+
+A rail row SHALL carry the node's name, a mark standing for its state, and at most one fact. That
+fact SHALL be what the node cost or why it is not finished — a duration, an attempt count, a
+failure — and MUST NOT restate what the mark already says: `passed` and `stopped` written beside
+a coloured mark are the mark's own meaning spelled again, in the column meant for what the node
+actually cost. Where the state's word is the only thing a screen reader can be given, it SHALL be
+carried for that reader alone. A row MUST NOT carry the model, the accepted commit, or the spend:
+those belong to the step, and a row holding them had no width left for the node's own name.
+
+Activating a node SHALL make the thread read that node's step (REQ-919), headed by the facts of
+its runs — duration, token use, cost, model and the effort it was bound at, the role, and the
+accepted commit. The rail SHALL mark the step being read. Where the step being read is the one
+the task itself stands on, its head MUST NOT restate the state the page header (REQ-920) already
+states of the task; where the owner has gone back to an earlier step, the head SHALL state that
+step's own state, because the page header is then about a different node. An attempt SHALL be
+numbered only where its node has run more than once. An
 accepted commit SHALL be rendered in short form with its full value available, linked to the
 commit wherever the repository's web address is derivable. The view MUST NOT present a running
 attempt's uncommitted file edits as accepted changes; new code or artifact content becomes visible
-only after the stage result and commit are accepted. The transcript, rail, run log, thread, input,
+only after the stage result and commit are accepted. The transcript, rail, thread, input,
 stop/restart, and confirmation controls SHALL be operable on a phone-sized viewport and update
 from task events without reload.
 
@@ -327,7 +431,7 @@ from task events without reload.
 #### Scenario: AC-938 — Activity is not a live file feed
 
 - **WHEN** a running attempt changes files before its result is accepted
-- **THEN** its node's run log SHALL show run activity but SHALL NOT show those edits as accepted changes, and a later accepted completion SHALL expose its commit and refreshed artifacts
+- **THEN** its node's step SHALL show run activity but SHALL NOT show those edits as accepted changes, and a later accepted completion SHALL expose its commit and refreshed artifacts
 
 #### Scenario: AC-954 — A first attempt is not numbered
 
@@ -347,30 +451,86 @@ from task events without reload.
 #### Scenario: AC-967 — Going back to what a stage did
 
 - **WHEN** the owner activates an earlier node in the rail
-- **THEN** that node's run log SHALL open over the thread, carrying its runs, their spend, their activity, and a way to comment on the run
+- **THEN** the thread SHALL read that node's step — its runs, their spend, and what they did — with the rail marking it as the step being read
+
+#### Scenario: AC-981 — The whole walk, and only the reachable part of it
+
+- **WHEN** the owner reads a task stopped part-way through its pipeline
+- **THEN** the rail SHALL list every node of the pinned pipeline in order, and the nodes that have not run SHALL be shown without being activatable
+
+#### Scenario: AC-982 — The state is a mark, not a word
+
+- **WHEN** a node has finished, or has stopped for no reason beyond being stopped
+- **THEN** its row SHALL carry a mark for that state and SHALL leave its fact column empty, rather than writing the state out beside the mark
+
+#### Scenario: AC-987 — What a step is for, on request
+
+- **WHEN** the owner rests the pointer on a rail row, or focuses it from the keyboard
+- **THEN** what that step is for SHALL be shown in full, not cropped by the rail's scrolling or its border, and it SHALL NOT have appeared while the pointer was merely crossing the row
+
+#### Scenario: AC-988 — Selecting a row does not move the rail
+
+- **WHEN** the owner selects a rail row, including the one already being read
+- **THEN** the selection SHALL be on the row selected, and no row SHALL change its size or position
+
+#### Scenario: AC-983 — The step's head does not repeat the page
+
+- **WHEN** the owner reads the step the task itself stands on
+- **THEN** the step's head SHALL carry that step's facts without restating the state the page header already gives, and reading an earlier step SHALL restore that step's own state to its head
 
 ### Requirement: REQ-915 — The task view surfaces live stage activity, subordinate to accepted state
 
-While a stage is running, the task view SHALL render its activity events in that stage's own run
-log (REQ-914), each naming the recognized action and marked visibly as in-progress rather than
-accepted. Activity MUST NOT appear in the thread, which carries only what a person said
-(REQ-919); the rail SHALL show that the node is running, so the owner can find the activity
-without being given it unasked. Once the stage's result is accepted, its activity events SHALL be
-visually demoted — collapsed or removed — rather than left standing alongside the accepted
-outcome. A stage with no activity events SHALL still show as running without implying that
-nothing is happening; absence of activity events MUST NOT be presented as an error or stall.
+The task view SHALL distinguish what a run *changed* from what it merely *looked at*, and SHALL
+keep only the first.
+
+An activity that changes nothing the task owns — reading a file, searching, fetching, revising
+its own plan — SHALL be reported while the run is under way as a single line at the end of that
+step, naming the action in progress and what it is acting on, replaced in place as the run
+proceeds. That line SHALL carry no timestamp, since it is always now, and SHALL leave no entry
+behind once the run ends: a run that read forty files and changed two is two lines of record,
+not forty-two.
+
+An activity that changes something SHALL be a line of the step's record (REQ-919) naming what it
+changed, and SHALL remain after the run that made it ends. An activity whose tool the view does
+not recognize SHALL be treated as changing something, because the view cannot honestly claim
+otherwise. The newest such line of a run still under way SHALL be marked visibly as in progress;
+once that run ends it SHALL stop being marked as current, so that the outcome beneath it is the
+fresher fact rather than one claim standing beside another.
+
+Whatever names a file SHALL be rendered as its path within the repository. An agent reports
+absolute paths inside its sandbox, and repeating the workspace root on every line spends the
+width of the column before the line says anything.
+
+A stage with no activity events SHALL still show as running, with a line saying so, without
+implying that nothing is happening; absence of activity events MUST NOT be presented as an error
+or stall.
 
 #### Scenario: AC-940 — Activity appears while a stage runs
 
-- **WHEN** a running stage's provider CLI reports a recognized action
-- **THEN** it SHALL appear in that stage's run log marked as in-progress and without a reload, and the thread SHALL gain no entry for it
+- **WHEN** a running stage's provider CLI reports an action that changes something
+- **THEN** it SHALL appear as a line of that stage's step naming what it changed, marked as in progress, without a reload
 
 #### Scenario: AC-941 — Accepted result demotes prior activity
 
 - **WHEN** a stage's result is accepted after it reported activity
-- **THEN** the run log SHALL show the accepted outcome and SHALL NOT present that attempt's activity events as current
+- **THEN** its step SHALL carry the accepted outcome beneath those lines, and none of them SHALL still be marked as in progress
 
 #### Scenario: AC-942 — No activity yet
 
 - **WHEN** a stage is running and no activity has been reported
-- **THEN** the rail SHALL still show it as running, without presenting the absence of activity as a failure
+- **THEN** the rail SHALL still show it as running, and the step SHALL carry one line saying the run is working, without presenting the absence of activity as a failure
+
+#### Scenario: AC-978 — Reading is progress, not record
+
+- **WHEN** a running stage reports a series of reads and searches
+- **THEN** the step SHALL show one line naming the current one and replacing it as the run proceeds, and once the run ends none of them SHALL remain in the step's record
+
+#### Scenario: AC-979 — A run that only read leaves its boundaries
+
+- **WHEN** a stage that reported nothing but reads and searches is stopped
+- **THEN** its step SHALL carry the run's start and its stop, and no line for anything it read
+
+#### Scenario: AC-980 — A path is read, not decoded
+
+- **WHEN** an activity names a file inside the run's sandbox
+- **THEN** the line SHALL show the file's path within the repository, without the workspace root every other line would repeat

@@ -10,25 +10,27 @@ interface TaskNavProps {
 }
 
 interface SurfaceEntry {
-  readonly id: TaskSurface | 'guide'
+  readonly id: TaskSurface
   readonly label: string
-  readonly href: string | null
+  readonly href: string
   readonly count: number | null
-  /** Drawn but not built: knowing where a thing will land is most of what stops it landing badly. */
-  readonly soon?: boolean
 }
 
 /**
  * A row under the header, not a column beside the content. The column cost a
  * second left edge next to the app's own task list, which is two navigations
- * for one screen; four tabs fit a row with room to spare.
+ * for one screen.
+ *
+ * Every tab here opens something. A fourth one reading `Guide soon` sat between
+ * the owner and the three that work, naming a surface nobody could describe —
+ * knowing where a thing will land is worth drawing when the thing is being
+ * built, and clutter the rest of the time.
  */
 export function TaskNav({ taskId, active, fileCount, docCount }: TaskNavProps) {
   const entries: SurfaceEntry[] = [
     { id: 'thread', label: 'Thread', href: `/tasks/${taskId}`, count: null },
     { id: 'files', label: 'Files', href: `/tasks/${taskId}/files`, count: fileCount },
     { id: 'docs', label: 'Docs', href: `/tasks/${taskId}/docs`, count: docCount },
-    { id: 'guide', label: 'Guide', href: null, count: null, soon: true },
   ]
 
   return (
@@ -45,41 +47,20 @@ export function TaskNav({ taskId, active, fileCount, docCount }: TaskNavProps) {
 }
 
 function SurfaceLink({ entry, active }: { entry: SurfaceEntry; active: boolean }) {
-  const label = (
-    <>
-      <span>{entry.label}</span>
-      {entry.count !== null && (
-        <span className="font-mono text-[0.6rem] text-muted/70">{entry.count}</span>
-      )}
-      {entry.soon && <span className="font-mono text-[0.56rem] text-muted/70">soon</span>}
-    </>
-  )
-  const shared =
-    'flex items-baseline gap-1.5 whitespace-nowrap border-b-2 px-2 py-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.13em] transition-colors'
-
-  if (!entry.href) {
-    return (
-      <span
-        aria-disabled="true"
-        className={`${shared} border-b-transparent text-muted/60`}
-        title="Not built yet"
-      >
-        {label}
-      </span>
-    )
-  }
-
+  // A pill rather than an underline: the rule under the tabs was one more line
+  // on a screen this pass is spending on space instead.
   return (
     <Link
       href={entry.href}
       aria-current={active ? 'page' : undefined}
-      className={`${shared} ${
+      className={`flex items-baseline gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-mono text-[0.72rem] transition-colors ${
         active
-          ? 'border-b-phosphor text-phosphor'
-          : 'border-b-transparent text-muted hover:text-text'
+          ? 'bg-accent/10 font-semibold text-accent'
+          : 'text-muted hover:bg-text/[0.06] hover:text-text'
       }`}
     >
-      {label}
+      <span>{entry.label}</span>
+      {entry.count !== null && <span className="text-[0.66rem] text-muted">{entry.count}</span>}
     </Link>
   )
 }

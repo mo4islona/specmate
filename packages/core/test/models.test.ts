@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { DEFAULT_MODEL_BINDINGS, resolveModelBindings } from '../src/models.ts'
 import { AGENT_ROLES } from '../src/roles.ts'
 
