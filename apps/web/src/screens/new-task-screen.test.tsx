@@ -1,11 +1,27 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { Router } from 'wouter'
+import { memoryLocation } from 'wouter/memory-location'
+import * as api from '../lib/api-client.ts'
 import {
   buildCreateTaskPayload,
   type NewTaskForm,
+  NewTaskScreen,
   RepositoryChoice,
   setOverrideField,
 } from './new-task-screen.tsx'
+
+vi.mock('../lib/api-client.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof api>()),
+  previewIntake: vi.fn(),
+  getRepository: vi.fn(),
+  readReference: vi.fn(),
+}))
+
+const previewIntake = vi.mocked(api.previewIntake)
+const SPECMATE = 'https://github.com/example/specmate'
 
 const BASE: NewTaskForm = {
   description: 'Fix the reorg bug',
@@ -150,5 +166,43 @@ describe('setOverrideField', () => {
     )
 
     expect(cleared).toEqual({})
+  })
+})
+
+describe('the rail beside the request — AC-1910', () => {
+  it('does not move the focus or the caret when an answer arrives', async () => {
+    type Preview = Awaited<ReturnType<typeof api.previewIntake>>
+    let settle: ((value: Preview) => void) | undefined
+    previewIntake.mockReturnValue(new Promise<Preview>((resolve) => (settle = resolve)))
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <Router hook={memoryLocation({ path: '/tasks/new' }).hook}>
+          <NewTaskScreen />
+        </Router>
+      </QueryClientProvider>,
+    )
+
+    const field = screen.getByLabelText('Request') as HTMLTextAreaElement
+    await userEvent.type(field, `fix the redirect in ${SPECMATE}`)
+    field.setSelectionRange(4, 4)
+
+    settle?.({
+      repository: {
+        resolved: true,
+        repoUrl: SPECMATE,
+        id: 'id-specmate',
+        via: 'request-url',
+        known: false,
+        candidates: [],
+      },
+      references: [],
+    } as unknown as Preview)
+    await screen.findByText('example/specmate')
+
+    expect(document.activeElement).toBe(field)
+    expect(field.selectionStart).toBe(4)
   })
 })

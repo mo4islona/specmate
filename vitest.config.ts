@@ -17,6 +17,10 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     restoreMocks: true,
-    include: ['packages/core/test/**/*.test.ts'],
+    include: [
+      'packages/core/test/**/*.test.ts',
+      'packages/github/test/**/*.test.ts',
+      'scripts/test/**/*.test.ts',
+    ],
   },
 })

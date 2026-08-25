@@ -1,0 +1,16 @@
+{
+  "name": "@specmate/github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@specmate/db": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  }
+}

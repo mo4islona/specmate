@@ -7,6 +7,7 @@ COPY apps/orchestrator/package.json apps/orchestrator/
 COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
+COPY packages/github/package.json packages/github/
 COPY packages/runner/package.json packages/runner/
 COPY packages/workspace/package.json packages/workspace/
 RUN bun install --frozen-lockfile

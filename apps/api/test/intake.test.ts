@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { deriveTitle, repositoryUrlIn, resolveRepository } from '../src/intake.ts'
 
 const SPECMATE = 'https://github.com/example/specmate'
@@ -13,7 +13,7 @@ function resolve(
 }
 
 describe('the repository a request names', () => {
-  test('an explicit field wins over everything the text says', () => {
+  it('an explicit field wins over everything the text says', () => {
     const resolution = resolveRepository({
       repoUrl: PORTAL,
       request: `rework the parser in ${SPECMATE}`,
@@ -21,48 +21,67 @@ describe('the repository a request names', () => {
       defaultRepoUrl: SPECMATE,
     })
 
-    expect(resolution).toEqual({ resolved: true, repoUrl: PORTAL })
+    expect(resolution).toEqual({ resolved: true, repoUrl: PORTAL, via: 'chosen' })
   })
 
-  test('a URL written in the request is used as written — AC-1047', () => {
+  it('a URL written in the request is used as written — AC-1047', () => {
     expect(resolve(`please fix the redirect in ${SPECMATE}`)).toEqual({
       resolved: true,
       repoUrl: SPECMATE,
+      via: 'request-url',
     })
   })
 
-  test('sentence punctuation is not part of the URL', () => {
+  it('sentence punctuation is not part of the URL', () => {
     expect(repositoryUrlIn(`fix it in ${SPECMATE}.`)).toBe(SPECMATE)
     expect(repositoryUrlIn(`fix it in (${SPECMATE}), please`)).toBe(SPECMATE)
   })
 
-  test('an ssh remote counts as a URL too', () => {
+  it('an ssh remote counts as a URL too', () => {
     expect(resolve(`the parser in ${PORTAL} drops rows`)).toEqual({
       resolved: true,
       repoUrl: PORTAL,
+      via: 'request-url',
     })
   })
 
-  test('a known repository named in the text resolves — AC-1048', () => {
+  it('a pasted issue link resolves to the repository it lives in, not to the issue', () => {
+    expect(resolve(`${SPECMATE}/issues/75`)).toEqual({
+      resolved: true,
+      repoUrl: SPECMATE,
+      via: 'request-url',
+    })
+  })
+
+  it('a pull request link resolves the same way, sentence and all', () => {
+    expect(repositoryUrlIn(`have a look at ${SPECMATE}/pull/12, it is the ask`)).toBe(SPECMATE)
+  })
+
+  it('a known repository named in the text resolves — AC-1048', () => {
     expect(resolve('the specmate planner asks too many questions', [SPECMATE, PORTAL])).toEqual({
       resolved: true,
       repoUrl: SPECMATE,
+      via: 'known-name',
     })
   })
 
-  test('the name has to stand on its own, not sit inside a longer word', () => {
+  it('the name has to stand on its own, not sit inside a longer word', () => {
     const resolution = resolve('rework the specmateish prototype', [SPECMATE])
 
     expect(resolution.resolved).toBe(false)
   })
 
-  test('two known repositories named in one request is a question, not a coin flip — AC-1050', () => {
+  it('two known repositories named in one request is a question, not a coin flip — AC-1050', () => {
     const resolution = resolve('move the portal onto the specmate pipeline', [SPECMATE, PORTAL])
 
-    expect(resolution).toEqual({ resolved: false, candidates: [SPECMATE, PORTAL] })
+    expect(resolution).toEqual({
+      resolved: false,
+      reason: 'ambiguous',
+      candidates: [SPECMATE, PORTAL],
+    })
   })
 
-  test('ambiguity does not fall through to the default', () => {
+  it('ambiguity does not fall through to the default', () => {
     const resolution = resolve(
       'move the portal onto the specmate pipeline',
       [SPECMATE, PORTAL],
@@ -72,40 +91,43 @@ describe('the repository a request names', () => {
     expect(resolution.resolved).toBe(false)
   })
 
-  test('the default carries a request that names nothing — AC-1052', () => {
+  it('the default carries a request that names nothing — AC-1052', () => {
     expect(resolve('make the retry backoff configurable', [SPECMATE], PORTAL)).toEqual({
       resolved: true,
       repoUrl: PORTAL,
+      via: 'default',
     })
   })
 
-  test('nothing to go on leaves the known repositories as candidates — AC-1049', () => {
+  it('nothing to go on leaves the known repositories as candidates — AC-1049', () => {
     expect(resolve('make the retry backoff configurable', [SPECMATE, PORTAL])).toEqual({
       resolved: false,
+      reason: 'nothing-named',
       candidates: [SPECMATE, PORTAL],
     })
   })
 
-  test('a fresh install has nothing to offer, and says so rather than failing — AC-1055', () => {
+  it('a fresh install has nothing to offer, and says so rather than failing — AC-1055', () => {
     expect(resolve('make the retry backoff configurable')).toEqual({
       resolved: false,
+      reason: 'nothing-named',
       candidates: [],
     })
   })
 })
 
 describe('the title intake derives', () => {
-  test('is the first line of the request — AC-1056', () => {
+  it('is the first line of the request — AC-1056', () => {
     expect(deriveTitle('Fix the login redirect\n\nIt lands on the homepage instead.')).toBe(
       'Fix the login redirect',
     )
   })
 
-  test('collapses the whitespace a pasted line carries', () => {
+  it('collapses the whitespace a pasted line carries', () => {
     expect(deriveTitle('  Fix   the   login    redirect  ')).toBe('Fix the login redirect')
   })
 
-  test('cuts a long first line at a word boundary', () => {
+  it('cuts a long first line at a word boundary', () => {
     const long = `${'word '.repeat(40)}end`
     const title = deriveTitle(long)
 

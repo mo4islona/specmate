@@ -49,6 +49,16 @@ export function worktreePath(config: WorkspaceConfig, slug: string): string {
   return join(config.root, 'tasks', slug)
 }
 
+/**
+ * A repository's memory store, keyed on the same digest the mirror is named by:
+ * one repository is one identity on disk and over REST. Beside the mirrors
+ * rather than in a volume of its own, because the API and the orchestrator
+ * already have this root at the same absolute path.
+ */
+export function memoryPath(config: WorkspaceConfig, repoUrl: string): string {
+  return join(config.root, 'memory', mirrorKey(repoUrl))
+}
+
 /** Disposable detached checkout used by one conversation response attempt. */
 export function conversationWorktreePath(
   config: WorkspaceConfig,

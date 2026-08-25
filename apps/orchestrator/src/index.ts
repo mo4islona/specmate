@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { PIPELINE_CATALOG } from '@specmate/core'
 import { createDb, databaseUrl, ping, tasks } from '@specmate/db'
+import { githubToken } from '@specmate/github'
 import {
   ConversationExecutor,
   killContainersByLabels,
@@ -14,7 +15,6 @@ import { z } from 'zod'
 import { stageActivityPayload } from './activity.ts'
 import { createConversationDispatcher, createStageDispatcher } from './dispatch.ts'
 import { Engine } from './engine.ts'
-import { githubToken } from './github-auth.ts'
 import { Publisher } from './publish.ts'
 import {
   backendFor,

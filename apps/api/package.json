@@ -14,6 +14,7 @@
   "dependencies": {
     "@specmate/core": "workspace:*",
     "@specmate/db": "workspace:*",
+    "@specmate/github": "workspace:*",
     "@specmate/orchestrator": "workspace:*",
     "@specmate/workspace": "workspace:*",
     "drizzle-orm": "^0.45.2",

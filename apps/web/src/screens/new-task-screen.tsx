@@ -2,6 +2,7 @@ import type { AgentRole, ModelBinding, ModelId, ReasoningEffort } from '@specmat
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
+import { IntakeRail } from '../components/intake-rail.tsx'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { RoleBindings } from '../components/role-bindings.tsx'
 import { type SizeChoice, SizePicker } from '../components/size-picker.tsx'
@@ -170,135 +171,148 @@ export function NewTaskScreen() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-[72rem] space-y-6">
       <PageHeader
         title="Launch work"
         description="Say what you want done. The repository comes out of the request; planning names the task once it has read the code."
       />
 
-      {/* The same block the task's console is: this app has one input, and
-          launching is the first time the owner uses it. */}
-      <Console onSubmit={submit} noValidate>
-        <div className="px-4 pt-4">
-          <ConsoleField
-            id="task-description"
-            ref={request}
-            rows={3}
-            // The screen exists for this one field.
-            autoFocus
-            className="text-[0.95rem]"
-            value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
-            placeholder="Fix the login redirect in specmate — it lands on the homepage instead of the dashboard."
-            aria-label="Request"
-            aria-invalid={Boolean(fieldError('description'))}
-            aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
-          />
-          {fieldError('description') && (
-            <ErrorNote id="task-description-error">{fieldError('description')}</ErrorNote>
-          )}
-        </div>
-
-        {repositoryAsked && (
-          <div className="px-4 pt-4">
-            <RepositoryChoice
-              candidates={rejection?.candidates ?? []}
-              selected={form.repoUrl}
-              detail={fieldError('repoUrl')}
-              onSelect={(repoUrl) => setForm({ ...form, repoUrl })}
-            />
-          </div>
-        )}
-
-        {launch.isError && !rejection && (
-          <ErrorNote className="px-4 pt-3">{launch.error.message}</ErrorNote>
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-4 pt-4">
-          <SizePicker
-            value={form.planSize}
-            onChange={(planSize) => setForm({ ...form, planSize })}
-          />
-
-          <span className="flex-1" />
-
-          <Button
-            variant="primary"
-            className="shrink-0"
-            type="submit"
-            pending={launch.isPending}
-            pendingLabel="Launching…"
-          >
-            Launch task
-          </Button>
-        </div>
-      </Console>
-
-      <details className="group">
-        <summary className={`${buttonClass('ghost')} w-fit cursor-pointer list-none`}>
-          <span className="transition-transform group-open:rotate-90" aria-hidden="true">
-            ›
-          </span>
-          Advanced
-        </summary>
-
-        <div className="mt-4 space-y-6">
-          <Field
-            label="Base branch"
-            id="base-branch"
-            hint="Empty means the repository's default branch."
-            error={fieldError('baseBranch')}
-          >
-            <Input
-              mono
-              placeholder="main"
-              value={form.baseBranch}
-              onChange={(event) => setForm({ ...form, baseBranch: event.currentTarget.value })}
-            />
-          </Field>
-
-          <div>
-            <FieldLabel>Override models for this task</FieldLabel>
-            {fieldError('modelBindings') && (
-              <ErrorNote className="mt-2">{fieldError('modelBindings')}</ErrorNote>
-            )}
-            <div className="mt-4">
-              <RoleBindings>
-                {(role) => (
-                  <ModelSelectPair
-                    role={role}
-                    includeUseDefault
-                    modelValue={form.modelBindings?.[role]?.model ?? ''}
-                    reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
-                    onModelChange={(value) =>
-                      setForm({
-                        ...form,
-                        modelBindings: setOverrideField(
-                          form.modelBindings,
-                          role,
-                          'model',
-                          (value || undefined) as ModelId | undefined,
-                        ),
-                      })
-                    }
-                    onReasoningEffortChange={(value) =>
-                      setForm({
-                        ...form,
-                        modelBindings: setOverrideField(
-                          form.modelBindings,
-                          role,
-                          'reasoningEffort',
-                          (value || undefined) as ReasoningEffort | undefined,
-                        ),
-                      })
-                    }
-                  />
-                )}
-              </RoleBindings>
+      {/* The rail sits beside the field it is about where there is room, and
+          under it where there is not (REQ-911). It is second in the source so a
+          narrow screen and a screen reader both reach the request first. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="min-w-0 space-y-6">
+          {/* The same block the task's console is: this app has one input, and
+              launching is the first time the owner uses it. */}
+          <Console onSubmit={submit} noValidate>
+            <div className="px-4 pt-4">
+              <ConsoleField
+                id="task-description"
+                ref={request}
+                rows={3}
+                // The screen exists for this one field.
+                autoFocus
+                className="text-[0.95rem]"
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.currentTarget.value })}
+                placeholder="Fix the login redirect in specmate — it lands on the homepage instead of the dashboard."
+                aria-label="Request"
+                aria-invalid={Boolean(fieldError('description'))}
+                aria-describedby={fieldError('description') ? 'task-description-error' : undefined}
+              />
+              {fieldError('description') && (
+                <ErrorNote id="task-description-error">{fieldError('description')}</ErrorNote>
+              )}
             </div>
-          </div>
+
+            {repositoryAsked && (
+              <div className="px-4 pt-4">
+                <RepositoryChoice
+                  candidates={rejection?.candidates ?? []}
+                  selected={form.repoUrl}
+                  detail={fieldError('repoUrl')}
+                  onSelect={(repoUrl) => setForm({ ...form, repoUrl })}
+                />
+              </div>
+            )}
+
+            {launch.isError && !rejection && (
+              <ErrorNote className="px-4 pt-3">{launch.error.message}</ErrorNote>
+            )}
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-4 pt-4">
+              <SizePicker
+                value={form.planSize}
+                onChange={(planSize) => setForm({ ...form, planSize })}
+              />
+
+              <span className="flex-1" />
+
+              <Button
+                variant="primary"
+                className="shrink-0"
+                type="submit"
+                pending={launch.isPending}
+                pendingLabel="Launching…"
+              >
+                Launch task
+              </Button>
+            </div>
+          </Console>
+
+          <details className="group">
+            <summary className={`${buttonClass('ghost')} w-fit cursor-pointer list-none`}>
+              <span className="transition-transform group-open:rotate-90" aria-hidden="true">
+                ›
+              </span>
+              Advanced
+            </summary>
+
+            <div className="mt-4 space-y-6">
+              <Field
+                label="Base branch"
+                id="base-branch"
+                hint="Empty means the repository's default branch."
+                error={fieldError('baseBranch')}
+              >
+                <Input
+                  mono
+                  placeholder="main"
+                  value={form.baseBranch}
+                  onChange={(event) => setForm({ ...form, baseBranch: event.currentTarget.value })}
+                />
+              </Field>
+
+              <div>
+                <FieldLabel>Override models for this task</FieldLabel>
+                {fieldError('modelBindings') && (
+                  <ErrorNote className="mt-2">{fieldError('modelBindings')}</ErrorNote>
+                )}
+                <div className="mt-4">
+                  <RoleBindings>
+                    {(role) => (
+                      <ModelSelectPair
+                        role={role}
+                        includeUseDefault
+                        modelValue={form.modelBindings?.[role]?.model ?? ''}
+                        reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
+                        onModelChange={(value) =>
+                          setForm({
+                            ...form,
+                            modelBindings: setOverrideField(
+                              form.modelBindings,
+                              role,
+                              'model',
+                              (value || undefined) as ModelId | undefined,
+                            ),
+                          })
+                        }
+                        onReasoningEffortChange={(value) =>
+                          setForm({
+                            ...form,
+                            modelBindings: setOverrideField(
+                              form.modelBindings,
+                              role,
+                              'reasoningEffort',
+                              (value || undefined) as ReasoningEffort | undefined,
+                            ),
+                          })
+                        }
+                      />
+                    )}
+                  </RoleBindings>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
-      </details>
+
+        <IntakeRail
+          description={form.description}
+          pinnedRepoUrl={form.repoUrl}
+          onPin={(repoUrl) => setForm({ ...form, repoUrl })}
+        />
+      </div>
     </div>
   )
 }

@@ -3,6 +3,11 @@
 # Bands are never renumbered or reused; gaps stay reserved. New capabilities
 # claim the next free block. `bun scripts/lint-spec-ids.ts --next` prints the
 # next free number per capability and the next free band.
+#
+# A capability that fills its block claims a second one rather than renumbering
+# anything: an ID is immutable, so growth has to be additive. Allocation then
+# comes from the newest block only — the earlier one is closed, not backfilled,
+# so a single change's IDs never straddle two blocks.
 bandSize: 100
 bands:
   agent-contracts: 100
@@ -14,6 +19,9 @@ bands:
   workspace-lifecycle: 700
   execution-environment: 800
   operator-ui: 900
+  # Split out of operator-ui, which keeps 900. The launch screen's existing IDs
+  # stay in that block — an ID may not move — and everything new comes from 1900.
+  launch-screen: [900, 1900]
   task-surface: 1000
   verification: 1100
   decisions: 1200

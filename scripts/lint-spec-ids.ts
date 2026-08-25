@@ -7,7 +7,8 @@
  * and two active changes allocating the same new ID in parallel.
  *
  * REQ/AC numbers are banded per capability (openspec/id-bands.yaml); an ID
- * outside its capability's band is an error.
+ * outside every band its capability holds is an error. A capability that fills
+ * a band claims another and allocates from the newest — see the registry.
  *
  *   bun scripts/lint-spec-ids.ts            lint; exit 1 on errors
  *   bun scripts/lint-spec-ids.ts --strict   ID-less headers in living specs are errors
@@ -16,6 +17,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
+import { bandOf, nextFree, parseRegistry } from './spec-bands.ts'
 
 const ROOT = join(import.meta.dir, '..')
 const SUITE = join(ROOT, 'openspec')
@@ -52,20 +54,9 @@ const args = new Set(process.argv.slice(2))
 
 // --- Capability band registry (openspec/id-bands.yaml) ---------------------
 
-const registryFile = join(SUITE, 'id-bands.yaml')
-const bandStarts = new Map<string, number>()
-let bandSize = 100
-
-for (const line of readLines(registryFile)) {
-  const size = line.match(/^bandSize:\s*(\d+)/)
-  if (size) {
-    bandSize = Number(size[1])
-    continue
-  }
-
-  const entry = line.match(/^ {2}([a-z0-9-]+):\s*(\d+)/)
-  if (entry) bandStarts.set(entry[1], Number(entry[2]))
-}
+const registry = parseRegistry(readFileSync(join(SUITE, 'id-bands.yaml'), 'utf8'))
+const { bandSize, bands: bandStarts } = registry
+const allBands = [...bandStarts.values()].flat()
 
 // The capability is the directory the spec file lives under:
 // openspec/specs/<capability>/... or openspec/changes/<c>/specs/<capability>/...
@@ -74,10 +65,13 @@ function capabilityOf(file: string): string | null {
   return m ? m[1] : null
 }
 
-// --next: for each capability, one greater than the highest number ever used
-// in its band anywhere in the suite, archive included — gaps stay reserved.
+// --next: one greater than the highest number ever used anywhere in the suite,
+// archive included — gaps stay reserved. A capability holding several bands
+// allocates from its newest one; the earlier blocks are closed, not backfilled,
+// so one change's IDs never straddle two bands.
 if (args.has('--next')) {
-  const maxInBand = new Map<string, number>()
+  // capability -> prefix -> band -> the highest number seen in that band.
+  const maxUsed = new Map<string, Map<number, number>>()
 
   for (const file of mdFiles(SUITE)) {
     for (const line of readLines(file)) {
@@ -85,23 +79,33 @@ if (args.has('--next')) {
         if (m[1] !== 'REQ' && m[1] !== 'AC') continue
 
         const n = Number(m[2])
-        for (const [capability, start] of bandStarts) {
-          if (n < start || n >= start + bandSize) continue
+        for (const capability of bandStarts.keys()) {
+          const start = bandOf(registry, capability, n)
+          if (start === undefined) continue
 
           const slot = `${capability}/${m[1]}`
-          maxInBand.set(slot, Math.max(maxInBand.get(slot) ?? 0, n))
+          const perBand = maxUsed.get(slot) ?? new Map<number, number>()
+          perBand.set(start, Math.max(perBand.get(start) ?? 0, n))
+          maxUsed.set(slot, perBand)
         }
       }
     }
   }
 
-  for (const [capability, start] of bandStarts) {
-    const nextReq = (maxInBand.get(`${capability}/REQ`) ?? start - 1) + 1
-    const nextAc = (maxInBand.get(`${capability}/AC`) ?? start - 1) + 1
-    console.info(`${capability}: REQ-${nextReq}, AC-${nextAc}`)
+  for (const capability of bandStarts.keys()) {
+    const next = (['REQ', 'AC'] as const).map((prefix) => {
+      const free = nextFree(
+        registry,
+        capability,
+        maxUsed.get(`${capability}/${prefix}`) ?? new Map(),
+      )
+
+      return free === null ? `${prefix}-exhausted` : `${prefix}-${free}`
+    })
+    console.info(`${capability}: ${next.join(', ')}`)
   }
 
-  const nextBand = Math.max(...bandStarts.values()) + bandSize
+  const nextBand = Math.max(...allBands) + bandSize
   console.info(`next free band: ${nextBand}`)
   process.exit(0)
 }
@@ -116,18 +120,16 @@ function checkBand(id: string, file: string, line: number): void {
   if (!capability) return
 
   const loc = `${rel(file)}:${line}`
-  const start = bandStarts.get(capability)
+  const starts = bandStarts.get(capability)
 
-  if (start === undefined) {
+  if (starts === undefined) {
     errors.push(`capability "${capability}" has no band in openspec/id-bands.yaml (${loc})`)
     return
   }
 
-  const n = Number(numText)
-  if (n < start || n >= start + bandSize) {
-    errors.push(
-      `${id} is outside the ${capability} band ${start}..${start + bandSize - 1} at ${loc}`,
-    )
+  if (bandOf(registry, capability, Number(numText)) === undefined) {
+    const ranges = starts.map((start) => `${start}..${start + bandSize - 1}`).join(', ')
+    errors.push(`${id} is outside the ${capability} band(s) ${ranges} at ${loc}`)
   }
 }
 

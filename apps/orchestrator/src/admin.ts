@@ -12,11 +12,11 @@
 
 import { TaskState } from '@specmate/core'
 import { createDb, databaseUrl, decisions, stages, tasks } from '@specmate/db'
+import { githubLogin } from '@specmate/github'
 import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { and, asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { Engine } from './engine.ts'
-import { githubLogin } from './github-auth.ts'
 import { createTask, latestGraph } from './store.ts'
 
 function flag(name: string): string | undefined {
