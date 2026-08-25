@@ -64,6 +64,22 @@ const NO_SUITE: SpecConvention = {
   missingSuitePath: null,
 }
 
+/**
+ * Whether the repository has somewhere to keep a specification — the fact the
+ * specification segment is conditional on (REQ-1706). Null before provisioning has
+ * resolved the convention: a fact nobody can assemble yet, which the engine reads as
+ * "run the node" rather than as "no suite".
+ *
+ * Reads the profile and nothing else. `openspec` and `custom` differ in convention, and
+ * the segment does not care which; a configured suite the tree does not hold has already
+ * resolved to `none` by the time it is persisted (AC-1702).
+ */
+export function specSuiteInForce(convention: SpecConvention | null | undefined): boolean | null {
+  if (!convention) return null
+
+  return convention.profile !== 'none'
+}
+
 /** Which path a setting expects to find, or null where it expects none. */
 export function expectedSuitePath(setting: SpecConventionSetting | undefined): string | null {
   if (!setting) return null

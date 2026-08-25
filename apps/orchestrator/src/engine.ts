@@ -19,6 +19,7 @@ import {
   canTransition,
   capsForSize,
   changeNameFor,
+  conditionsOf,
   type DecisionOption,
   decisionFromRequest,
   definitionForSize,
@@ -33,9 +34,11 @@ import {
   isRestartable,
   isTerminal,
   LOOP_CAPS,
+  NODE_PREDICATES,
   type NodeFacts,
   nodeAt,
   type PinnedGraph,
+  type PipelineNode,
   type PlanPrerequisite,
   type PlanSize,
   type ProviderId,
@@ -50,6 +53,7 @@ import {
   type StageResult,
   type StageResumption,
   type StageTelemetry,
+  specSuiteInForce,
   spendAgainstBudget,
   splitCreatesWork,
   stalledFindings,
@@ -97,6 +101,7 @@ import {
   recordPlanOutcome,
   recordRound,
   roundsFor,
+  skippedNodes,
   TaskNotFoundError,
   taskSpend,
 } from './store.ts'
@@ -138,6 +143,18 @@ export class ReworkTargetError extends Error {
   constructor(gate: TaskState, target: TaskState) {
     super(`gate ${gate} does not declare ${target} as a rework target`)
     this.name = 'ReworkTargetError'
+  }
+}
+
+/**
+ * REQ-411. An edge into a node the task already declined to run sends it somewhere it
+ * will decline again, one loop counter poorer. The browser hides the edge; this is what
+ * makes hiding it a rule rather than a suggestion.
+ */
+export class SkippedTargetError extends Error {
+  constructor(gate: TaskState, target: TaskState) {
+    super(`gate ${gate} cannot send the task back to ${target}: this walk skipped it`)
+    this.name = 'SkippedTargetError'
   }
 }
 
@@ -537,20 +554,30 @@ export class Engine {
     let dispatched = 0
     let stagesDispatched = 0
 
-    // Stage and action dispatch both scan the same runnable-task snapshot; one
-    // query serves both instead of each block re-running it.
-    const candidates =
-      stageSlots > 0 || actionDispatcher
-        ? await db
-            .select()
-            .from(tasks)
-            .where(notInArray(tasks.status, NOT_RUNNABLE))
-            .orderBy(asc(tasks.updatedAt))
-        : []
+    // Stage, gate and action dispatch all scan the same runnable-task snapshot; one
+    // query serves them instead of each block re-running it. Unconditional because a
+    // conditional gate has to be resolved even when every stage slot is busy.
+    const candidates = await db
+      .select()
+      .from(tasks)
+      .where(notInArray(tasks.status, NOT_RUNNABLE))
+      .orderBy(asc(tasks.updatedAt))
     const graphs = await latestGraphsFor(
       db,
       candidates.map((task) => task.id),
     )
+
+    // Before the stages: a gate the predicate lets past costs no slot, and making the
+    // task wait a whole tick to reach the node after it buys nothing.
+    for (const task of candidates) {
+      const graph = graphs.get(task.id)
+      if (!graph) continue
+
+      const node = nodeAt(graph.dag, task.status)
+      if (node?.kind !== 'gate') continue
+
+      if (await this.skipUnlessConditionHolds(task, graph, node)) dispatched += 1
+    }
 
     if (stageSlots > 0) {
       const runnable: { task: Task; graph: RunGraphRow; node: StageNode }[] = []
@@ -777,53 +804,77 @@ export class Engine {
   private async skipUnlessConditionHolds(
     task: Task,
     graph: RunGraphRow,
-    node: StageNode,
+    node: StageNode | GateNode,
   ): Promise<boolean> {
     if (!node.condition) return false
 
-    const facts = await this.assembleNodeFacts(task)
-    if (!facts) return false
-
+    const facts = await this.assembleNodeFacts(task, node)
     const verdict = evaluateCondition(node, facts)
     if (verdict.holds) return false
 
-    const to = forwardTarget(graph.dag, node.key)
+    // A stage advances to the next node; a gate advances along `approve`, the edge it
+    // takes when nothing is wrong. No decision is recorded either way — an approve is an
+    // owner's act, and manufacturing one from a repository fact would sign for nobody.
+    const to = node.kind === 'gate' ? node.approve : forwardTarget(graph.dag, node.key)
 
     return this.deps.db.transaction(async (tx) => {
       const [current] = await tx.select().from(tasks).where(eq(tasks.id, task.id)).limit(1)
       if (current?.status !== node.key) return false
 
-      const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
-      const now = new Date()
-      await tx.insert(stages).values({
-        taskId: task.id,
-        graphId: graph.id,
-        nodeKey: node.key,
-        role: node.role,
-        provider: ROLE_CONTRACTS[node.role].defaultProvider,
-        status: 'skipped',
-        attempt: history.lastAttempt + 1,
-        startedAt: now,
-        finishedAt: now,
-        skipReason: verdict.reason,
-      })
+      // Only a stage gets a row: `stages` is the per-node attempt log, and a gate has
+      // neither a role nor a provider to put in one. The event below is the record both
+      // kinds share, and the one "was this node skipped on this walk" reads (REQ-411).
+      if (node.kind === 'stage') {
+        const history = await this.attemptHistory(tx, task.id, graph.id, node.key)
+        const now = new Date()
+        await tx.insert(stages).values({
+          taskId: task.id,
+          graphId: graph.id,
+          nodeKey: node.key,
+          role: node.role,
+          provider: ROLE_CONTRACTS[node.role].defaultProvider,
+          status: 'skipped',
+          attempt: history.lastAttempt + 1,
+          startedAt: now,
+          finishedAt: now,
+          skipReason: verdict.reason,
+        })
+      }
+
       await tx.update(tasks).set({ status: to }).where(eq(tasks.id, task.id))
       await emitEvent(tx, {
         taskId: task.id,
         type: 'stage.skipped',
-        payload: { node: node.key, reason: verdict.reason, to },
+        payload: { node: node.key, reason: verdict.reason, to, graph: graph.id },
       })
 
       return true
     })
   }
 
-  /** Null where the fact cannot be had, which the caller reads as "run the node". */
-  private async assembleNodeFacts(task: Task): Promise<NodeFacts | null> {
-    const { workspaces } = this.deps
-    if (!workspaces.countSpecScenarios) return null
+  /**
+   * Only what the node's own predicates declare they read. A fact left out is one that
+   * could not be had, and `evaluateCondition` runs the node rather than skipping it:
+   * skipping a check needs a reason, running one never does.
+   *
+   * Assembling per node is also what keeps a gate asking about the repository from
+   * paying for a checkout it has no other use for.
+   */
+  private async assembleNodeFacts(task: Task, node: PipelineNode): Promise<NodeFacts> {
+    const wanted = new Set(
+      conditionsOf(node).flatMap((condition) => NODE_PREDICATES[condition.predicate]?.reads ?? []),
+    )
+    if (wanted.size === 0) return {}
+
+    const facts: { specScenarioCount?: number; specSuiteInForce?: boolean } = {}
+    const { db, workspaces } = this.deps
 
     try {
+      // Provisioning is what re-resolves the repository's convention onto the task row,
+      // so it has to happen before the condition is read rather than after: an owner who
+      // answers between the kickoff gate and the specifying stage governs what the task
+      // does next (AC-1719), and a row read straight off the tick's snapshot would still
+      // hold yesterday's answer. It runs before every stage anyway; here it is idempotent.
       const workspace = await workspaces.provision({
         taskId: task.id,
         slug: task.slug,
@@ -831,14 +882,26 @@ export class Engine {
         baseBranch: task.baseBranch ?? undefined,
       })
 
-      return { specScenarioCount: await workspaces.countSpecScenarios(workspace) }
+      if (wanted.has('specSuiteInForce')) {
+        const [current] = await db
+          .select({ specConvention: tasks.specConvention })
+          .from(tasks)
+          .where(eq(tasks.id, task.id))
+          .limit(1)
+        const inForce = specSuiteInForce(current?.specConvention)
+        if (inForce !== null) facts.specSuiteInForce = inForce
+      }
+
+      if (wanted.has('specScenarioCount') && workspaces.countSpecScenarios) {
+        facts.specScenarioCount = await workspaces.countSpecScenarios(workspace)
+      }
     } catch (error) {
       this.deps.log?.(
         `could not assemble node facts for ${task.id}: ${(error as Error).message}; the node runs`,
       )
-
-      return null
     }
+
+    return facts
   }
 
   private async claim(
@@ -2859,6 +2922,9 @@ export class Engine {
       const edge = gate.redirect
       if (!edge) throw new GateEdgeError(gate.key, 'redirect')
 
+      const skipped = await skippedNodes(tx, taskId, graph.id)
+      if (skipped.has(edge.target)) throw new SkippedTargetError(gate.key, edge.target)
+
       const used = await countRedirects(tx, taskId, gate.key)
       const limit = task.caps[edge.cap]
       if (used >= limit) throw new RedirectCapExhaustedError(gate.key, edge.cap, limit)
@@ -2891,6 +2957,9 @@ export class Engine {
     await this.withTaskLock(taskId, async (tx) => {
       const { task, graph, gate } = await this.atGate(taskId, tx)
       if (!(gate.rework ?? []).includes(target)) throw new ReworkTargetError(gate.key, target)
+
+      const skipped = await skippedNodes(tx, taskId, graph.id)
+      if (skipped.has(target)) throw new SkippedTargetError(gate.key, target)
 
       // Mirrors redirect's feedback insert: every gate action leaves an audit-trail row.
       // Tagged by the rework target, not the gate, since one gate can declare several targets.

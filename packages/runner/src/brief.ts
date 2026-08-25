@@ -1,4 +1,11 @@
-import { type AgentRole, checkBrief, type HarnessStatus, ROLE_CONTRACTS } from '@specmate/core'
+import {
+  type AgentRole,
+  checkBrief,
+  type HarnessStatus,
+  ROLE_CONTRACTS,
+  type SpecConvention,
+  specSuiteInForce,
+} from '@specmate/core'
 import type { Workspace } from '@specmate/workspace'
 import { readChangeFile } from './change-file.ts'
 import type { RunnerConfig } from './config.ts'
@@ -24,6 +31,12 @@ export async function checkBriefCompleteness(
   getChangedPaths: () => Promise<readonly string[]>,
   /** The task's recorded coverage at dispatch time; absent roles need not supply one. */
   harnessStatus: HarnessStatus = 'adequate',
+  /**
+   * The repository's convention at dispatch time. Undetermined is read as a suite being
+   * in force: the brief owes an acceptance list only where it is known there is nothing
+   * to specify against, and failing an attempt over a fact nobody resolved is not that.
+   */
+  specConvention: SpecConvention | null = null,
 ): Promise<BriefCompletenessOutcome> {
   if (!ROLE_CONTRACTS[role].checksProposalCompleteness) return { kind: 'not_applicable' }
 
@@ -37,7 +50,13 @@ export async function checkBriefCompleteness(
     return { kind: 'incomplete', detail: proposal.detail }
   }
 
-  const check = checkBrief(proposal.content, config.briefBytesLimit, harnessStatus)
+  const acceptanceRequired = specSuiteInForce(specConvention) === false
+  const check = checkBrief(
+    proposal.content,
+    config.briefBytesLimit,
+    harnessStatus,
+    acceptanceRequired,
+  )
   if (check.ok) return { kind: 'ok' }
 
   const problems = [
@@ -48,6 +67,12 @@ export async function checkBriefCompleteness(
     ...(check.coverageUnknown ? ['harness coverage is not yet classified'] : []),
     ...(check.coverageWarningMissing
       ? [`coverage is ${harnessStatus} but Key Points carries no "Harness gap" warning`]
+      : []),
+    ...(check.acceptanceMissing
+      ? ['the repository has no specification suite and the brief declares no acceptance scenario']
+      : []),
+    ...(check.acceptanceUnexpected
+      ? ['the repository has a specification suite, which is what declares the scenarios']
       : []),
   ]
 

@@ -88,6 +88,7 @@ const GATE_CONFLICT_ERRORS = new Set([
   'NotAtGateError',
   'RedirectCapExhaustedError',
   'ReworkTargetError',
+  'SkippedTargetError',
   'StaleTransitionError',
   'ActionConflictError',
   'StageStopConflictError',

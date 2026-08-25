@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest'
-import { checkBrief, splitBriefSections } from '../src/brief.ts'
+import { describe, expect, it, test } from 'vitest'
+import { briefAcceptanceSource, checkBrief, splitBriefSections } from '../src/brief.ts'
 
 const COMPLETE = `## What and Why
 
@@ -186,5 +186,64 @@ describe('splitBriefSections', () => {
 
     expect(sections.find((s) => s.heading === '')).toBeUndefined()
     expect(sections.find((s) => s.heading === 'Key Points')?.body).toContain('##')
+  })
+})
+
+describe("the brief's acceptance list (REQ-1302, REQ-1303)", () => {
+  const WITH_ACCEPTANCE = `${COMPLETE}
+## Acceptance
+
+#### Scenario: The redirect lands on the dashboard
+
+- **WHEN** a signed-in owner completes login
+- **THEN** the browser SHALL land on the dashboard
+`
+
+  it('AC-1326: a repository with no suite owes a list, and one scenario satisfies it', () => {
+    const result = checkBrief(WITH_ACCEPTANCE, undefined, 'adequate', true)
+
+    expect(result.ok).toBe(true)
+    expect(result.acceptanceMissing).toBe(false)
+  })
+
+  it('AC-1328: no list under no suite fails the attempt', () => {
+    const result = checkBrief(COMPLETE, undefined, 'adequate', true)
+
+    expect(result.ok).toBe(false)
+    expect(result.acceptanceMissing).toBe(true)
+  })
+
+  it('AC-1328: a heading with no scenario under it fails the same way', () => {
+    const empty = `${COMPLETE}
+## Acceptance
+
+To be decided during implementation.
+`
+
+    expect(checkBrief(empty, undefined, 'adequate', true).acceptanceMissing).toBe(true)
+  })
+
+  it('AC-1327: a repository with a suite must not carry a rival list', () => {
+    const result = checkBrief(WITH_ACCEPTANCE, undefined, 'adequate', false)
+
+    expect(result.ok).toBe(false)
+    expect(result.acceptanceUnexpected).toBe(true)
+  })
+
+  it('AC-1327: the check stays silent about the list where a suite exists', () => {
+    const result = checkBrief(COMPLETE, undefined, 'adequate', false)
+
+    expect(result.ok).toBe(true)
+    expect(result.acceptanceMissing).toBe(false)
+    expect(result.acceptanceUnexpected).toBe(false)
+  })
+
+  it('reads scenarios from the acceptance section only, never from prose elsewhere', () => {
+    const elsewhere = `${COMPLETE}
+#### Scenario: Written in the open questions, which is prose
+`
+
+    expect(briefAcceptanceSource(elsewhere)).toBe('')
+    expect(checkBrief(elsewhere, undefined, 'adequate', true).acceptanceMissing).toBe(true)
   })
 })

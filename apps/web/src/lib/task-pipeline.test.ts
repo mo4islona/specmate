@@ -181,6 +181,44 @@ describe('a skipped node', () => {
     expect(skipped?.state).toBe('skipped')
     expect(skipped?.reason).toContain('2 scenario')
   })
+
+  it('AC-1717: a skipped gate reads as skipped, not as passed through', () => {
+    const nodes = buildPipelineNodes({
+      nodes: NODES,
+      stages: [],
+      status: 'implement',
+      resumeStatus: null,
+      modelBindings: BINDINGS,
+      events: [
+        {
+          seq: 4,
+          type: 'stage.skipped',
+          payload: {
+            node: 'human_spec_gate',
+            reason: 'the repository has no specification suite for this to land in',
+            to: 'implement',
+          },
+        },
+      ] as never,
+    })
+
+    const gate = nodes.find((node) => node.key === 'human_spec_gate')
+    expect(gate?.state).toBe('skipped')
+    expect(gate?.reason).toContain('no specification suite')
+  })
+
+  it('a gate nothing skipped is still passed through', () => {
+    const nodes = buildPipelineNodes({
+      nodes: NODES,
+      stages: [],
+      status: 'implement',
+      resumeStatus: null,
+      modelBindings: BINDINGS,
+      events: [],
+    })
+
+    expect(nodes.find((node) => node.key === 'human_spec_gate')?.state).toBe('done')
+  })
 })
 
 describe('nodeSpend', () => {

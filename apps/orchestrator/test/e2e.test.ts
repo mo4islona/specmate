@@ -2,7 +2,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { appendOwnerMessage, forwardTarget, SPEC_REVIEW_SCENARIO_FLOOR } from '@specmate/core'
+import {
+  appendOwnerMessage,
+  forwardTarget,
+  SPEC_REVIEW_SCENARIO_FLOOR,
+  type TaskState,
+} from '@specmate/core'
 import {
   conversationActions,
   conversations,
@@ -11,6 +16,7 @@ import {
   createDb,
   type Database,
   decisions,
+  events,
   iterations,
   stages,
   type Task,
@@ -62,14 +68,40 @@ describeDb('the loop against a real repository', () => {
   let db: Database
   let root: string
   let originUrl: string
+  let noSuiteUrl: string
   const created: string[] = []
 
   beforeAll(async () => {
     db = createDb(url)
     // makeHarness gives us a real origin; the engine provisions its own
     // worktrees from it under a root of ours.
-    const harness = await makeHarness('e2e-origin-seed')
+    //
+    // The suite is not decoration: the specification segment is conditional on the
+    // repository having one (REQ-1706), so an origin without it would skip the stages
+    // most of these tests are about. `noSuiteUrl` is the origin that exercises the skip.
+    const harness = await makeHarness('e2e-origin-seed', {
+      'README.md': '# origin\n',
+      'src/app.ts': 'export const a = 1\n',
+      'openspec/specs/stub-capability/spec.md': [
+        '# stub-capability Specification',
+        '',
+        '## Requirements',
+        '',
+        '### Requirement: REQ-1 — The stub carries a suite',
+        '',
+        'The origin SHALL hold a living specification.',
+        '',
+        '#### Scenario: AC-1 — It is there',
+        '',
+        '- **WHEN** the tree is read',
+        '- **THEN** a suite SHALL be found',
+        '',
+      ].join('\n'),
+    })
     originUrl = harness.workspace.repoUrl
+
+    const plain = await makeHarness('e2e-origin-no-suite')
+    noSuiteUrl = plain.workspace.repoUrl
     root = await tempDir('loop-root')
   })
 
@@ -155,14 +187,14 @@ describeDb('the loop against a real repository', () => {
     })
   }
 
-  async function makeTask(): Promise<Task> {
+  async function makeTask(overrides: { repoUrl?: string; at?: TaskState } = {}): Promise<Task> {
     const slug = `e2e-${crypto.randomUUID().slice(0, 8)}`
     const { task } = await createTask(db, {
       slug,
       title: `E2E ${slug}`,
       type: 'feature',
-      repoUrl: originUrl,
-      at: 'specify',
+      repoUrl: overrides.repoUrl ?? originUrl,
+      at: overrides.at ?? 'specify',
     })
     created.push(task.id)
 
@@ -278,12 +310,59 @@ describeDb('the loop against a real repository', () => {
   })
 
   /**
-   * AC-1715. This origin is a plain repository — a README and a source file, no living
-   * specification anywhere — so it resolves to the `none` profile. That must cost it
-   * nothing: the same spine, the same specifying stage, the same specification waiting
-   * at the gate as a repository with a suite would produce.
+   * AC-1716, AC-642. This origin is a plain repository — a README and a source file, no
+   * living specification anywhere — so it resolves to the `none` profile, and the whole
+   * specification segment is skipped: no agent run, no owner decision, straight from the
+   * kickoff gate to implementation.
    */
-  test('a repository with no specification of its own still specifies, and the gate has one', async () => {
+  test('a repository with no specification skips the specifying stage, its review and the gate', async () => {
+    const engine = makeEngine()
+    const task = await makeTask({ repoUrl: noSuiteUrl })
+    await queueModes(task, ['ok'], { scenarios: 2 })
+
+    // One tick per skipped node, the way every other conditional node advances.
+    for (let i = 0; i < 3; i += 1) {
+      await engine.tick()
+      await engine.idle()
+    }
+
+    const walked = await reload(db, task.id)
+    expect(walked.specConvention?.profile).toBe('none')
+    expect(walked.specConvention?.missingSuitePath).toBeNull()
+    expect(walked.status).toBe('implement')
+
+    // The specifying stage's own skip is a row; the gate's is not, because a gate has no
+    // role and no provider to record one with. Both are on the event stream.
+    const rows = await db
+      .select()
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+      .orderBy(asc(stages.createdAt))
+    expect(rows.map((row) => [row.nodeKey, row.status])).toEqual([
+      ['specify', 'skipped'],
+      ['spec_review', 'skipped'],
+    ])
+    expect(rows[0]?.skipReason).toContain('no specification suite')
+
+    const skips = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.taskId, task.id), eq(events.type, 'stage.skipped')))
+      .orderBy(asc(events.seq))
+    expect(skips.map((row) => row.payload.node)).toEqual([
+      'specify',
+      'spec_review',
+      'human_spec_gate',
+    ])
+    expect(skips.at(-1)?.payload).toMatchObject({
+      node: 'human_spec_gate',
+      to: 'implement',
+      reason: expect.stringContaining('no specification suite'),
+    })
+  })
+
+  /** AC-1718. The same walk in a repository that has a suite runs all three. */
+  test('a repository with a suite still specifies, and the gate has one', async () => {
     const engine = makeEngine()
     const task = await makeTask()
     await queueModes(task, ['ok'], { scenarios: 2 })
@@ -294,8 +373,7 @@ describeDb('the loop against a real repository', () => {
 
     const walked = await reload(db, task.id)
     expect(walked.status).toBe('human_spec_gate')
-    expect(walked.specConvention?.profile).toBe('none')
-    expect(walked.specConvention?.missingSuitePath).toBeNull()
+    expect(walked.specConvention?.profile).toBe('openspec')
 
     const rows = await db
       .select()

@@ -353,6 +353,29 @@ export async function lastRestartAt(db: DbClient, taskId: string): Promise<Date 
   return row?.createdAt ?? null
 }
 
+/**
+ * The nodes this walk declined to run (REQ-411). Read from the skip events rather than
+ * from `stages`: a skipped gate has no stage row to carry it — a gate has neither a role
+ * nor a provider to write one with — and both kinds emit the same event.
+ *
+ * Scoped to the graph, so a task that swapped profiles is not held to what an earlier
+ * version of its graph skipped.
+ */
+export async function skippedNodes(
+  db: DbClient,
+  taskId: string,
+  graphId: string,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ node: sql<string>`${events.payload}->>'node'` })
+    .from(events)
+    .where(
+      sql`${events.taskId} = ${taskId} and ${events.type} = 'stage.skipped' and ${events.payload}->>'graph' = ${graphId}`,
+    )
+
+  return new Set(rows.map((row) => row.node).filter((node): node is string => node !== null))
+}
+
 export async function countRedirects(db: DbClient, taskId: string, gate: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })

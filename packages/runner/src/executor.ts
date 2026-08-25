@@ -5,6 +5,7 @@ import {
   type ProviderId,
   type ReasoningEffort,
   ROLE_CONTRACTS,
+  type SpecConvention,
   type StageActivity,
   type StageJob,
   type StageResult,
@@ -55,6 +56,8 @@ export interface StageRequest {
    * it out is a caller that forgot, and the stage would silently run cold.
    */
   readonly resume: StageResumption | null
+  /** What the repository keeps its specification in, as provisioning last resolved it. */
+  readonly specConvention?: SpecConvention | null
 }
 
 export interface StageAttemptRecord {
@@ -268,6 +271,7 @@ export class StageExecutor {
       request.role,
       getChangedPaths,
       outcome.result.harness_coverage?.classification,
+      request.specConvention ?? null,
     )
     if (brief.kind === 'incomplete') {
       return {
@@ -284,7 +288,11 @@ export class StageExecutor {
     // Same posture as the write-scope check: after the run, before the outcome
     // is accepted and anything is committed. A no-op for a role the catalog
     // does not declare corroborated.
-    const corroboration = await corroborateVerification(request.workspace, outcome.result)
+    const corroboration = await corroborateVerification(
+      request.workspace,
+      outcome.result,
+      request.specConvention ?? null,
+    )
     if (corroboration.kind === 'uncorroborated') {
       return {
         record: {

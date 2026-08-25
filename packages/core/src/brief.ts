@@ -1,4 +1,5 @@
 import { HARNESS_GAP_LABEL, type HarnessStatus, needsCoverageWarning } from './harness.ts'
+import { extractScenarioInventory } from './verification.ts'
 
 /**
  * The kickoff brief's required parts (REQ-1302), as the exact H2 headings the
@@ -16,6 +17,29 @@ export const BRIEF_SECTIONS = [
 /** The section the UI accents, named from `BRIEF_SECTIONS` so a rename here propagates automatically. */
 export const BRIEF_ACCENT_HEADING = BRIEF_SECTIONS[2]
 
+/**
+ * Required only where the repository has no specification suite (REQ-1302). There the
+ * specifying stage never runs, so this is the whole of what the change must satisfy and
+ * what validation corroborates an approve against (REQ-1103). Where a suite exists the
+ * specification declares the scenarios, and a second inventory beside it would be a
+ * second normative source for one behaviour — so the brief must not carry one.
+ */
+export const BRIEF_ACCEPTANCE_SECTION = 'Acceptance'
+
+/**
+ * The acceptance section's body, as one document for the same scenario parser the
+ * change's specs go through. Sections rather than the whole brief: a `#### Scenario:`
+ * written anywhere else is prose, not an acceptance criterion.
+ */
+export function briefAcceptanceSource(markdown: string): string {
+  const wanted = normalizeBriefHeading(BRIEF_ACCEPTANCE_SECTION)
+
+  return splitBriefSections(markdown)
+    .filter((section) => normalizeBriefHeading(section.heading) === wanted)
+    .map((section) => section.body)
+    .join('\n')
+}
+
 export const DEFAULT_BRIEF_CEILING_BYTES = 6_000
 
 export interface BriefCheckResult {
@@ -28,6 +52,14 @@ export interface BriefCheckResult {
   readonly coverageUnknown: boolean
   /** REQ-1402, AC-1404: coverage is short of adequate and Key Points carries no gap warning. */
   readonly coverageWarningMissing: boolean
+  /**
+   * AC-1328: the repository has no suite, so the brief owes an acceptance list, and it is
+   * absent or holds no scenario. Whether a scenario is a good one stays the owner's call
+   * at the gate; that there is one to read is not.
+   */
+  readonly acceptanceMissing: boolean
+  /** AC-1327: a suite declares the scenarios, and the brief carried a rival list anyway. */
+  readonly acceptanceUnexpected: boolean
 }
 
 /**
@@ -42,6 +74,8 @@ export function checkBrief(
   markdown: string,
   ceilingBytes: number = DEFAULT_BRIEF_CEILING_BYTES,
   coverage: HarnessStatus = 'adequate',
+  /** True where the repository has no specification suite — see `BRIEF_ACCEPTANCE_SECTION`. */
+  acceptanceRequired = false,
 ): BriefCheckResult {
   // A Map keyed by heading would let a repeated heading's last occurrence hide
   // an earlier one's real content, so bodies are collected per heading instead.
@@ -65,10 +99,28 @@ export function checkBrief(
     needsCoverageWarning(coverage) &&
     !hasHarnessGapWarning(bodiesByHeading.get(normalizeBriefHeading('Key Points')) ?? [])
 
-  const ok =
-    missing.length === 0 && bytes <= ceilingBytes && !coverageUnknown && !coverageWarningMissing
+  const scenarios = extractScenarioInventory([briefAcceptanceSource(markdown)])
+  const acceptanceMissing = acceptanceRequired && scenarios.length === 0
+  const acceptanceUnexpected = !acceptanceRequired && scenarios.length > 0
 
-  return { ok, missing, bytes, ceilingBytes, coverageUnknown, coverageWarningMissing }
+  const ok =
+    missing.length === 0 &&
+    bytes <= ceilingBytes &&
+    !coverageUnknown &&
+    !coverageWarningMissing &&
+    !acceptanceMissing &&
+    !acceptanceUnexpected
+
+  return {
+    ok,
+    missing,
+    bytes,
+    ceilingBytes,
+    coverageUnknown,
+    coverageWarningMissing,
+    acceptanceMissing,
+    acceptanceUnexpected,
+  }
 }
 
 /** A `- Harness gap: …` bullet anywhere in the Key Points section, case-insensitive and however indented. */

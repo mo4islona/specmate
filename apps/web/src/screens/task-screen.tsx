@@ -350,7 +350,6 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   const currentGate = graph?.dag.nodes.find(
     (node) => node.kind === 'gate' && node.key === task.status,
   )
-  const reworkTargets = currentGate?.kind === 'gate' ? (currentGate.rework ?? []) : []
   const gateError = approve.error ?? redirect.error ?? rework.error
   const gateBusy = approve.isPending || redirect.isPending || rework.isPending
   // REQ-1305: computed the same way the server counts it, so the redirect
@@ -386,7 +385,19 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     status: task.status,
     resumeStatus: task.resumeStatus,
     modelBindings: task.modelBindings,
+    events,
   })
+  // REQ-411: an edge into a node this walk skipped sends the task somewhere it will
+  // decline again, one loop counter poorer. The server refuses it too — this only keeps
+  // the owner from being offered it.
+  const skippedKeys = new Set(
+    pipelineNodes.filter((node) => node.state === 'skipped').map((node) => node.key),
+  )
+  const reworkTargets =
+    currentGate?.kind === 'gate'
+      ? (currentGate.rework ?? []).filter((target) => !skippedKeys.has(target))
+      : []
+
   const currentNodeKey = pipelineNodes.find((node) => node.current)?.key ?? null
   const firstNodeKey = pipelineNodes[0]?.key ?? null
   // What the thread is reading: the step the owner pinned, or the one the task
