@@ -51,8 +51,10 @@ describe('ActivityEditBlock (REQ-915)', () => {
     const { container } = renderBlock(<ActivityEditBlock taskId="task-1" seq={12} edit={edit()} />)
     const gutters = [...container.querySelectorAll('.diff-gutter')].map((cell) => cell.textContent)
 
-    // The hunk header sits on no line of either file, so its own gutter is blank.
-    expect(gutters).toEqual(['', '41', '42', '42', '43'])
+    // The edit opens on the line it edited. Its hunk header separates nothing
+    // — there is no line of this file above it — so it is not drawn, and the
+    // first gutter belongs to a real line rather than being blank.
+    expect(gutters).toEqual(['41', '42', '42', '43'])
   })
 
   it('says so, and drops the numbers, when the edit could not be placed', () => {

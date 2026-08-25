@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   Git,
   GitError,
+  MAX_DIFF_CONTEXT,
   mirrorPath,
   resolveTaskDiffRange,
   type StageRef,
@@ -402,5 +403,64 @@ describe('a task whose workspace has been released (AC-1037)', () => {
     )
 
     expect(after).toEqual(before)
+  })
+})
+
+describe('one file diff context width', () => {
+  const lines = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`)
+  const original = `${lines.join('\n')}\n`
+
+  /** Context lines carry git's single leading space; added and removed do not. */
+  const contextLines = (diff: string) =>
+    diff.split('\n').filter((line) => line.startsWith(' ')).length
+
+  async function editedLongFile(slug: string) {
+    const origin = await makeOrigin({ 'long.txt': original })
+    const { manager } = await makeManager()
+    const git = new Git(manager.config)
+    const workspace = await manager.provision({ slug, repoUrl: origin.url, baseBranch: 'main' })
+
+    const edited = [...lines]
+    edited[29] = 'line 30 edited'
+    await writeFiles(workspace.path, { 'long.txt': `${edited.join('\n')}\n` })
+    await manager.commitStage(workspace, STAGE)
+
+    const range = await resolveTaskDiffRange(git, manager.config, {
+      repoUrl: origin.url,
+      baseBranch: 'main',
+      slug,
+    })
+
+    return { git, range }
+  }
+
+  it("defaults to git's own three lines either side", async () => {
+    const { git, range } = await editedLongFile('context-default')
+
+    expect(contextLines(await taskFileDiff(git, range, 'long.txt'))).toBe(6)
+  })
+
+  it('widens the hunk when a width is asked for (AC-1063)', async () => {
+    const { git, range } = await editedLongFile('context-wider')
+    const diff = await taskFileDiff(git, range, 'long.txt', 10)
+
+    expect(contextLines(diff)).toBe(20)
+    expect(diff).toContain(' line 20')
+  })
+
+  it('serves the ceiling rather than refusing a width past it', async () => {
+    const { git, range } = await editedLongFile('context-ceiling')
+    const diff = await taskFileDiff(git, range, 'long.txt', MAX_DIFF_CONTEXT + 5_000)
+
+    expect(contextLines(diff)).toBe(lines.length - 1)
+  })
+
+  it('returns the whole file when the width passes its length', async () => {
+    const { git, range } = await editedLongFile('context-whole-file')
+    const diff = await taskFileDiff(git, range, 'long.txt', 500)
+
+    expect(contextLines(diff)).toBe(lines.length - 1)
+    expect(diff).toContain(' line 1\n')
+    expect(diff).toContain(' line 60')
   })
 })

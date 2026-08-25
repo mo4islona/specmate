@@ -2217,6 +2217,8 @@ describeDb('api', () => {
   })
 })
 
+const LONG_FILE_LINES = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).concat('')
+
 describeDb('api task diff', () => {
   let app: ReturnType<typeof createApp>
   let db: Database
@@ -2234,6 +2236,9 @@ describeDb('api task diff', () => {
     git = new Git(resolveWorkspaceConfig({ root: originDir }))
     await git.run(['init', '--quiet', '-b', 'main', originDir])
     await writeFile(join(originDir, 'README.md'), '# origin\n')
+    // Long enough that a one-line edit in its middle leaves context outside the
+    // default three lines for a widened read to reach (AC-1063).
+    await writeFile(join(originDir, 'long.txt'), LONG_FILE_LINES.join('\n'))
     await git.run(['add', '-A'], { cwd: originDir })
     await git.run(['commit', '--quiet', '-m', 'init'], { cwd: originDir })
     originUrl = `file://${originDir}`
@@ -2305,6 +2310,7 @@ describeDb('api task diff', () => {
     // The change folder is grouped, not withheld (AC-1060): its schema marker is
     // committed by provisioning, so it is one of the files this branch adds.
     expect(await response.json()).toEqual({
+      tip: expect.any(String),
       files: expect.arrayContaining([
         { path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
         {
@@ -2326,7 +2332,7 @@ describeDb('api task diff', () => {
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ files: [] })
+    expect(await response.json()).toEqual({ tip: expect.any(String), files: [] })
   })
 
   it('returns one file unified diff by path (AC-1036)', async () => {
@@ -2351,6 +2357,64 @@ describeDb('api task diff', () => {
     expect(body.diff).toContain('+extra line')
   })
 
+  it('names the commit the comparison was computed against, and renames it on a new commit (AC-1062)', async () => {
+    const slug = `diff-tip-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const commit = () =>
+      manager.commitStage(workspace, {
+        stageId: crypto.randomUUID(),
+        role: 'implementer',
+        provider: 'claude-code',
+        attempt: 1,
+      })
+
+    await writeFile(join(workspace.path, 'README.md'), '# origin\nfirst\n')
+    await commit()
+    const first = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+    const firstTip = ((await first.json()) as { tip: string }).tip
+
+    await writeFile(join(workspace.path, 'README.md'), '# origin\nfirst\nsecond\n')
+    await commit()
+    const second = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+    const secondTip = ((await second.json()) as { tip: string }).tip
+
+    expect(firstTip).toMatch(/^[0-9a-f]{40}$/)
+    expect(secondTip).not.toBe(firstTip)
+  })
+
+  it('returns more surrounding context when a wider read is asked for (AC-1063)', async () => {
+    const slug = `diff-context-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const edited = [...LONG_FILE_LINES]
+    edited[19] = 'line 20 edited'
+    await writeFile(join(workspace.path, 'long.txt'), edited.join('\n'))
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+
+    const read = async (query: string) => {
+      const response = await app.request(`/api/v1/tasks/${taskId}/diff/file?${query}`, {
+        headers: auth,
+      })
+      expect(response.status).toBe(200)
+
+      return ((await response.json()) as { diff: string }).diff
+    }
+
+    const narrow = await read('path=long.txt')
+    const wide = await read('path=long.txt&context=30')
+
+    expect(narrow).toContain('+line 20 edited')
+    expect(narrow).not.toContain('line 1\n')
+    expect(wide).toContain('+line 20 edited')
+    expect(wide).toContain('line 1\n')
+  })
+
   it('reads the same diff after the workspace has been released (AC-1037)', async () => {
     const slug = `diff-released-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
@@ -2368,6 +2432,7 @@ describeDb('api task diff', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
+      tip: expect.any(String),
       files: expect.arrayContaining([
         { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
       ]),

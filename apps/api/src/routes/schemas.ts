@@ -125,4 +125,8 @@ export const RestartStage = z.object({
 
 export const FileDiffQuery = z.object({
   path: z.string().trim().min(1),
+  // Unbounded here on purpose: a width past the ceiling is served at the
+  // ceiling rather than refused (REQ-1013/AC-1063), so clamping belongs to
+  // the read, not to validation.
+  context: z.coerce.number().int().min(0).optional(),
 })
