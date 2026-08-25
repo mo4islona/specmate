@@ -43,7 +43,7 @@
 ## 6. The rail
 
 - [x] 6.1 Add the preview, repository and reference reads to `apps/web/src/lib/api-client.ts` and `query-keys.ts`, keyed so that editing the request re-fetches the preview but not the repository or the issue.
-- [x] 6.2 Build the rail in `apps/web/src/components/intake-rail.tsx` from the kit, adding `Skeleton` and `Reveal` to `src/ui` and to `/kit`. Verify: `ui/kit-discipline.test.ts` passes.
+- [x] 6.2 Build the rail in `apps/web/src/components/intake-rail.tsx` from the kit, adding `Reveal` to `src/ui` and to `/kit`. `Skeleton` was added here too until `wait in the shape of the answer` landed the same part in `ui/loading.tsx`; the kit's is the one that stayed. Verify: `ui/kit-discipline.test.ts` passes.
 - [x] 6.3 Give the launch screen its second column: the rail beside the composer on wide viewports, below it on narrow ones, and second in the source so the request is reached first (operator-ui REQ-911).
 - [x] 6.4 Debounce the preview on the request text; the query key is the settled text, and React Query aborts the superseded request through the signal it hands the fetcher.
 - [x] 6.5 Render the candidate choice in the rail, writing the chosen repository into the same form field the rejection path fills, shown as chosen and releasable (AC-1901, AC-1902).
@@ -52,7 +52,7 @@
 
 ## 7. The rail settles, and does not jump
 
-- [x] 7.1 Render the rail's slots before there is anything in them, and show the default repository rather than a placeholder when the request is empty and a default is set (AC-1907, AC-1908).
+- [x] 7.1 Show nothing at all until a first answer exists, and show the default repository rather than a placeholder when the request is empty and a default is set (AC-1907, AC-1908). Drawn slots were the first attempt and said the wrong thing — a skeleton promises that something is arriving, and until the owner types nothing is.
 - [x] 7.2 Keep the previous answer on screen while a newer one is in flight, marked as refreshing, rather than clearing it (AC-1909).
 - [x] 7.3 Settle new content with a transition in the components layer; the reduced-motion rule already in `index.css` removes it.
 - [x] 7.4 Pin that an arriving answer moves neither the focus nor the caret (AC-1910), in `apps/web/src/screens/new-task-screen.test.tsx`.
