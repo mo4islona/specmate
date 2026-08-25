@@ -35,7 +35,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
   })
 
   if (artifacts.isPending) {
-    return <LoadingState title="Indexing task artifacts…" />
+    return <LoadingState title="Indexing task artifacts…" shape="rows" />
   }
   if (artifacts.isError) {
     return <ErrorState title="Artifact index unavailable" detail={artifacts.error.message} />

@@ -44,7 +44,7 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
   })
 
   if (files.isPending) {
-    return <LoadingState title="Computing the task's diff…" />
+    return <LoadingState title="Computing the task's diff…" shape="rows" />
   }
   if (files.isError) {
     return <ErrorState title="Diff unavailable" detail={files.error.message} />

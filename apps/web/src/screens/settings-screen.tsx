@@ -48,7 +48,7 @@ function ModelDefaultsSection() {
   })
 
   if (defaults.isPending) {
-    return <LoadingState title="Loading model defaults…" />
+    return <LoadingState title="Loading model defaults…" shape="rows" />
   }
   if (defaults.isError) {
     return <ErrorState title="Model defaults unavailable" detail={defaults.error.message} />

@@ -6,7 +6,9 @@ import { Button } from './button.tsx'
 import { Chip } from './chip.tsx'
 import { Drawer } from './drawer.tsx'
 import { Field, Input } from './field.tsx'
+import { Working } from './loading.tsx'
 import { Popover } from './popover.tsx'
+import { LoadingState } from './query-state.tsx'
 
 describe('Button', () => {
   it('says what it is doing and refuses a second click while it does it', async () => {
@@ -30,6 +32,22 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
   })
 
+  // Disabled and in flight looked the same, which is what put a verb waiting on
+  // the server at the 38% of a verb you cannot use.
+  it('calls a click in flight busy, and a click it will not take is not', () => {
+    render(
+      <>
+        <Button pending pendingLabel="Saving…">
+          Save
+        </Button>
+        <Button disabled>Revoke</Button>
+      </>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Saving…' }).getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Revoke' }).getAttribute('aria-busy')).toBeNull()
+  })
+
   // A bare `<button>` inside a form submits it. Everything in this app that is
   // not a submit had to say so, and six of them did it by hand.
   it('is not a submit unless it says so', () => {
@@ -42,6 +60,42 @@ describe('Button', () => {
 
     expect(screen.getByRole('button', { name: 'Cancel' }).getAttribute('type')).toBe('button')
     expect(screen.getByRole('button', { name: 'Launch' }).getAttribute('type')).toBe('submit')
+  })
+})
+
+describe('LoadingState', () => {
+  // The slots are hidden, so this sentence is the whole of what a wait says to
+  // anyone not looking at it. A shaped pane that dropped it was silence.
+  it.each(['rows', 'cards', 'document', 'code'] as const)(
+    'says what it is waiting on when it waits as %s',
+    (shape) => {
+      render(<LoadingState title="Computing the task's diff…" shape={shape} />)
+
+      const pane = screen.getByRole('status')
+
+      expect.soft(pane.getAttribute('aria-busy')).toBe('true')
+      expect.soft(pane.textContent).toBe("Computing the task's diff…")
+    },
+  )
+
+  it('says it in words where there is no shape worth drawing', () => {
+    render(<LoadingState title="Loading model defaults…" />)
+
+    const pane = screen.getByRole('status')
+
+    expect.soft(pane.getAttribute('aria-busy')).toBe('true')
+    expect.soft(pane.textContent).toContain('Loading model defaults')
+  })
+})
+
+describe('Working', () => {
+  // The three dots are its own, and they keep time. Left in, the sentence read
+  // `loading the whole edit……`.
+  it('takes over the ellipsis the sentence was written with', () => {
+    const { container } = render(<Working>loading the whole edit…</Working>)
+
+    expect.soft(container.textContent).toBe('loading the whole edit...')
+    expect.soft(container.querySelectorAll('.working-dot')).toHaveLength(3)
   })
 })
 

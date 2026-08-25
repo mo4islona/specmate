@@ -63,7 +63,7 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
   })
 
   if (detail.isPending) {
-    return <LoadingState title="Loading task channel…" />
+    return <LoadingState title="Loading task channel…" shape="document" />
   }
   if (detail.isError) {
     return <ErrorState title="Task unavailable" detail={detail.error.message} />

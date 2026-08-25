@@ -30,7 +30,7 @@ export function AttentionScreen() {
   })
 
   if (attention.isPending) {
-    return <LoadingState title="Scanning the attention channel…" />
+    return <LoadingState title="Scanning the attention channel…" shape="cards" />
   }
   if (attention.isError) {
     return <ErrorState title="Attention inbox unavailable" detail={attention.error.message} />
