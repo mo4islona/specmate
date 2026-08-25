@@ -148,6 +148,16 @@ body {
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* A verb points. The browser's default for `<button>` is the arrow, so every
+     part that wanted a hand had to remember to say so — and the ones assembled
+     out of a bare button, like a file's collapse control, read as text. */
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
@@ -1042,7 +1052,6 @@ body {
     width: 100%;
     text-align: left;
     color: var(--color-info);
-    cursor: pointer;
   }
 
   .diff-expander:hover {
