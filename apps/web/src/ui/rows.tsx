@@ -28,7 +28,9 @@ export function ListRow({ primary, secondary, action, className }: ListRowProps)
 }
 
 const ROW_BASE = 'rail-row rounded-lg py-2 transition-colors'
-const ROW_ON = 'bg-accent/[0.09] text-text'
+// Where you are, not how the thing is going. A tinted wash under a row claimed a
+// state the row's own dot was busy contradicting.
+const ROW_ON = 'bg-text/[0.09] text-text'
 const ROW_OFF = 'text-muted hover:bg-text/[0.05] hover:text-text'
 
 interface NavRowProps {

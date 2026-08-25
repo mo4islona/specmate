@@ -48,7 +48,7 @@ beforeEach(() => {
 })
 
 describe('StepDocuments (REQ-907, REQ-913)', () => {
-  test('each document reads as a file: its name, then what it is and how much of it there is', async () => {
+  test('each document reads as a file: its name, and how much of it there is', async () => {
     draw([document(), document({ id: 'artifact-2', kind: 'decision_log', path: 'x/decisions.md' })])
 
     expect(await screen.findByText('40 lines')).not.toBeNull()
@@ -57,7 +57,10 @@ describe('StepDocuments (REQ-907, REQ-913)', () => {
     // The file name leads and is set in the face every other path in the app is.
     const name = screen.getByText('proposal.md')
     expect(name.className).toContain('font-mono')
-    expect(screen.getByText('decision log')).not.toBeNull()
+
+    // The kind is the file name spelled a second way, so the row does not spell it.
+    expect.soft(screen.queryByText('proposal')).toBeNull()
+    expect.soft(screen.queryByText('decision log')).toBeNull()
   })
 
   test('a long document is clamped until the owner asks for the whole of it', async () => {

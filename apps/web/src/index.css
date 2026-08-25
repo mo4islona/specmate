@@ -25,15 +25,37 @@
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
   /* A status wears a role rather than a colour of its own: what "parked" looks
-     like is decided once, by whichever theme is on. */
+     like is decided once, by whichever theme is on. `done` is grey on purpose —
+     see the colour budget below. */
   --color-status-active: var(--color-accent);
   --color-status-parked: var(--color-attention);
   --color-status-failed: var(--color-danger);
-  --color-status-done: var(--color-info);
+  --color-status-done: var(--color-muted);
 
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
+
+/* ── The colour budget ──────────────────────────────────────────────────────
+   Colour marks the one thing that wants you. Everything else is grey, and rank
+   comes from weight, size and surface.
+
+   - `accent` is the mark and whatever is moving *right now*. Not inline code,
+     not a heading, not the tab you are on, not the option you picked.
+   - `attention` is your turn: the sentence that says so, and the control that
+     ends it.
+   - `danger` is something that failed.
+   - `info` and `success` are not interface roles at all. They survive in the two
+     places colour *is* the data — a diff's added and removed lines, and the
+     telemetry canvas — and nowhere else.
+
+   The rule exists because the roles had drifted into decoration. `done` was
+   green in the pipeline rail, grey over the step it headed and cyan in a badge;
+   `info` meant a link, a path, a sha, a model name, a merged pull request, a
+   selected document and an archived task; `accent` meant the brand, a running
+   step, the active tab, every `code` span in a document and every chosen row.
+   Seven hues at once, none of them signal. `kit-discipline.test.ts` holds the
+   budget now: outside the kit, only the tone module may light a role. */
 
 * {
   box-sizing: border-box;
@@ -127,7 +149,7 @@ body {
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-info);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
 
@@ -182,6 +204,40 @@ body {
      it, the flush rule zeroed the inset and the list ran into its own border. */
   .rail-inset {
     padding: var(--rail-gutter);
+  }
+
+  /* The slot a fact will land in. Sized by the call site; only the surface and
+     the breathing belong here. */
+  .skeleton {
+    display: block;
+    border-radius: 0.375rem;
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    animation: skeleton-breathe 1.6s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-breathe {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  /* Settling, not entering: two pixels and no scale, because this runs beside a
+     field somebody is typing into and anything larger reads as the page moving. */
+  .reveal {
+    animation: reveal-settle 180ms ease-out;
+  }
+
+  @keyframes reveal-settle {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+  }
+
+  /* Still true, just not the newest answer. */
+  .reveal-stale {
+    opacity: 0.5;
+    transition: opacity 140ms ease-out;
   }
 
   /* A row reaches past the gutter, so its hover box has edges to show; its text
@@ -244,12 +300,14 @@ body {
     color: var(--color-muted);
   }
 
+  /* A field is not a state, so it brightens rather than colours: the frame steps
+     up the neutral ramp under the pointer and again under the caret. */
   .control:hover {
-    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    border-color: color-mix(in srgb, var(--color-text) 22%, var(--color-border-bright));
   }
 
   .control:focus {
-    border-color: color-mix(in srgb, var(--color-accent) 62%, var(--color-border-bright));
+    border-color: color-mix(in srgb, var(--color-text) 45%, var(--color-border-bright));
   }
 
   .control[aria-invalid="true"] {
@@ -263,17 +321,19 @@ body {
     line-height: 1.4;
   }
 
-  /* A way out of the state, not a verb of it: readable, and quieter than a button. */
+  /* A way out of the state, not a verb of it: readable, and quieter than a
+     button. The rule under it is what says "somewhere to go" — a hue would have
+     said "look here", which a way out is not. */
   .link-quiet {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
-    color: var(--color-info);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-bright) 70%, transparent);
+    color: var(--color-muted);
     font-family: var(--font-mono);
     font-size: 0.62rem;
   }
 
   .link-quiet:hover {
-    border-bottom-color: var(--color-info);
-    color: var(--color-info);
+    border-bottom-color: var(--color-text);
+    color: var(--color-text);
   }
 
   /* ── Buttons ───────────────────────────────────────────────────────────────
@@ -339,8 +399,8 @@ body {
   }
 
   .button-secondary:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
-    color: var(--color-accent);
+    border-color: var(--color-border-bright);
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
   }
 
   /* No frame until you point at it: a hover border on every quiet control is
@@ -399,20 +459,21 @@ body {
   }
 
   .chip:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    border-color: var(--color-border-bright);
     background: color-mix(in srgb, var(--color-text) 6%, transparent);
   }
 
-  .chip[aria-expanded="true"] {
-    border-color: color-mix(in srgb, var(--color-info) 50%, transparent);
-    background: color-mix(in srgb, var(--color-info) 9%, transparent);
+  /* Held open, and one of a set chosen: both are where the pointer has been, not
+     states of the work, so both press into the surface rather than colour it. */
+  .chip[aria-expanded="true"],
+  .chip[aria-pressed="true"] {
+    border-color: var(--color-border-bright);
+    background: color-mix(in srgb, var(--color-text) 11%, transparent);
+    color: var(--color-text);
   }
 
-  /* One of a set, chosen. */
   .chip[aria-pressed="true"] {
-    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-    color: var(--color-accent);
+    font-weight: 600;
   }
 
   .button-primary:disabled,
@@ -478,7 +539,10 @@ body {
      two places only — the mark that opens the block, and the button that acts.
      The rail down the left side said the same thing a third time. */
   .console {
-    --console-tone: var(--color-accent);
+    /* Neutral until the state has something to say. A console that glowed the
+       accent whenever it held the caret was the loudest thing on a screen where
+       nothing was happening. */
+    --console-tone: var(--color-text);
     border: 1px solid var(--color-border);
     border-radius: 1rem;
     background: var(--color-elevated);
@@ -591,14 +655,32 @@ body {
     background: var(--color-border-bright);
   }
 
-  /* A ring rather than a border, so a row that carries no frame can still ask. */
-  .attention-pulse {
-    animation: attention-ring 2.8s ease-in-out infinite;
-  }
-
-  /* Live markers breathe instead of blinking: the eye finds them without being pulled to them. */
+  /* Live markers breathe instead of blinking: the eye finds them without being
+     pulled to them. It is the app's only "something is happening" device, and it
+     carries both things worth the eye — what is moving, and what is waiting on
+     you. There was a second device, a 1px amber ring around the whole row, drawn
+     on every row of a group at once; a rail of five parked tasks strobed in it,
+     and it said nothing the row's own mark could not. So the mark says it. */
   .dot-live {
     animation: dot-breath 1.8s ease-in-out infinite;
+  }
+
+  /* A mark six pixels across cannot hold a corner of the eye from the far side
+     of a rail, so the one that is a question spreads its own colour behind it.
+     `inherit` is what keeps that honest: the halo is the fill it came from, so
+     a mark that failed casts red rather than amber. It needs no z-index — it
+     paints over the dot, and 30% of a colour over 100% of it is it. */
+  .dot-halo {
+    position: relative;
+  }
+
+  .dot-halo::before {
+    content: "";
+    position: absolute;
+    inset: -0.2rem;
+    border-radius: inherit;
+    background-color: inherit;
+    opacity: 0.3;
   }
 
   /* ── The mark as the connection light ──────────────────────────────────────
@@ -640,16 +722,6 @@ body {
     }
   }
 
-  @keyframes attention-ring {
-    0%,
-    100% {
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-attention) 22%, transparent);
-    }
-    50% {
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-attention) 65%, transparent);
-    }
-  }
-
   .artifact-document {
     color: var(--color-text);
     font-size: 0.95rem;
@@ -686,8 +758,10 @@ body {
     font-size: 1.35rem;
   }
 
+  /* Three heading levels separated by size and weight alone. The accent on `h3`
+     put a coloured line every few paragraphs of a proposal, which is the whole
+     document asking to be looked at. */
   .artifact-document h3 {
-    color: var(--color-accent);
     font-size: 1.1rem;
   }
 
@@ -714,16 +788,22 @@ body {
   }
 
   .artifact-document a {
-    color: var(--color-info);
     text-decoration: underline;
+    text-decoration-color: var(--color-border-bright);
     text-underline-offset: 0.2em;
   }
 
+  .artifact-document a:hover {
+    text-decoration-color: currentcolor;
+  }
+
+  /* The box and the face already say "this is a symbol". Colouring it as well
+     turned every identifier a proposal names into something to look at, and a
+     proposal names dozens. */
   .artifact-document code {
     border: 1px solid var(--color-border);
     background: var(--color-ground);
     padding: 0.12em 0.35em;
-    color: var(--color-accent);
     font-family: var(--font-mono);
     font-size: 0.88em;
   }
@@ -742,7 +822,7 @@ body {
   }
 
   .artifact-document blockquote {
-    border-left: 2px solid var(--color-attention);
+    border-left: 2px solid var(--color-border-bright);
     padding-left: 1rem;
     color: var(--color-muted);
   }
@@ -795,7 +875,7 @@ body {
 
   .diff-line-hunk {
     margin-top: 0.5rem;
-    color: var(--color-info);
+    color: var(--color-muted);
   }
 
   .diff-line-meta {

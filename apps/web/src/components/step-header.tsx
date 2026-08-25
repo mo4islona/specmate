@@ -6,7 +6,7 @@ import { Button, cx, Dot, HoverHint } from '../ui/index.ts'
 import { CommitRef } from './commit-ref.tsx'
 import { InfoIcon } from './icons.tsx'
 import { NodeHint } from './node-hint.tsx'
-import { NODE_DOT, NODE_NAME } from './node-tone.ts'
+import { nodeDot, nodeName, nodeSignal, signalBreathes, signalDot, signalText } from './tone.ts'
 
 interface StepHeaderProps {
   readonly node: PipelineNodeView
@@ -45,8 +45,11 @@ function stateFact(node: PipelineNodeView, duration: number | null): string {
  * hint says. One hint, two places to ask for it.
  *
  * The step's *state* is left out whenever the page header two rows above is
- * already a sentence about this same step. A step the owner went back to is
- * another matter: the header is about the task, this is about the step.
+ * already a sentence about this same step — its colour along with its words,
+ * because an amber step name under an amber `Waiting on you` is the same claim
+ * twice and the eye cannot tell which one it is meant to act on. A step the
+ * owner went back to is another matter: the header is about the task, this is
+ * about the step, and only then does the step light its own signal.
  */
 export function StepHeader({ node, repoUrl, current, notice = null }: StepHeaderProps) {
   const now = useNow()
@@ -62,15 +65,25 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-elevated/55 py-2 pl-4 pr-2">
       <h2 className="flex min-w-0 items-center gap-2">
-        <Dot className={NODE_DOT[node.state]} />
-        <span className={cx('truncate text-[0.95rem]', NODE_NAME[node.state])}>{node.label}</span>
+        <Dot
+          className={current ? signalDot('settled') : nodeDot(node.state)}
+          live={!current && signalBreathes(nodeSignal(node.state))}
+        />
+        <span
+          className={cx(
+            'truncate text-[0.95rem]',
+            current ? signalText('settled') : nodeName(node.state),
+          )}
+        >
+          {node.label}
+        </span>
       </h2>
 
       {notice && (
         <p
           className={cx(
             'min-w-0 font-mono text-[0.66rem]',
-            notice.tone === 'danger' ? 'text-danger' : 'text-muted',
+            notice.tone === 'danger' ? signalText('stopped') : 'text-muted',
           )}
           role="status"
         >
@@ -86,7 +99,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
           </span>
         ))}
         {node.latest?.acceptedCommit && (
-          <CommitRef sha={node.latest.acceptedCommit} repoUrl={repoUrl} className="text-info" />
+          <CommitRef sha={node.latest.acceptedCommit} repoUrl={repoUrl} />
         )}
       </p>
 

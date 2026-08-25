@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { StatusChip } from '../components/status-chip.tsx'
+import { signalDot } from '../components/tone.ts'
 import { listAttention } from '../lib/api-client.ts'
 import { formatAge } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import {
+  Dot,
   ErrorState,
   LoadingState,
   MicroLabel,
@@ -49,9 +51,9 @@ export function AttentionScreen() {
       />
 
       {attention.data.items.length === 0 ? (
-        <Panel className="grid min-h-72 place-items-center border-accent/20 text-center">
+        <Panel className="grid min-h-72 place-items-center text-center">
           <div>
-            <p className="font-mono text-5xl text-accent">✓</p>
+            <p className="font-mono text-5xl text-muted">✓</p>
             <h2 className="mt-5 text-xl font-semibold">Nothing needs the owner</h2>
             <Note className="mt-2">All tracked work is moving or complete.</Note>
           </div>
@@ -62,14 +64,18 @@ export function AttentionScreen() {
             <li key={item.id}>
               <PanelLink
                 href={`/tasks/${item.task.id}`}
-                className="attention-pulse group block h-full transition-colors hover:border-accent/40 hover:bg-elevated"
+                className="group block h-full transition-colors hover:border-border-bright hover:bg-elevated"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <MicroLabel tone="attention">{reasonLabel(item.reason.kind)}</MicroLabel>
-                    <h2 className="mt-2 truncate text-lg font-semibold group-hover:text-accent">
-                      {item.task.title}
-                    </h2>
+                    {/* Every card here is asking, so the mark is not what tells
+                        them apart — it is what says the queue is live rather
+                        than a list of things that happened. */}
+                    <div className="flex items-center gap-2">
+                      <Dot className={signalDot('asking')} live halo />
+                      <MicroLabel>{reasonLabel(item.reason.kind)}</MicroLabel>
+                    </div>
+                    <h2 className="mt-2 truncate text-lg font-semibold">{item.task.title}</h2>
                   </div>
                   <span className="shrink-0 font-mono text-xs text-muted">
                     {formatAge(item.since)} ago
@@ -80,7 +86,7 @@ export function AttentionScreen() {
 
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <StatusChip status={item.task.status} />
-                  <span className="font-mono text-xs text-info">Open task →</span>
+                  <span className="font-mono text-xs text-muted">Open task →</span>
                 </div>
               </PanelLink>
             </li>

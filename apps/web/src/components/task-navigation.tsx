@@ -4,8 +4,8 @@ import { useLocation } from 'wouter'
 import { listAttention, listTasks, type TaskSummary } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Dot, MicroLabel, NavRow, Note } from '../ui/index.ts'
-import { statusTone, toneDot } from './status-tone.ts'
+import { cx, Dot, MicroLabel, NavRow, Note } from '../ui/index.ts'
+import { signalText, statusTone, toneDot } from './tone.ts'
 
 const GROUPS = ['Needs input', 'Active', 'Queued', 'Complete'] as const
 type TaskGroup = (typeof GROUPS)[number]
@@ -41,7 +41,7 @@ export function TaskNavigation() {
     return <p className="py-4 font-mono text-xs text-muted">Loading task index…</p>
   }
   if (tasks.isError || attention.isError) {
-    return <p className="py-4 text-sm text-danger">Task index unavailable.</p>
+    return <p className={cx('py-4 text-sm', signalText('stopped'))}>Task index unavailable.</p>
   }
 
   return (
@@ -51,6 +51,12 @@ export function TaskNavigation() {
         if (rows.length === 0) {
           return null
         }
+
+        // Two groups earn the breath — what is moving, and what is waiting on
+        // you — and only the second earns the halo, because only it is a
+        // question. Neither of them gets an edge: no ring around the row.
+        const asking = group === 'Needs input'
+        const breathing = asking || group === 'Active'
 
         return (
           <section key={group}>
@@ -63,11 +69,12 @@ export function TaskNavigation() {
                     href={`/tasks/${task.id}`}
                     active={location.startsWith(`/tasks/${task.id}`)}
                     title={task.title}
-                    className={`flex gap-2.5 ${group === 'Needs input' ? 'attention-pulse' : ''}`}
+                    className="flex gap-2.5"
                   >
                     <Dot
                       className={`mt-[0.42rem] ${toneDot(statusTone(task.status))}`}
-                      live={group === 'Active'}
+                      live={breathing}
+                      halo={asking}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[0.82rem] leading-5">{task.title}</span>

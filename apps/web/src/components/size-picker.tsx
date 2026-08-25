@@ -77,7 +77,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
               <span
                 className={cx(
                   'block font-mono text-[0.78rem]',
-                  chosen ? 'text-accent' : 'text-text',
+                  chosen ? 'font-medium text-text' : 'text-text',
                 )}
               >
                 {choice}
@@ -88,7 +88,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
             </span>
 
             <span
-              className={cx('shrink-0 pt-0.5 text-accent', !chosen && 'invisible')}
+              className={cx('shrink-0 pt-0.5 text-text', !chosen && 'invisible')}
               aria-hidden="true"
             >
               ✓

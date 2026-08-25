@@ -1,14 +1,15 @@
 import type { StreamConnectionState } from '../lib/event-stream.ts'
+import { signalText, streamSignal } from './tone.ts'
 
 interface IconProps {
   className?: string
 }
 
 /** How the run stepping out of the brackets is drawn while the stream is in each state. */
-const RUN_TONE: Record<StreamConnectionState, string> = {
-  live: 'text-accent',
-  connecting: 'text-attention mark-reach',
-  stale: 'text-danger',
+function runTone(stream: StreamConnectionState): string {
+  const reaching = stream === 'connecting' ? ' mark-reach' : ''
+
+  return signalText(streamSignal(stream)) + reaching
 }
 
 interface MarkProps extends IconProps {
@@ -26,7 +27,7 @@ interface MarkProps extends IconProps {
  * stream chases them, and a stalled one stops them in the colour of trouble.
  */
 export function SpecMateMark({ className, stream = null }: MarkProps) {
-  const run = stream ? RUN_TONE[stream] : 'text-accent'
+  const run = runTone(stream ?? 'live')
   const stalled = stream === 'stale'
 
   return (

@@ -75,7 +75,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                           <FileIcon
                             className={cx(
                               'h-3.5 w-3.5 shrink-0',
-                              open ? 'text-info' : 'text-muted',
+                              open ? 'text-text' : 'text-muted',
                             )}
                           />
                           <span className="min-w-0 flex-1">
@@ -105,7 +105,9 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
         {artifact.data && (
           <>
             <header className="sticky top-0 z-10 bg-elevated px-4 py-3 sm:px-6">
-              <p className="break-all font-mono text-xs text-info">{artifact.data.artifact.path}</p>
+              <p className="break-all font-mono text-xs text-muted">
+                {artifact.data.artifact.path}
+              </p>
               <p className="mt-1 font-mono text-[0.62rem] text-muted">
                 snapshot updated {formatTimestamp(artifact.data.artifact.updatedAt)}
               </p>

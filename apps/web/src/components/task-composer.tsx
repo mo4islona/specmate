@@ -9,6 +9,7 @@ import {
   type ConsoleTone as SlabTone,
 } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
+import { consoleSignal, signalText } from './tone.ts'
 
 /** The one open question the console is answering, and its siblings as a pager. */
 export interface OpenQuestion {
@@ -53,20 +54,10 @@ const TONE_SLAB: Record<ConsoleTone, SlabTone> = {
   plain: 'plain',
 }
 
-const TONE_MARK: Record<ConsoleTone, string> = {
-  asking: 'text-attention',
-  running: 'dot-live text-accent',
-  stopped: 'text-danger',
-  spent: 'text-muted',
-  plain: 'text-muted',
-}
+function markClass(tone: ConsoleTone): string {
+  const live = tone === 'running' ? 'dot-live ' : ''
 
-const TONE_TEXT: Record<ConsoleTone, string> = {
-  asking: 'text-attention',
-  running: 'text-accent',
-  stopped: 'text-danger',
-  spent: 'text-muted',
-  plain: 'text-accent',
+  return `${live}${signalText(consoleSignal(tone))}`
 }
 
 /**
@@ -127,12 +118,12 @@ export function TaskComposer({
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 pt-3">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-mono text-[0.72rem] leading-5">
             <Mark tone={destination.tone} />
-            <span className="min-w-0 text-attention">
+            <span className={cx('min-w-0', signalText('asking'))}>
               {question.label} · question {question.index + 1} of {question.total}
             </span>
 
             {question.stopped && (
-              <span className="text-danger" role="status">
+              <span className={signalText('stopped')} role="status">
                 The task is stopped on this.
               </span>
             )}
@@ -153,7 +144,9 @@ export function TaskComposer({
             <Mark tone={destination.tone} />
             <span className="min-w-0">
               {destination.head.to && (
-                <span className={TONE_TEXT[destination.tone]}>{destination.head.to} · </span>
+                <span className={signalText(consoleSignal(destination.tone))}>
+                  {destination.head.to} ·{' '}
+                </span>
               )}
               {destination.head.note}
             </span>
@@ -229,7 +222,7 @@ export function TaskComposer({
 /** The console's mood in one character — breathing while a node runs. */
 function Mark({ tone }: { tone: ConsoleTone }) {
   return (
-    <span className={cx('shrink-0 leading-none', TONE_MARK[tone])} aria-hidden="true">
+    <span className={cx('shrink-0 leading-none', markClass(tone))} aria-hidden="true">
       ●
     </span>
   )
@@ -269,7 +262,7 @@ function Pager({
           className={cx(
             'grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors',
             step === index
-              ? 'bg-attention font-semibold text-on-attention'
+              ? 'bg-text/15 font-semibold text-text'
               : 'text-muted hover:bg-text/8 hover:text-text',
           )}
           onClick={() => onPage(step)}

@@ -1,6 +1,7 @@
 import { type BudgetKey, spendAgainstBudget } from '@specmate/core'
 import type { TaskDetail } from '../lib/api-client.ts'
 import { cx, MicroLabel } from '../ui/index.ts'
+import { signalDot, signalText } from './tone.ts'
 
 type Budgets = TaskDetail['task']['budgets']
 type Spend = TaskDetail['spend']
@@ -57,11 +58,11 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
               <div className="flex items-baseline justify-between gap-2 font-mono text-[0.7rem]">
                 <dt className="text-muted">{row.label}</dt>
                 <dd
-                  className={near ? 'text-attention' : 'text-text'}
+                  className={near ? signalText('asking') : 'text-text'}
                   title={row.incomplete ? 'incomplete — some runs reported no cost' : undefined}
                 >
                   {row.incomplete && (
-                    <span className="text-attention" aria-hidden="true">
+                    <span className={signalText('asking')} aria-hidden="true">
                       ≈{' '}
                     </span>
                   )}
@@ -74,7 +75,7 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
                   as an underline, which is what a spend row must not look like. */}
               <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-border/70">
                 <div
-                  className={cx('h-full rounded-full', near ? 'bg-attention' : 'bg-accent/70')}
+                  className={cx('h-full rounded-full', near ? signalDot('asking') : 'bg-text/25')}
                   style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
                 />
               </div>

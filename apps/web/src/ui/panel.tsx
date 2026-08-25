@@ -70,7 +70,7 @@ interface SectionProps {
  */
 export function Section({
   eyebrow,
-  eyebrowTone = 'info',
+  eyebrowTone = 'muted',
   title,
   description,
   actions,
@@ -109,7 +109,7 @@ interface PageHeaderProps {
 /** The one heading a screen gets. */
 export function PageHeader({
   eyebrow,
-  eyebrowTone = 'accent',
+  eyebrowTone = 'muted',
   title,
   description,
   aside,

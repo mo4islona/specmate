@@ -57,7 +57,7 @@ function SurfaceLink({ entry, active }: { entry: SurfaceEntry; active: boolean }
       className={cx(
         'flex items-baseline gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-mono text-[0.72rem] transition-colors',
         active
-          ? 'bg-accent/10 font-semibold text-accent'
+          ? 'bg-text/[0.09] font-semibold text-text'
           : 'text-muted hover:bg-text/[0.06] hover:text-text',
       )}
     >

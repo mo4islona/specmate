@@ -18,7 +18,6 @@ const LAYOUT_CLASSES = new Set([
   'shell-column',
   'rail-inset',
   'scroll-thin',
-  'attention-pulse',
   'dot-live',
   'mark-reach',
   'artifact-document',
@@ -148,9 +147,52 @@ function classLists(source: string): string[] {
   return lists
 }
 
+/**
+ * The roles that mean something rather than dress something. The greys are the
+ * app's reading voice and anyone may write one; these five say *this is the
+ * thing that wants you*, and a screen that lights more than one of them at a
+ * time has stopped signalling and started decorating. The budget itself is at
+ * the top of `index.css`.
+ */
+const SIGNAL_ROLES = new Set([
+  'accent',
+  'attention',
+  'danger',
+  'info',
+  'success',
+  'on-accent',
+  'on-attention',
+  'status-active',
+  'status-parked',
+  'status-failed',
+  'status-done',
+])
+
+/**
+ * Outside the kit, the files allowed to name one. `tone.ts` is the vocabulary
+ * every state reads its colour from — the point of the rule is that there is
+ * exactly one. The other three are the places colour is not a signal but the
+ * subject: the swatches that preview a palette, the counts in a diff, and the
+ * workbench that has to render every part in every state at once.
+ */
+const MAY_SIGNAL = new Set([
+  'components/tone.ts',
+  'components/theme-section.tsx',
+  'screens/files-changed-screen.tsx',
+  'screens/kit-screen.tsx',
+])
+
 /** `hover:`, `sm:`, `peer-focus-visible:` — the utility is the last segment. */
 function bareUtility(token: string): string {
   return (token.split(':').at(-1) ?? token).replace(/^!/, '')
+}
+
+/** `bg-accent/[0.09]`, `text-danger`, `border-accent/40` — the role, or null. */
+function roleOf(token: string): string | null {
+  const [prefix, ...rest] = bareUtility(token).split('-')
+  if (!prefix || !COLOUR_PREFIXES.has(prefix)) return null
+
+  return rest.join('-').split('/')[0] ?? null
 }
 
 const ALL_FILES = sourceFiles(SRC)
@@ -212,6 +254,41 @@ describe('kit discipline', () => {
     }
 
     expect(offences, 'name a --color-* role from theme.css').toEqual([])
+  })
+
+  /**
+   * The other half of "one style". The first rule keeps a *part* from being
+   * assembled by hand; this one keeps a *signal* from being invented by hand.
+   *
+   * Without it the roles drifted into decoration and stopped meaning anything:
+   * `done` was a green ✓ in the pipeline rail, a grey dot over the step it
+   * headed and a cyan pill in the task index; `info` meant a link, a path, a
+   * sha, a model name, a merged pull request, a selected document *and* an
+   * archived task; `accent` meant the brand, a running step, the active tab and
+   * every `code` span in a proposal. Seven hues on one screen, none of them
+   * signal — which is what the owner saw and called a traffic light.
+   */
+  it('only the tone module lights a signal role', () => {
+    const offences: string[] = []
+
+    for (const path of OUTSIDE_THE_KIT) {
+      if (MAY_SIGNAL.has(relative(path))) continue
+
+      // Every literal, not just the ones handed to a `className`: the drift this
+      // catches lived in tone maps in plain `.ts` files, which name no element.
+      const tokens = literalsIn(stripComments(readFileSync(path, 'utf8'))).flatMap((literal) =>
+        literal.split(/\s+/),
+      )
+      const lit = new Set(
+        tokens
+          .map(roleOf)
+          .filter((role): role is string => role !== null && SIGNAL_ROLES.has(role)),
+      )
+
+      for (const role of lit) offences.push(`${relative(path)} writes a ${role} utility`)
+    }
+
+    expect(offences, 'ask components/tone.ts for the class, or use a grey').toEqual([])
   })
 
   it('reads the stylesheet it is checking against', () => {

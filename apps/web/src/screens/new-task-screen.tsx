@@ -98,7 +98,7 @@ export function RepositoryChoice({
   onSelect,
 }: RepositoryChoiceProps) {
   return (
-    <Subpanel className="bg-danger/10">
+    <Subpanel className="bg-text/[0.05]">
       <FieldLabel>Which repository?</FieldLabel>
       <Note size="xs" className="mt-1">
         {detail ?? 'The request did not name one, and there is no default set.'}

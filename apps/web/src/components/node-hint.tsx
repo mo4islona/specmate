@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { nodeSpend, type PipelineNodeView, shortModel } from '../lib/task-pipeline.ts'
 import { formatDuration, formatTokens, tokenSplit } from '../lib/task-thread.ts'
 import { NODE_HELP } from './node-help.ts'
-import { NODE_MARK, NODE_NAME } from './node-tone.ts'
+import { NODE_MARK, nodeName } from './tone.ts'
 
 interface NodeHintProps {
   readonly node: PipelineNodeView
@@ -62,7 +62,7 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
     <span className="block">
       <span className="flex items-baseline justify-between gap-3">
         <span className="text-[0.8rem] font-medium text-text">{node.label}</span>
-        <span className={`shrink-0 font-mono text-[0.62rem] ${NODE_NAME[node.state]}`}>
+        <span className={`shrink-0 font-mono text-[0.62rem] ${nodeName(node.state)}`}>
           {node.reason ?? NODE_MARK[node.state].label}
         </span>
       </span>

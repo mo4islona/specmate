@@ -1,6 +1,6 @@
 import type { TaskState } from '@specmate/core'
 import { Badge } from '../ui/index.ts'
-import { statusTone } from './status-tone.ts'
+import { statusTone } from './tone.ts'
 
 interface StatusChipProps {
   status: TaskState

@@ -27,10 +27,21 @@ interface InlineLinkProps {
   readonly children: ReactNode
 }
 
-/** A link inside a sentence — the task a waiver came from, the task this one waits on. */
+/**
+ * A link inside a sentence — the task a waiver came from, the task this one
+ * waits on. It carries its rule at all times rather than a colour: the sentence
+ * around it is already the reading tone, and a hue in the middle of one reads as
+ * emphasis on the word rather than as somewhere to go.
+ */
 export function InlineLink({ href, className, children }: InlineLinkProps) {
   return (
-    <Link href={href} className={cx('text-info underline-offset-4 hover:underline', className)}>
+    <Link
+      href={href}
+      className={cx(
+        'underline decoration-border-bright underline-offset-4 hover:decoration-current',
+        className,
+      )}
+    >
       {children}
     </Link>
   )

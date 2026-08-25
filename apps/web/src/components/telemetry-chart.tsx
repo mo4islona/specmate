@@ -301,7 +301,7 @@ export function TelemetryChart({
                   <p className="mt-1 text-muted">
                     {attempt.costUsd === null ? 'cost absent' : `$${attempt.costUsd.toFixed(4)}`}
                   </p>
-                  <p className="mt-1 truncate text-info">{attempt.model ?? attempt.provider}</p>
+                  <p className="mt-1 truncate text-muted">{attempt.model ?? attempt.provider}</p>
                 </li>
               )
             })}
