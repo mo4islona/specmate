@@ -106,6 +106,24 @@ export function Input({
   return <input {...control} {...rest} />
 }
 
+/**
+ * A tick with its word beside it. The label is part of the control because the
+ * two are never apart, and a bare checkbox with a `<span>` next to it is a
+ * target the size of the box rather than of the phrase.
+ */
+export function Checkbox({
+  label,
+  className,
+  ...rest
+}: ComponentPropsWithRef<'input'> & { readonly label: ReactNode }) {
+  return (
+    <label className={cx('flex cursor-pointer items-center gap-1.5 text-muted text-xs', className)}>
+      <input type="checkbox" className="checkbox" {...rest} />
+      {label}
+    </label>
+  )
+}
+
 export function Select({
   mono = false,
   fullWidth = true,

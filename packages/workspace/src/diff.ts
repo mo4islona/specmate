@@ -38,6 +38,26 @@ export interface DiffFile {
   readonly deletions: number | null
 }
 
+/** git's own default, so a read that asks for no width sees what it always saw. */
+export const DEFAULT_DIFF_CONTEXT = 3
+
+/**
+ * The ceiling on how far a reader may widen a hunk (REQ-1013). Wide enough to
+ * be the whole of any file worth reading in a browser, which is what makes
+ * "expand everything" a width rather than a mode of its own.
+ */
+export const MAX_DIFF_CONTEXT = 2000
+
+/**
+ * A comparison and what it holds. The tip travels with the files because a
+ * reader's marks on them are a claim about this diff and not the next one
+ * (REQ-1013/AC-1062).
+ */
+export interface TaskDiffFiles {
+  readonly tip: string
+  readonly files: DiffFile[]
+}
+
 const STATUS_LETTERS: Record<string, DiffFileStatus> = {
   A: 'added',
   M: 'modified',
@@ -141,7 +161,20 @@ export async function taskFilesChanged(
 }
 
 /**
- * The unified diff for one file, as of the task branch's current tip.
+ * How much context a reader asked for, held to what the read will serve: a
+ * width past the ceiling is answered with the ceiling rather than refused
+ * (REQ-1013/AC-1063), and a width past the file's length is the whole file,
+ * which git resolves on its own.
+ */
+function contextWidth(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_DIFF_CONTEXT
+
+  return Math.min(Math.max(Math.trunc(requested), 0), MAX_DIFF_CONTEXT)
+}
+
+/**
+ * The unified diff for one file, as of the task branch's current tip, with
+ * `context` lines around each hunk.
  *
  * `:(literal)` stops git reading `path` as a glob, but a directory-shaped
  * value (`.`, `src`, `src/`) still matches every file under it even in
@@ -150,7 +183,12 @@ export async function taskFilesChanged(
  * `--numstat` first, and only a match of exactly `path` and nothing else is
  * fetched as a patch; anything broader is treated as no match.
  */
-export async function taskFileDiff(git: Git, range: TaskDiffRange, path: string): Promise<string> {
+export async function taskFileDiff(
+  git: Git,
+  range: TaskDiffRange,
+  path: string,
+  context?: number,
+): Promise<string> {
   if (range.base === range.tip) return ''
 
   const pathspec = ['--', `:(literal)${path}`]
@@ -169,6 +207,7 @@ export async function taskFileDiff(git: Git, range: TaskDiffRange, path: string)
   const result = await git.inMirror(range.mirror, [
     'diff',
     '--no-renames',
+    `-U${contextWidth(context)}`,
     range.base,
     range.tip,
     ...pathspec,

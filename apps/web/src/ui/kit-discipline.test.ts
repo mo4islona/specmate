@@ -178,7 +178,7 @@ const SIGNAL_ROLES = new Set([
 const MAY_SIGNAL = new Set([
   'components/tone.ts',
   'components/theme-section.tsx',
-  'screens/files-changed-screen.tsx',
+  'components/diff-file-facts.tsx',
   'screens/kit-screen.tsx',
 ])
 

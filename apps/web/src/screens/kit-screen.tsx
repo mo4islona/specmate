@@ -7,6 +7,7 @@ import {
   Button,
   ButtonLink,
   type ButtonVariant,
+  Checkbox,
   Chip,
   Console,
   ConsoleField,
@@ -19,11 +20,13 @@ import {
   ErrorState,
   Field,
   FieldLabel,
+  FolderName,
   HoverHint,
   InlineLink,
   Input,
   ListRow,
   LoadingState,
+  Meter,
   MicroLabel,
   NavRow,
   Note,
@@ -39,6 +42,7 @@ import {
   SkeletonFacts,
   SkeletonRows,
   SkeletonText,
+  StatBar,
   Subpanel,
   Textarea,
   TextButton,
@@ -71,6 +75,17 @@ const SPECIMEN_DIFF = [
   '+',
   '+The accumulator half is not a trade-off: an earlier series can fully fold',
   ' an event before a later one fails on the *same* event.',
+].join('\n')
+
+/**
+ * The same file at full context, so the specimen's hunk has something to open
+ * into: forty lines of preamble is exactly what its `@@ -41` header stands in
+ * for.
+ */
+const SPECIMEN_WHOLE_FILE = [
+  '@@ -1,44 +1,45 @@',
+  ...Array.from({ length: 40 }, (_, index) => ` line ${index + 1}, above the hunk`),
+  ...SPECIMEN_DIFF.split('\n').slice(1),
 ].join('\n')
 
 /** A named specimen, so what a part is called sits next to what it looks like. */
@@ -400,6 +415,53 @@ export function KitScreen() {
       </Section>
 
       <Section
+        eyebrow="A number, drawn"
+        title="Gauges and ticks"
+        description="Three parts a stack of files needs and nothing else does: how far a pass has got, how a file's change divides, and a tick that belongs to the palette rather than to the browser."
+      >
+        <Specimen name="Meter">
+          <div className="space-y-2">
+            <Meter done={0} total={7} label="None viewed" className="w-40" />
+            <Meter done={3} total={7} label="Three of seven viewed" className="w-40" />
+            <Meter done={7} total={7} label="All viewed" className="w-40" />
+          </div>
+        </Specimen>
+
+        <Specimen name="StatBar">
+          <div className="space-y-2 font-mono text-xs">
+            <p className="flex items-center gap-2">
+              <StatBar additions={40} deletions={0} /> only added
+            </p>
+            <p className="flex items-center gap-2">
+              <StatBar additions={0} deletions={40} /> only removed
+            </p>
+            <p className="flex items-center gap-2">
+              <StatBar additions={180} deletions={20} /> mostly added
+            </p>
+            <p className="flex items-center gap-2">
+              <StatBar additions={400} deletions={1} /> one line lost of 401
+            </p>
+          </div>
+        </Specimen>
+
+        <Specimen name="Checkbox">
+          <div className="flex items-center gap-5">
+            <Checkbox label="Viewed" defaultChecked={false} />
+            <Checkbox label="Viewed" defaultChecked />
+            <Checkbox label="Viewed" disabled />
+          </div>
+        </Specimen>
+
+        <Specimen name="FolderName">
+          <div>
+            <MicroLabel>Specification · 4</MicroLabel>
+            <FolderName>openspec/changes/files-review-surface</FolderName>
+            <FolderName className="ps-3">specs/operator-ui</FolderName>
+          </div>
+        </Specimen>
+      </Section>
+
+      <Section
         eyebrow="What a run changed"
         title="Diffs"
         description="One face, two readings: a whole file is read as prose, and an edit inside a record is read by line, so the gutter is a choice rather than a second stylesheet."
@@ -410,6 +472,18 @@ export function KitScreen() {
 
         <Specimen name="Diff · lineNumbers">
           <Diff diff={SPECIMEN_DIFF} lineNumbers />
+        </Specimen>
+
+        <Specimen name="Diff · split">
+          <Diff diff={SPECIMEN_DIFF} view="split" lineNumbers />
+        </Specimen>
+
+        <Specimen name="Diff · a hunk that opens">
+          <Diff diff={SPECIMEN_DIFF} wholeFile={SPECIMEN_WHOLE_FILE} lineNumbers />
+        </Specimen>
+
+        <Specimen name="Diff · a hunk that opens, split">
+          <Diff diff={SPECIMEN_DIFF} wholeFile={SPECIMEN_WHOLE_FILE} view="split" lineNumbers />
         </Specimen>
 
         <Specimen name="Diff · nothing to show">

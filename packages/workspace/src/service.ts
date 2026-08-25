@@ -8,7 +8,7 @@ import {
 } from '@specmate/core'
 import { type Database, events, getSpecConvention, tasks } from '@specmate/db'
 import { and, eq, isNull } from 'drizzle-orm'
-import { type DiffFile, resolveTaskDiffRange, taskFileDiff, taskFilesChanged } from './diff.ts'
+import { resolveTaskDiffRange, type TaskDiffFiles, taskFileDiff, taskFilesChanged } from './diff.ts'
 import { Git } from './git.ts'
 import { type IndexedArtifact, indexChangeFolder } from './index-artifacts.ts'
 import type {
@@ -189,16 +189,17 @@ export class WorkspaceService {
    * identical `SELECT` here would be pure waste on an endpoint an operator
    * re-fetches while browsing files.
    */
-  async diffFiles(task: DiffTaskRef): Promise<DiffFile[]> {
+  async diffFiles(task: DiffTaskRef): Promise<TaskDiffFiles> {
     const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
+    const files = await taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
 
-    return taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
+    return { tip: range.tip, files }
   }
 
-  async diffFile(task: DiffTaskRef, path: string): Promise<string> {
+  async diffFile(task: DiffTaskRef, path: string, context?: number): Promise<string> {
     const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
 
-    return taskFileDiff(this.git, range, path)
+    return taskFileDiff(this.git, range, path, context)
   }
 
   async release(taskId: string): Promise<void> {

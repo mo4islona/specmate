@@ -328,6 +328,49 @@ body {
     text-transform: uppercase;
   }
 
+  /* A tick drawn from the palette. Left to the browser it is the one control on
+     the screen that belongs to no theme — and on a stack of files there is one
+     of these per row. */
+  .checkbox {
+    appearance: none;
+    flex: none;
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 1px solid var(--color-border-bright);
+    border-radius: 0.28rem;
+    background: color-mix(in srgb, var(--color-text) 4%, transparent);
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .checkbox:hover {
+    border-color: color-mix(in srgb, var(--color-success) 60%, var(--color-border-bright));
+  }
+
+  .checkbox:checked {
+    border-color: var(--color-success);
+    background: var(--color-success);
+  }
+
+  /* The mark itself: two borders of an empty box, turned. */
+  .checkbox:checked::after {
+    content: "";
+    display: block;
+    width: 0.2rem;
+    height: 0.42rem;
+    margin: 0.02rem auto 0;
+    border: solid var(--color-ground);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .checkbox:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
   /* The same height as the buttons it stands next to. A field 0.25rem taller than
      the Save beside it is a row that never quite lines up. */
   .control {
@@ -964,6 +1007,103 @@ body {
     text-align: right;
     color: color-mix(in srgb, var(--color-muted) 80%, transparent);
     user-select: none;
+  }
+
+  /* Two columns: the file a line left beside the file it is in. Each side keeps
+     its own gutter, so a number is always the number in the file below it. */
+  .diff-document-split .diff-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .diff-document-split .diff-row-numbered {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem minmax(0, 1fr);
+    gap: 0 0.5rem;
+  }
+
+  .diff-document-split .diff-line {
+    padding: 0 0.5rem;
+  }
+
+  .diff-document-split .diff-row-full {
+    grid-column: 1 / -1;
+  }
+
+  /* A side with no counterpart is ground, not an empty line of code. */
+  .diff-line-absent {
+    background: color-mix(in srgb, var(--color-muted) 6%, var(--color-ground));
+  }
+
+  /* The stretch of unchanged file a hunk header stands in for, offered rather
+     than stated: the header keeps saying where it is, the dots say it opens. */
+  .diff-expander {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    color: var(--color-info);
+    cursor: pointer;
+  }
+
+  .diff-expander:hover {
+    background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  }
+
+  /* The same break where the caller has no file to open into: the lines below
+     are still not the lines above, and something has to say so. */
+  .diff-gap {
+    display: flex;
+    gap: 0.75rem;
+    color: color-mix(in srgb, var(--color-muted) 85%, transparent);
+  }
+
+  /* How far a pass has got. The fraction beside it is the exact answer; this is
+     the one you read without counting. */
+  .meter {
+    width: 100%;
+    height: 0.3rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+    overflow: hidden;
+  }
+
+  .meter-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-success);
+    transition: width 180ms ease-out;
+  }
+
+  /* Five blocks for a file's weight, so a stack of them compares at a glance —
+     the numbers say how much, these say how much relative to everything else. */
+  .stat-bar {
+    display: inline-flex;
+    gap: 2px;
+  }
+
+  .stat-block {
+    width: 0.3rem;
+    height: 0.3rem;
+    border-radius: 1.5px;
+    background: color-mix(in srgb, var(--color-text) 16%, transparent);
+  }
+
+  .stat-block-add {
+    background: var(--color-success);
+  }
+
+  .stat-block-remove {
+    background: var(--color-danger);
+  }
+
+  /* A folder is a heading over the files beneath it and quieter than the two
+     groups it sits inside; drawn at the same weight, the tree read as a flat
+     column of shouts with no hierarchy in it at all. */
+  .tree-folder {
+    color: color-mix(in srgb, var(--color-muted) 80%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.4;
   }
 } /* @layer components */
 

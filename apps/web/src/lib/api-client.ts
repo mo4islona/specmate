@@ -595,6 +595,27 @@ export async function getFileDiff(
   return readJson<FileDiffResponse>(response)
 }
 
+/**
+ * Past any file worth reading in a browser, and past the API's own ceiling —
+ * which answers with the widest it serves rather than refusing, so asking for
+ * more than exists is how you ask for all of it.
+ */
+const WHOLE_FILE_CONTEXT = 100_000
+
+/** The same file with every unchanged line, which is what a widened hunk needs. */
+export async function getWholeFileDiff(
+  taskId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<FileDiffResponse> {
+  const response = await apiClient.api.v1.tasks[':id'].diff.file.$get(
+    { param: { id: taskId }, query: { path, context: WHOLE_FILE_CONTEXT } },
+    { init: { signal } },
+  )
+
+  return readJson<FileDiffResponse>(response)
+}
+
 /** REQ-1018: the half of an activity event the timeline deliberately does not carry. */
 export async function getActivityPatch(
   taskId: string,

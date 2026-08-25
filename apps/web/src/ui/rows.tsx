@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'wouter'
 import { cx } from './cx.ts'
 import { Subpanel } from './panel.tsx'
@@ -24,6 +24,18 @@ export function ListRow({ primary, secondary, action, className }: ListRowProps)
 
       {action}
     </Subpanel>
+  )
+}
+
+/**
+ * A folder in a tree of files. Quieter than the group headings it sits under —
+ * drawn at their weight, a tree reads as a flat column with no hierarchy in it.
+ */
+export function FolderName({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
+  return (
+    <p className={cx('tree-folder', className)} {...rest}>
+      {children}
+    </p>
   )
 }
 
