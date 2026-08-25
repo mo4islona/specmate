@@ -706,7 +706,12 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
         </ConsoleDock>
       </div>
 
-      <aside className="scroll-thin order-first min-h-0 xl:order-none xl:overflow-y-auto xl:border-l xl:border-border xl:pl-6">
+      {/* `pr-2` is not decoration: `overflow-y-auto` makes this a scroll container
+          in both axes, and the rail's rows bleed 0.5rem past the text on each side
+          to sit under their headings. Without room on the right the bleed becomes
+          scrollable overflow — clipped flush against the duration, and 8px of
+          horizontal scroll nobody asked for. */}
+      <aside className="scroll-thin order-first min-h-0 xl:order-none xl:overflow-y-auto xl:border-l xl:border-border xl:pr-2 xl:pl-6">
         <details className="rounded-xl bg-elevated/55 px-3.5 py-2.5 xl:hidden">
           <summary className="cursor-pointer font-mono text-[0.72rem] text-muted">
             Pipeline · {stepKey ? nodeLabel(stepKey).toLowerCase() : task.status}
