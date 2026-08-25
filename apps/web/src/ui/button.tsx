@@ -1,6 +1,7 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { Link } from 'wouter'
 import { cx } from './cx.ts'
+import { Dot } from './note.tsx'
 
 /**
  * Five weights and nothing else — the verb that acts, the same verb when the
@@ -61,8 +62,15 @@ export function Button({
       type={type}
       className={cx(VARIANT[variant], className)}
       disabled={disabled || pending}
+      // What tells a verb waiting on the server from a verb you cannot use: it
+      // is what lifts the 38% back off, and it is the honest word for the state.
+      aria-busy={pending || undefined}
       {...rest}
     >
+      {/* The label already says `Saving…`; the mark is what says it is still
+          true. `currentColor`, so it works on the accent and on the ghost. */}
+      {pending && <Dot live className="bg-current" />}
+
       {label}
     </button>
   )

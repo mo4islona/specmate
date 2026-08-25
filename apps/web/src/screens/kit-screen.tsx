@@ -34,10 +34,15 @@ import {
   QuietLink,
   Section,
   Select,
+  Skeleton,
+  SkeletonFacts,
+  SkeletonRows,
+  SkeletonText,
   Subpanel,
   Textarea,
   TextButton,
   type Tone,
+  Working,
 } from '../ui/index.ts'
 
 const BUTTONS: readonly ButtonVariant[] = [
@@ -415,11 +420,57 @@ export function KitScreen() {
       </Section>
 
       <Section
-        eyebrow="Nothing, and nothing yet"
-        title="Query states"
-        description="A request waiting, a request that will not be answered, and a pane with nothing in it — each at the size the answer would have taken."
+        eyebrow="On its way"
+        title="Waiting"
+        description="A pane waits in the shape of its own answer, so nothing moves when the answer lands and the wait says what is coming as well as that something is. The slots sweep rather than breathe: the breath belongs to what is alive, and a slot is an absence."
       >
-        <LoadingState title="Loading model defaults…" />
+        <Specimen name="LoadingState · sentence, for a pane with no shape worth guessing">
+          <LoadingState title="Loading model defaults…" />
+        </Specimen>
+
+        <Specimen name="LoadingState · rows">
+          <LoadingState title="Computing the task's diff…" shape="rows" />
+        </Specimen>
+
+        <Specimen name="LoadingState · cards">
+          <LoadingState title="Scanning the attention channel…" shape="cards" />
+        </Specimen>
+
+        <Specimen name="LoadingState · document">
+          <LoadingState title="Loading task channel…" shape="document" />
+        </Specimen>
+
+        <Specimen name="LoadingState · code">
+          <LoadingState title="Loading diff…" shape="code" />
+        </Specimen>
+
+        <Specimen name="SkeletonRows · mark, as the sidebar waits">
+          <div className="rail-inset rounded-xl border border-border">
+            <SkeletonRows rows={3} mark />
+          </div>
+        </Specimen>
+
+        <Specimen name="SkeletonFacts">
+          <SkeletonFacts rows={2} />
+        </Specimen>
+
+        <Specimen name="Skeleton · SkeletonText">
+          <Skeleton className="h-3 w-40" />
+          <SkeletonText lines={3} className="mt-4" />
+        </Specimen>
+
+        <Specimen name="Working — a wait too small for a shape">
+          <p className="font-mono text-xs text-muted">
+            <Working>loading the whole edit…</Working>
+          </p>
+        </Specimen>
+      </Section>
+
+      <Section
+        eyebrow="Nothing, and nothing that will come"
+        title="Query states"
+        description="A request that will not be answered, and a pane with nothing in it — each at the size the answer would have taken."
+      >
         <ErrorState title="Model defaults unavailable" detail="The server answered 503." />
         <Panel as="div" flush>
           <EmptyState>No product-code changes have been committed yet.</EmptyState>

@@ -30,6 +30,14 @@ export { Field, FieldLabel, Input, Select, Textarea } from './field.tsx'
 export { HoverHint } from './hover-hint.tsx'
 export { InlineLink, QuietLink } from './link.tsx'
 export {
+  Skeleton,
+  SkeletonFacts,
+  SkeletonRows,
+  SkeletonText,
+  Waiting,
+  Working,
+} from './loading.tsx'
+export {
   Dot,
   EmptyState,
   ErrorNote,
@@ -41,5 +49,5 @@ export {
 } from './note.tsx'
 export { PageHeader, Panel, PanelLink, Section, Subpanel } from './panel.tsx'
 export { Popover, type PopoverSide } from './popover.tsx'
-export { ErrorState, LoadingState } from './query-state.tsx'
+export { ErrorState, LoadingState, type WaitShape } from './query-state.tsx'
 export { ListRow, NavRow } from './rows.tsx'

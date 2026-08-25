@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { getActivityPatch } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { type ActivityEdit, editSummary } from '../lib/task-thread.ts'
-import { Diff, TextButton } from '../ui/index.ts'
+import { Diff, TextButton, Working } from '../ui/index.ts'
 import { signalText } from './tone.ts'
 
 interface ActivityEditBlockProps {
@@ -59,7 +59,7 @@ export function ActivityEditBlock({ taskId, seq, edit, onOpenFile }: ActivityEdi
         {hasMore &&
           (expanded ? (
             <>
-              {whole.isPending && <span>loading the whole edit…</span>}
+              {whole.isPending && <Working>loading the whole edit…</Working>}
               {whole.isError && (
                 <span className={signalText('stopped')}>The whole edit is unavailable.</span>
               )}

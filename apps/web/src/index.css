@@ -207,17 +207,70 @@ body {
   }
 
   /* The slot a fact will land in. Sized by the call site; only the surface and
-     the breathing belong here. */
+     the sheen belong here.
+
+     It sweeps rather than breathes, and the difference is the whole point. The
+     breath belongs to the app's live marks and means "this is alive"; a slot is
+     the opposite of alive, it is an absence, and what it has to say is "this is
+     filling in". A sheen travelling the way the line will be read says that,
+     at a contrast the eye can leave alone. */
   .skeleton {
+    position: relative;
     display: block;
+    overflow: hidden;
     border-radius: 0.375rem;
     background: color-mix(in srgb, var(--color-text) 8%, transparent);
-    animation: skeleton-breathe 1.6s ease-in-out infinite;
   }
 
-  @keyframes skeleton-breathe {
-    50% {
-      opacity: 0.45;
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-text) 7%, transparent),
+      transparent
+    );
+    animation: skeleton-sheen 1.7s ease-in-out infinite;
+  }
+
+  /* Off the trailing edge for a third of the cycle. A sweep with no rest in it
+     is a stripe going round and round, which is furniture rather than news. */
+  @keyframes skeleton-sheen {
+    0% {
+      transform: translateX(-100%);
+    }
+    65%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* The ellipsis every wait in this app was already written with, keeping time.
+     Same ramp as the mark's chevrons — one gesture for "reaching", at two
+     scales — so a pane that is waiting cannot be mistaken for one that gave up
+     halfway through a sentence. */
+  .working-dot {
+    animation: working-step 1.4s ease-in-out infinite;
+  }
+
+  .working-dot:nth-child(2) {
+    animation-delay: 0.16s;
+  }
+
+  .working-dot:nth-child(3) {
+    animation-delay: 0.32s;
+  }
+
+  @keyframes working-step {
+    0%,
+    70%,
+    100% {
+      opacity: 0.25;
+    }
+    25% {
+      opacity: 1;
     }
   }
 
@@ -484,6 +537,19 @@ body {
   .chip:disabled {
     cursor: not-allowed;
     opacity: 0.38;
+  }
+
+  /* Waiting on the server is not the same as unavailable, and a verb in flight
+     was wearing the second one's 38% — which is where the breathing mark beside
+     its label went. Below the disabled rule on purpose: same specificity, so
+     order is what decides, and a busy button is always also a disabled one. */
+  .button-primary[aria-busy="true"],
+  .button-attention[aria-busy="true"],
+  .button-danger[aria-busy="true"],
+  .button-secondary[aria-busy="true"],
+  .button-ghost[aria-busy="true"] {
+    cursor: progress;
+    opacity: 0.68;
   }
 
   /* A tone worn as a word rather than a control: a status, a size, a gap.

@@ -4,7 +4,7 @@ import { useLocation } from 'wouter'
 import { listAttention, listTasks, type TaskSummary } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { cx, Dot, MicroLabel, NavRow, Note } from '../ui/index.ts'
+import { cx, Dot, MicroLabel, NavRow, Note, SkeletonRows, Waiting } from '../ui/index.ts'
 import { signalText, statusTone, toneDot } from './tone.ts'
 
 const GROUPS = ['Needs input', 'Active', 'Queued', 'Complete'] as const
@@ -37,8 +37,15 @@ export function TaskNavigation() {
     grouped.get(taskGroup(task, attentionTaskIds))?.push(task)
   }
 
+  // The rail is on every screen, so its wait is the one the owner sees most. A
+  // sentence in the corner emptied the whole sidebar on every reload; the rows
+  // keep the column's shape while its contents are on the way.
   if (tasks.isPending || attention.isPending) {
-    return <p className="py-4 font-mono text-xs text-muted">Loading task index…</p>
+    return (
+      <Waiting label="Loading task index…" className="py-1">
+        <SkeletonRows rows={6} mark />
+      </Waiting>
+    )
   }
   if (tasks.isError || attention.isError) {
     return <p className={cx('py-4 text-sm', signalText('stopped'))}>Task index unavailable.</p>

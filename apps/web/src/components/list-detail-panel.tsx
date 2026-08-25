@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { EmptyState, ErrorState, Panel } from '../ui/index.ts'
+import { EmptyState, ErrorState, Panel, SkeletonText, Waiting } from '../ui/index.ts'
 
 interface ListDetailPanelProps {
   sidebar: ReactNode
@@ -42,10 +42,16 @@ export function ListDetailPanel({
       <Panel flush className="scroll-thin min-w-0 overflow-hidden xl:overflow-y-auto">
         {!selectedId && <EmptyState height="lg">{notSelectedLabel}</EmptyState>}
 
+        {/* The pane waits as the document it is about to hold. It cannot borrow
+            `LoadingState` for that: this is already inside the panel, and a
+            second frame drawn inside the first is how the wait stopped looking
+            like the answer. */}
         {selectedId && isPending && (
-          <EmptyState height="lg" mono>
-            {loadingLabel}
-          </EmptyState>
+          <Waiting label={loadingLabel} className="space-y-7 p-4 sm:p-6">
+            <SkeletonText lines={4} />
+            <SkeletonText lines={3} />
+            <SkeletonText lines={5} />
+          </Waiting>
         )}
 
         {selectedId && isError && (

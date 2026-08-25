@@ -29,7 +29,7 @@ export function FileDiffDrawer({ taskId, path, onClose }: FileDiffDrawerProps) {
       label="File diff"
       detail={<p className="mt-1 break-all font-mono text-xs text-muted">{path}</p>}
     >
-      {diff.isPending && <LoadingState title="Loading diff…" />}
+      {diff.isPending && <LoadingState title="Loading diff…" shape="code" />}
       {diff.isError && <ErrorState title="Diff unavailable" detail={diff.error.message} />}
       {diff.data &&
         (diff.data.diff.trim() === '' ? (

@@ -7,7 +7,18 @@ import {
   type UpdateSpecConventionInput,
 } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { Button, Field, Input, ListRow, Note, Section, Select, Textarea } from '../ui/index.ts'
+import {
+  Button,
+  Field,
+  Input,
+  ListRow,
+  Note,
+  Section,
+  Select,
+  SkeletonFacts,
+  Textarea,
+  Waiting,
+} from '../ui/index.ts'
 import { RequestError } from './request-error.tsx'
 
 const PROFILE_LABELS: Record<string, string> = {
@@ -81,7 +92,11 @@ export function SpecConventionsSection() {
       <RequestError error={conventions.error} fallback="Could not load the conventions" />
       <RequestError error={save.error} fallback="Save failed" />
 
-      {conventions.isPending && <Note>Loading conventions…</Note>}
+      {conventions.isPending && (
+        <Waiting label="Loading conventions…">
+          <SkeletonFacts rows={3} />
+        </Waiting>
+      )}
 
       {/* AC-979 — an empty list would read as "nothing is in force anywhere". */}
       {!conventions.isPending && entries.length === 0 && (

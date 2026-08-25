@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listRepositories, revokeCoverageWaiver } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { Button, InlineLink, ListRow, Note, Section } from '../ui/index.ts'
+import { Button, InlineLink, ListRow, Note, Section, SkeletonFacts, Waiting } from '../ui/index.ts'
 import { RequestError } from './request-error.tsx'
 
 /**
@@ -33,7 +33,11 @@ export function CoverageWaiversSection() {
       <RequestError error={repositories.error} fallback="Could not load the repositories" />
       <RequestError error={revoke.error} fallback="Revoke failed" />
 
-      {repositories.isPending && <Note>Loading repositories…</Note>}
+      {repositories.isPending && (
+        <Waiting label="Loading repositories…">
+          <SkeletonFacts rows={2} />
+        </Waiting>
+      )}
 
       {waived?.length === 0 && <Note>No repository has an accepted coverage gap.</Note>}
 
