@@ -26,6 +26,7 @@ import {
   RedirectCapExhaustedError,
   RestartTargetError,
   ReworkTargetError,
+  SkippedTargetError,
   StageStopConflictError,
 } from '../src/engine.ts'
 import { recordRound } from '../src/store.ts'
@@ -488,6 +489,51 @@ describeDb('conversation scheduling and interruption', () => {
     expect(after.status).toBe('specify')
     const rounds = await db.select().from(iterations).where(eq(iterations.taskId, task.id))
     expect(rounds).toHaveLength(4)
+  })
+
+  test('AC-430, AC-431: a rework edge into a node this walk skipped is refused, and approve still stands', async () => {
+    const { engine } = makeEngine()
+    const { task, graph } = await seed({ at: 'specify', status: 'human_spec_gate' })
+    await db.insert(events).values({
+      taskId: task.id,
+      type: 'stage.skipped',
+      payload: {
+        node: 'specify',
+        reason: 'the repository has no specification suite for this to land in',
+        to: 'spec_review',
+        graph: graph.id,
+      },
+    })
+
+    await expect(
+      engine.rework({ taskId: task.id, actor: 'evgeny', target: 'specify' }),
+    ).rejects.toThrow(SkippedTargetError)
+    expect((await reload(db, task.id)).status).toBe('human_spec_gate')
+
+    // The edges a gate always has are not the ones the suppression touches.
+    await engine.approve(task.id, 'evgeny')
+    expect((await reload(db, task.id)).status).toBe('implement')
+  })
+
+  test('AC-432: the same edge stands for a task that ran the target', async () => {
+    const { engine } = makeEngine()
+    const { task, graph } = await seed({ at: 'specify', status: 'human_spec_gate' })
+    // A skip on some other walk says nothing about this one.
+    await db.insert(events).values({
+      taskId: task.id,
+      type: 'stage.skipped',
+      payload: {
+        node: 'specify',
+        reason: 'on an earlier graph',
+        to: 'spec_review',
+        graph: 'other',
+      },
+    })
+    expect(graph.id).not.toBe('other')
+
+    await engine.rework({ taskId: task.id, actor: 'evgeny', target: 'specify' })
+
+    expect((await reload(db, task.id)).status).toBe('specify')
   })
 
   test('resume returns a paused task exactly where it stopped', async () => {

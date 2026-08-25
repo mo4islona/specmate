@@ -110,6 +110,31 @@ function verifierFiles(slug: string): Record<string, string> {
   }
 }
 
+const BRIEF_SCENARIO = 'The redirect lands on the dashboard'
+
+/**
+ * The other acceptance source: no suite, so no `specs/` in the change folder and the
+ * brief's own list is what an approve is held to (REQ-1102, REQ-1706).
+ */
+function briefFiles(slug: string, acceptance = true): Record<string, string> {
+  const list = acceptance
+    ? `#### Scenario: ${BRIEF_SCENARIO}\n\n- **WHEN** x\n- **THEN** y\n`
+    : 'To be decided during implementation.\n'
+
+  return {
+    'README.md': '# origin\n',
+    'src/app.ts': 'export const a = 1\n',
+    [`openspec/changes/${slug}/proposal.md`]: `## What and Why\n\nSomething.\n\n## Acceptance\n\n${list}`,
+  }
+}
+
+const NO_SUITE = {
+  profile: 'none',
+  suitePath: null,
+  conventionNote: null,
+  missingSuitePath: null,
+} as const
+
 function matrixTable(rows: string): string {
   return `| Scenario | Assertion | Outcome |\n| --- | --- | --- |\n${rows}`
 }
@@ -431,6 +456,38 @@ describe('verification corroboration', () => {
     expect(execution.status).toBe('succeeded')
     expect(execution.result?.verdict).toBe('approve')
     expect(execution.result?.findings).toEqual([])
+  })
+
+  test("AC-1114: with no suite, an approve is corroborated against the brief's acceptance list", async () => {
+    const slug = 'verify-brief-source'
+    const harness = await makeHarness(slug, briefFiles(slug))
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'validate',
+      SPECMATE_STUB_VERDICT: 'approve',
+      SPECMATE_STUB_MATRIX: matrixTable(`| ${BRIEF_SCENARIO} | \`bun test\` | pass |\n`),
+    }).execute(request(harness, { role: 'verifier', specConvention: NO_SUITE }))
+
+    expect(execution.status).toBe('succeeded')
+    expect(execution.result?.verdict).toBe('approve')
+  })
+
+  test('AC-1115: an approve over an acceptance source with no scenario fails the attempt', async () => {
+    const slug = 'verify-empty-inventory'
+    const harness = await makeHarness(slug, briefFiles(slug, false))
+    await harness.commitAll('baseline')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'validate',
+      SPECMATE_STUB_VERDICT: 'approve',
+      SPECMATE_STUB_MATRIX: matrixTable(''),
+    }).execute(request(harness, { role: 'verifier', specConvention: NO_SUITE }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.detail).toContain('declares no scenario')
+    expect(await commitCount(harness)).toBe(before)
   })
 
   test('an honest revise is accepted with its derived scenario finding attached', async () => {

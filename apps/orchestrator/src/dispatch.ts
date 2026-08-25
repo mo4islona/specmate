@@ -38,6 +38,7 @@ export function createStageDispatcher({
       environment: await pinnedEnvironment(task.id),
       attempt,
       resume,
+      specConvention: task.specConvention,
     })
   }
 }

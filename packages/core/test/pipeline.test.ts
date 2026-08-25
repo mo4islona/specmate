@@ -5,12 +5,15 @@ import {
   Caps,
   canTransition,
   conditionDefects,
+  conditionsOf,
   definitionFor,
   definitionForSize,
   evaluateCondition,
   FEATURE_BUGFIX_COMPACT,
   FEATURE_BUGFIX_PIPELINE,
+  factKind,
   forwardTarget,
+  type GateNode,
   graphTransitions,
   HUMAN_GATES,
   instantiateDefinition,
@@ -24,6 +27,7 @@ import {
   type PinnedGraph,
   type PipelineDefinition,
   PipelineDefinitionError,
+  type PipelineNode,
   type PredicateId,
   type PredicateSpec,
   type RecordedRound,
@@ -832,6 +836,7 @@ describe('conditional nodes', () => {
   test('AC-423: a predicate reading a stage outcome is refused', () => {
     const circular: PredicateSpec = {
       reads: ['checkedNodeVerdict'],
+      takesThreshold: true,
       evaluate: () => ({ holds: false, reason: 'the last check passed' }),
     }
 
@@ -848,22 +853,94 @@ describe('conditional nodes', () => {
 
   test('the shipped predicates read only input facts', () => {
     for (const [id, spec] of Object.entries(NODE_PREDICATES)) {
-      expect(conditionDefects({ predicate: id as PredicateId, threshold: 1 }, spec)).toEqual([])
+      const threshold = spec.takesThreshold ? 1 : undefined
+
+      expect(conditionDefects({ predicate: id as PredicateId, threshold }, spec)).toEqual([])
     }
+  })
+
+  it('refuses a threshold given to a predicate that takes none', () => {
+    expect(
+      conditionDefects(
+        { predicate: 'spec_suite_in_force', threshold: 1 },
+        NODE_PREDICATES.spec_suite_in_force,
+      ).join('\n'),
+    ).toMatch(/takes no threshold/)
+  })
+
+  it('refuses a missing threshold on a predicate that needs one', () => {
+    expect(
+      conditionDefects(
+        { predicate: 'spec_scenarios_at_least' },
+        NODE_PREDICATES.spec_scenarios_at_least,
+      ).join('\n'),
+    ).toMatch(/needs a threshold/)
+  })
+
+  it('rejects a catalog whose condition and predicate disagree about a threshold', () => {
+    const mismatched = def({
+      nodes: [
+        {
+          kind: 'stage',
+          key: 'implement',
+          role: 'implementer',
+          binding: 'role_default',
+          condition: { predicate: 'spec_suite_in_force', threshold: 2 },
+        },
+      ],
+    })
+
+    expect(validateDefinition(mismatched).join('\n')).toMatch(/implement.*takes no threshold/)
   })
 
   test('AC-421: the spec review runs at the floor and is skipped below it', () => {
     const review = graph.nodes.find((node) => node.key === 'spec_review') as StageNode
+    const facts = { specSuiteInForce: true }
 
-    expect(evaluateCondition(review, { specScenarioCount: 4 }).holds).toBe(true)
-    const skipped = evaluateCondition(review, { specScenarioCount: 3 })
+    expect(evaluateCondition(review, { ...facts, specScenarioCount: 4 }).holds).toBe(true)
+    const skipped = evaluateCondition(review, { ...facts, specScenarioCount: 3 })
     expect(skipped.holds).toBe(false)
     expect(skipped.reason).toMatch(/3 scenario/)
+  })
+
+  it('takes the first failing condition of several, so the reason names the real cause', () => {
+    const review = graph.nodes.find((node) => node.key === 'spec_review') as StageNode
+    const skipped = evaluateCondition(review, { specSuiteInForce: false, specScenarioCount: 0 })
+
+    expect(skipped.holds).toBe(false)
+    expect(skipped.reason).toMatch(/no specification suite/)
+  })
+
+  it('runs a node whose fact could not be assembled', () => {
+    const specify = graph.nodes.find((node) => node.key === 'specify') as StageNode
+
+    expect(evaluateCondition(specify, {}).holds).toBe(true)
   })
 
   test('an unconditional node always runs', () => {
     const implement = graph.nodes.find((node) => node.key === 'implement') as StageNode
     expect(evaluateCondition(implement, { specScenarioCount: 0 }).holds).toBe(true)
+  })
+
+  it('AC-429: a gate may carry a condition, and its predicate is checked at load', () => {
+    const gate = graph.nodes.find((node) => node.key === 'human_spec_gate') as GateNode
+
+    expect(evaluateCondition(gate, { specSuiteInForce: true }).holds).toBe(true)
+    expect(evaluateCondition(gate, { specSuiteInForce: false }).holds).toBe(false)
+
+    const circular = def({
+      nodes: [
+        { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+        {
+          kind: 'gate',
+          key: 'human_final_gate',
+          approve: 'archived',
+          condition: { predicate: 'invented' as PredicateId },
+        },
+      ],
+    })
+
+    expect(validateDefinition(circular).join('\n')).toMatch(/human_final_gate.*not in the registry/)
   })
 })
 
@@ -922,45 +999,61 @@ describe('session resumption', () => {
 })
 
 /**
- * REQ-1705. The spec convention is context a stage is given, never control flow. These
- * pin both halves of that: the pipeline is the same under every profile, and no
- * predicate can reach for the convention because no fact carries it.
+ * REQ-602, REQ-1706. The spec convention decides whether the specification segment runs.
+ * These pin the shape of that: the segment is skipped rather than dropped, the spine it
+ * left behind is still mandatory, and the two remaining gates are not skippable at all.
  */
-describe('the spec convention never reshapes the pipeline', () => {
-  const SPINE: TaskState[] = [
-    'planning',
-    'specify',
-    'implement',
-    'validate',
-    'summarize',
-    'publish',
-  ]
+describe('the spec convention decides whether the specification segment runs', () => {
+  const SPINE: TaskState[] = ['planning', 'implement', 'validate', 'summarize', 'publish']
+  const SPEC_SEGMENT: TaskState[] = ['specify', 'human_spec_gate']
 
-  it('every shipped profile still contains the specifying stage and the rest of the spine', () => {
-    for (const type of TASK_TYPES) {
-      for (const profile of PIPELINE_PROFILES) {
-        const keys = definitionFor(type, profile).nodes.map((node) => node.key)
+  const shipped = () =>
+    TASK_TYPES.flatMap((type) => PIPELINE_PROFILES.map((profile) => definitionFor(type, profile)))
 
-        for (const node of SPINE) {
-          expect(keys).toContain(node)
-        }
+  it('every shipped profile contains the spine, which carries no condition', () => {
+    for (const definition of shipped()) {
+      for (const key of SPINE) {
+        const node = definition.nodes.find((candidate) => candidate.key === key)
+
+        expect(node, `${definition.id} is missing ${key}`).toBeDefined()
+        expect(conditionsOf(node as PipelineNode)).toEqual([])
       }
     }
   })
 
-  it('no node is conditioned on anything a repository convention could decide', () => {
-    for (const type of TASK_TYPES) {
-      for (const profile of PIPELINE_PROFILES) {
-        for (const node of definitionFor(type, profile).nodes) {
-          if (node.kind !== 'stage' || !node.condition) continue
+  it('AC-644: the specification segment is on the graph, and conditional', () => {
+    for (const definition of shipped()) {
+      for (const key of SPEC_SEGMENT) {
+        const node = definition.nodes.find((candidate) => candidate.key === key)
 
-          expect(NODE_PREDICATES[node.condition.predicate].reads).not.toContain('specConvention')
-        }
+        expect(node, `${definition.id} is missing ${key}`).toBeDefined()
+        expect(conditionsOf(node as PipelineNode).map((one) => one.predicate)).toContain(
+          'spec_suite_in_force',
+        )
       }
     }
   })
 
-  it('the facts a predicate may read carry nothing about the repository convention', () => {
+  it('AC-643: the kickoff gate and the final gate carry no condition', () => {
+    for (const definition of shipped()) {
+      for (const key of ['human_kickoff_gate', 'human_final_gate'] as TaskState[]) {
+        const node = definition.nodes.find((candidate) => candidate.key === key)
+
+        expect(node, `${definition.id} is missing ${key}`).toBeDefined()
+        expect(conditionsOf(node as PipelineNode)).toEqual([])
+      }
+    }
+  })
+
+  it('a predicate may read the repository convention, and the fact carrying it exists', () => {
+    expect(Object.keys(NODE_FACT_KINDS)).toContain('specSuiteInForce')
+    expect(factKind('specSuiteInForce')).toBe('input')
+    expect(NODE_PREDICATES.spec_suite_in_force.reads).toContain('specSuiteInForce')
+  })
+
+  it('the fact says whether a suite is in force, not which convention governs it', () => {
+    // `openspec` and `custom` differ in convention and not in whether the segment runs,
+    // so the fact the predicate reads must not be able to tell them apart.
     expect(Object.keys(NODE_FACT_KINDS)).not.toContain('specConvention')
   })
 })

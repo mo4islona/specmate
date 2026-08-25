@@ -49,6 +49,7 @@ export type NodeFactKind = 'input' | 'outcome'
 
 export const NODE_FACT_KINDS = {
   specScenarioCount: 'input',
+  specSuiteInForce: 'input',
   /**
    * Named because it is the tempting one: skipping a check because the last check
    * passed is exactly the circularity REQ-409 forbids. No predicate may read it, so
@@ -68,8 +69,21 @@ type InputFactKey = {
   [K in NodeFactKey]: (typeof NODE_FACT_KINDS)[K] extends 'input' ? K : never
 }[NodeFactKey]
 
-/** Only input facts are ever assembled: an outcome fact has no legal reader. */
-export type NodeFacts = Readonly<Record<InputFactKey, number>>
+/** What an assembled fact is worth. `Pick` is the tie: a new input fact must land here too. */
+type FactValues = {
+  specScenarioCount: number
+  specSuiteInForce: boolean
+}
+
+/**
+ * Only input facts are ever assembled: an outcome fact has no legal reader.
+ *
+ * Partial because assembling one costs different things — the scenario count needs the
+ * working tree, the repository's convention needs only the task row. The engine assembles
+ * what the node's own predicate declares it reads, so a gate asking about the repository
+ * does not pay for a checkout.
+ */
+export type NodeFacts = Readonly<Partial<Pick<FactValues, InputFactKey>>>
 
 export interface PredicateVerdict {
   readonly holds: boolean
@@ -80,7 +94,9 @@ export interface PredicateVerdict {
 export interface PredicateSpec {
   /** Declared rather than inferred: the circularity check reads this, not the body. */
   readonly reads: readonly NodeFactKey[]
-  evaluate(facts: NodeFacts, threshold: number): PredicateVerdict
+  /** Whether the catalog entry must carry a threshold. A flag has nothing to compare against. */
+  readonly takesThreshold: boolean
+  evaluate(facts: Required<NodeFacts>, threshold: number | undefined): PredicateVerdict
 }
 
 /**
@@ -91,9 +107,18 @@ export interface PredicateSpec {
 export const NODE_PREDICATES = {
   spec_scenarios_at_least: {
     reads: ['specScenarioCount'],
+    takesThreshold: true,
     evaluate: (facts, threshold) => ({
-      holds: facts.specScenarioCount >= threshold,
+      holds: facts.specScenarioCount >= (threshold ?? 0),
       reason: `the specification declares ${facts.specScenarioCount} scenario(s), under the ${threshold} this node is worth`,
+    }),
+  },
+  spec_suite_in_force: {
+    reads: ['specSuiteInForce'],
+    takesThreshold: false,
+    evaluate: (facts) => ({
+      holds: facts.specSuiteInForce,
+      reason: 'the repository has no specification suite for this to land in',
     }),
   },
 } as const satisfies Record<string, PredicateSpec>
@@ -102,7 +127,23 @@ export type PredicateId = keyof typeof NODE_PREDICATES
 
 export interface NodeCondition {
   readonly predicate: PredicateId
-  readonly threshold: number
+  /** Absent for a predicate that reads a flag; validation holds the two in step. */
+  readonly threshold?: number
+}
+
+/**
+ * A node may carry more than one, and runs only where all of them hold. The single form
+ * stays legal because pinned graphs hold it: a task pinned before the second condition
+ * existed must keep the guard it was pinned with, not lose it to a shape change.
+ */
+export type NodeConditions = NodeCondition | readonly NodeCondition[]
+
+export function conditionsOf(node: PipelineNode): readonly NodeCondition[] {
+  if (node.kind === 'action' || !node.condition) return []
+
+  // Discriminated on the field rather than on `Array.isArray`, which does not narrow a
+  // readonly array out of the union.
+  return 'predicate' in node.condition ? [node.condition] : node.condition
 }
 
 export interface StageNode {
@@ -114,8 +155,8 @@ export interface StageNode {
   readonly loopEdge?: LoopEdge
   /** Continues an earlier node's provider session instead of opening one (REQ-410). */
   readonly resumes?: TaskState
-  /** Runs only where the predicate holds; skipped with its reason otherwise (REQ-409). */
-  readonly condition?: NodeCondition
+  /** Runs only where every predicate holds; skipped with its reason otherwise (REQ-409). */
+  readonly condition?: NodeConditions
 }
 
 export interface GateRedirect {
@@ -131,6 +172,13 @@ export interface GateNode {
   readonly redirect?: GateRedirect
   /** Rework re-enters one of these with fresh round counters. */
   readonly rework?: readonly TaskState[]
+  /**
+   * A gate the definition can account for in advance, not a gate the engine may decide
+   * to stop asking. A skipped gate advances along `approve` — the edge it takes when
+   * nothing is wrong — and records no decision: an approve is an owner's act, and
+   * manufacturing one from a repository fact would sign for nobody.
+   */
+  readonly condition?: NodeConditions
 }
 
 /** An orchestrator-owned operation. It has neither an agent role nor a human edge. */
@@ -184,14 +232,26 @@ export function conditionDefects(
 ): string[] {
   if (!spec) return [`predicate "${condition.predicate}" is not in the registry`]
 
+  const defects: string[] = []
+
   // The guard may read what is true when the task arrives, never what the node it
   // guards would go on to conclude.
   const circular = spec.reads.filter((fact) => factKind(fact) === 'outcome')
-  if (circular.length === 0) return []
+  if (circular.length > 0) {
+    defects.push(
+      `predicate "${condition.predicate}" reads stage outcomes (${circular.join(', ')}); a node may not be skipped on the strength of a judgement it exists to produce`,
+    )
+  }
 
-  return [
-    `predicate "${condition.predicate}" reads stage outcomes (${circular.join(', ')}); a node may not be skipped on the strength of a judgement it exists to produce`,
-  ]
+  const given = condition.threshold !== undefined
+  if (given && !spec.takesThreshold) {
+    defects.push(`predicate "${condition.predicate}" takes no threshold, and one was given`)
+  }
+  if (!given && spec.takesThreshold) {
+    defects.push(`predicate "${condition.predicate}" needs a threshold, and none was given`)
+  }
+
+  return defects
 }
 
 export class PipelineDefinitionError extends Error {
@@ -238,11 +298,8 @@ export function validateDefinition(def: PipelineDefinition): string[] {
         'binding "cross_review" requires a loopEdge to know whose work to exclude',
       )
     }
-    if (node.kind === 'stage' && node.condition) {
-      for (const defect of conditionDefects(
-        node.condition,
-        NODE_PREDICATES[node.condition.predicate],
-      )) {
+    for (const condition of conditionsOf(node)) {
+      for (const defect of conditionDefects(condition, NODE_PREDICATES[condition.predicate])) {
         at(`node ${node.key}`, defect)
       }
     }
@@ -391,12 +448,17 @@ export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
     // The same planner, continuing the session that read the repository, rather than a
     // second role reading it again and grounding the spec differently from the brief
     // the owner just approved.
+    // The whole specification segment is conditional on the repository having somewhere
+    // to keep a specification (REQ-1706). It is skipped, never dropped: the three nodes
+    // stay on the graph carrying the reason, which is the difference between a decision
+    // the owner can read and a shorter graph nobody can account for.
     {
       kind: 'stage',
       key: 'specify',
       role: 'planner',
       binding: 'role_default',
       resumes: 'planning',
+      condition: { predicate: 'spec_suite_in_force' },
     },
     {
       kind: 'stage',
@@ -404,12 +466,21 @@ export const FEATURE_BUGFIX_PIPELINE: PipelineDefinition = {
       role: 'reviewer',
       binding: 'cross_review',
       loopEdge: { target: 'specify', loop: 'spec' },
-      condition: {
-        predicate: 'spec_scenarios_at_least',
-        threshold: SPEC_REVIEW_SCENARIO_FLOOR,
-      },
+      // Order is the reason: with no suite there is no specification to count, and the
+      // scenario floor would skip this node saying "0 scenario(s)" — true, and silent
+      // about why there are none.
+      condition: [
+        { predicate: 'spec_suite_in_force' },
+        { predicate: 'spec_scenarios_at_least', threshold: SPEC_REVIEW_SCENARIO_FLOOR },
+      ],
     },
-    { kind: 'gate', key: 'human_spec_gate', approve: 'implement', rework: ['specify'] },
+    {
+      kind: 'gate',
+      key: 'human_spec_gate',
+      approve: 'implement',
+      rework: ['specify'],
+      condition: { predicate: 'spec_suite_in_force' },
+    },
     { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
     // One node proves and judges. Two would read the same diff twice into the same cap,
     // and would put the cross-provider independence on the half that only asserts.
@@ -635,14 +706,24 @@ export function stageNodeKeys(graph: PinnedGraph): TaskState[] {
  * engine asks this of every stage rather than branching on whether one is conditional.
  */
 export function evaluateCondition(node: PipelineNode, facts: NodeFacts): PredicateVerdict {
-  if (node.kind !== 'stage' || !node.condition) return { holds: true, reason: '' }
+  const runs: PredicateVerdict = { holds: true, reason: '' }
+  const present = facts as Readonly<Record<string, unknown>>
 
-  const spec: PredicateSpec | undefined = NODE_PREDICATES[node.condition.predicate]
-  // Unreachable through a loaded catalog: validation rejects an unknown predicate at
-  // import. Running the node is the safe reading if one ever gets here.
-  if (!spec) return { holds: true, reason: '' }
+  for (const condition of conditionsOf(node)) {
+    const spec: PredicateSpec | undefined = NODE_PREDICATES[condition.predicate]
+    // Unreachable through a loaded catalog: validation rejects an unknown predicate at
+    // import. Running the node is the safe reading if one ever gets here.
+    if (!spec) continue
 
-  return spec.evaluate(facts, node.condition.threshold)
+    // A fact nobody could assemble is not a reason to skip. Same rule as a fact bundle
+    // that could not be built at all: skipping a check needs a reason, running one does not.
+    if (spec.reads.some((fact) => present[fact] === undefined)) continue
+
+    const verdict = spec.evaluate(facts as Required<NodeFacts>, condition.threshold)
+    if (!verdict.holds) return verdict
+  }
+
+  return runs
 }
 
 /** The next node in walking order, or the terminal after the last one. */

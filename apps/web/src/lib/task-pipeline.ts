@@ -1,5 +1,5 @@
 import { isTerminal, type ModelBinding, type TaskState } from '@specmate/core'
-import type { TaskDetail } from './api-client.ts'
+import type { TaskDetail, TimelineEvent } from './api-client.ts'
 import { nodeLabel, stageDuration } from './task-thread.ts'
 
 type Stage = TaskDetail['stages'][number]
@@ -51,6 +51,31 @@ interface PipelineInput {
   readonly status: TaskState
   readonly resumeStatus: TaskState | null
   readonly modelBindings: ModelBindings
+  /** The task's own timeline; skips are read off it. Empty is a graph nothing skipped. */
+  readonly events?: readonly TimelineEvent[]
+}
+
+/**
+ * Node key to the reason it was skipped. A stage carries its own skip on its row, but a
+ * gate has no row to carry one — a gate has neither a role nor a provider — so the event
+ * is where both kinds agree. Without it a skipped gate reads as `done`, which is the one
+ * thing a gate nobody was asked about must not look like.
+ */
+function skipReasons(events: readonly TimelineEvent[]): Map<string, string> {
+  const reasons = new Map<string, string>()
+
+  for (const event of events) {
+    if (event.type !== 'stage.skipped') continue
+
+    const node = event.payload?.node
+    if (typeof node !== 'string') continue
+
+    const reason = event.payload?.reason
+
+    reasons.set(node, typeof reason === 'string' ? reason : 'skipped')
+  }
+
+  return reasons
 }
 
 export function buildPipelineNodes({
@@ -59,7 +84,10 @@ export function buildPipelineNodes({
   status,
   resumeStatus,
   modelBindings,
+  events = [],
 }: PipelineInput): PipelineNodeView[] {
+  const skipped = skipReasons(events)
+
   const finished = isTerminal(status)
   const currentIndex = finished
     ? nodes.length
@@ -72,7 +100,8 @@ export function buildPipelineNodes({
     const latest = runs.at(-1) ?? null
     const current = currentIndex === index
     const role = node.kind === 'stage' ? node.role : null
-    const state = nodeState({ node, latest, current, passed: currentIndex > index })
+    const skipReason = skipped.get(node.key) ?? null
+    const state = nodeState({ node, latest, current, passed: currentIndex > index, skipReason })
 
     return {
       key: node.key,
@@ -81,7 +110,7 @@ export function buildPipelineNodes({
       role,
       binding: role ? (modelBindings[role] ?? null) : null,
       state,
-      reason: nodeReason(state, runs),
+      reason: nodeReason(state, runs, skipReason),
       current,
       runs,
       latest,
@@ -94,8 +123,12 @@ export function buildPipelineNodes({
  * orchestrator setting the client never sees, so a capped node is described by
  * what it did — failed, this many times — rather than by the bound it hit.
  */
-function nodeReason(state: NodeState, runs: readonly Stage[]): string | null {
-  if (state === 'skipped') return runs.at(-1)?.skipReason ?? 'skipped'
+function nodeReason(
+  state: NodeState,
+  runs: readonly Stage[],
+  skipReason: string | null,
+): string | null {
+  if (state === 'skipped') return runs.at(-1)?.skipReason ?? skipReason ?? 'skipped'
   if (state !== 'stopped') return null
 
   const latest = runs.at(-1)
@@ -115,14 +148,19 @@ function nodeState(input: {
   latest: Stage | null
   current: boolean
   passed: boolean
+  skipReason: string | null
 }): NodeState {
-  const { node, latest, current, passed } = input
+  const { node, latest, current, passed, skipReason } = input
 
   if (node.kind === 'stage') {
     if (latest) return STAGE_STATE[latest.status] ?? 'pending'
 
     return current ? 'running' : passed ? 'done' : 'pending'
   }
+
+  // A gate the walk skipped was never put to anybody. `passed` would call it `done`,
+  // which is the claim a gate nobody was asked about must not make.
+  if (skipReason !== null) return 'skipped'
 
   // A gate the task sits at is the one thing on this screen waiting on a
   // person; behind the current node it has already been passed through.

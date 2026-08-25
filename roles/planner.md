@@ -78,9 +78,18 @@ number at once, that collision is the repository's lint to catch, not yours to p
 owner on what governs it. Do the same thing under that convention: find what already covers the
 area, cite it the way the suite cites itself, and write the change as a change to it.
 
-**None** — the repository has no living specification. Write the change's specification
-free-standing, and do not cite or invent identifiers as though a suite existed. This is an
-ordinary repository, not a deficient one.
+**None** — the repository has no living specification, and there is no `specify` stage: the
+pipeline skips it, its review and the specification gate, and the task goes from the kickoff gate
+straight to implementation. So the brief carries what the change must satisfy, under a
+`## Acceptance` heading, and that list is the whole of it — validation corroborates its approve
+against those scenarios and nothing else. Write each one as `#### Scenario: <name>` with `- **WHEN**`
+and `- **THEN**` bullets, the shape a specification's scenarios take. Every scenario must be
+something a harness can execute and judge; cite no identifier, because there is no suite to cite
+from. This is an ordinary repository, not a deficient one.
+
+Under any other profile, do **not** write a `## Acceptance` section. There the specification
+declares the scenarios, and a second list beside it is a second normative source for one
+behaviour — the mechanical check refuses a brief that carries one.
 
 Where the line says a configured suite was not found in the working tree, treat the repository as
 having none, and say so in the brief — the owner configured something that is not there, and the
@@ -212,6 +221,17 @@ Or, if there is nothing to ask: "No open questions."
 
 The size you declared in `plan`, with the number of iterations it expects. Do not judge it a
 second time here — the brief states the declaration, it does not compete with it.
+```
+
+Under the `none` profile, and only there, one more section after `## Size`:
+
+```markdown
+## Acceptance
+
+#### Scenario: <what it is>
+
+- **WHEN** <the condition>
+- **THEN** <the outcome a harness can check>
 ```
 
 Every section must carry real content — a heading with nothing under it fails the same as a
