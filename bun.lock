@@ -18,6 +18,7 @@
       "dependencies": {
         "@specmate/core": "workspace:*",
         "@specmate/db": "workspace:*",
+        "@specmate/github": "workspace:*",
         "@specmate/orchestrator": "workspace:*",
         "@specmate/workspace": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -31,6 +32,7 @@
       "dependencies": {
         "@specmate/core": "workspace:*",
         "@specmate/db": "workspace:*",
+        "@specmate/github": "workspace:*",
         "@specmate/runner": "workspace:*",
         "@specmate/workspace": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -82,6 +84,14 @@
       },
       "devDependencies": {
         "drizzle-kit": "^0.31.10",
+      },
+    },
+    "packages/github": {
+      "name": "@specmate/github",
+      "version": "0.0.0",
+      "dependencies": {
+        "@specmate/db": "workspace:*",
+        "drizzle-orm": "^0.45.2",
       },
     },
     "packages/runner": {
@@ -294,6 +304,8 @@
     "@specmate/core": ["@specmate/core@workspace:packages/core"],
 
     "@specmate/db": ["@specmate/db@workspace:packages/db"],
+
+    "@specmate/github": ["@specmate/github@workspace:packages/github"],
 
     "@specmate/orchestrator": ["@specmate/orchestrator@workspace:apps/orchestrator"],
 

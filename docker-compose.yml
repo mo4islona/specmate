@@ -43,6 +43,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
       WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
       SPECMATE_PASSWORD: ${SPECMATE_PASSWORD}
+      # The same public identifier the orchestrator carries, so the API can
+      # refresh the stored authorization when it reads a GitHub reference.
+      # Unset only costs that reading, which degrades to a link.
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
     volumes:
       - ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}:${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
     expose:

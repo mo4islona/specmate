@@ -50,4 +50,5 @@ export {
 export { PageHeader, Panel, PanelLink, Section, Subpanel } from './panel.tsx'
 export { Popover, type PopoverSide } from './popover.tsx'
 export { ErrorState, LoadingState, type WaitShape } from './query-state.tsx'
+export { Reveal } from './reveal.tsx'
 export { ListRow, NavRow } from './rows.tsx'

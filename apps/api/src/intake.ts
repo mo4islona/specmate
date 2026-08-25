@@ -1,3 +1,4 @@
+import { repositoryUrlOf } from '@specmate/github'
 import { normalizeRemote } from '@specmate/workspace'
 
 /**
@@ -6,9 +7,28 @@ import { normalizeRemote } from '@specmate/workspace'
  * The title is settled here only provisionally — planning replaces it once it
  * has read the repository (REQ-1306).
  */
+/**
+ * Which of the fixed rules settled it. Carried so the launch screen can say why
+ * it is about to run against this repository (REQ-1900); intake itself only
+ * cares that one of them did.
+ */
+export type ResolvedVia = 'chosen' | 'request-url' | 'known-name' | 'default'
+
+/**
+ * Why nothing resolved. The two cases carry the same field and mean opposite
+ * things: under `ambiguous` the candidates are what the request named, and
+ * under `nothing-named` they are merely every repository the system knows,
+ * offered because one of them is probably the answer.
+ */
+export type UnresolvedReason = 'ambiguous' | 'nothing-named'
+
 export type RepositoryResolution =
-  | { readonly resolved: true; readonly repoUrl: string }
-  | { readonly resolved: false; readonly candidates: readonly string[] }
+  | { readonly resolved: true; readonly repoUrl: string; readonly via: ResolvedVia }
+  | {
+      readonly resolved: false
+      readonly reason: UnresolvedReason
+      readonly candidates: readonly string[]
+    }
 
 export interface ResolveRepositoryInput {
   /** What the create request named outright, if anything. */
@@ -28,7 +48,12 @@ function trimUrl(candidate: string): string {
 export function repositoryUrlIn(text: string): string | null {
   const match = text.match(URL_PATTERN)?.[0]
 
-  return match ? trimUrl(match) : null
+  if (!match) return null
+
+  // A pasted issue link names the repository it lives in rather than a remote,
+  // and it is the same reading the rail lists it under — one parse, so the
+  // repository named beside the field cannot disagree with the launch.
+  return repositoryUrlOf(trimUrl(match))
 }
 
 /** The last path segment of the remote — what a person calls the repository. */
@@ -52,20 +77,24 @@ function namedIn(text: string, name: string): boolean {
  * flip (REQ-1016).
  */
 export function resolveRepository(input: ResolveRepositoryInput): RepositoryResolution {
-  if (input.repoUrl) return { resolved: true, repoUrl: input.repoUrl }
+  if (input.repoUrl) return { resolved: true, repoUrl: input.repoUrl, via: 'chosen' }
 
   const written = repositoryUrlIn(input.request)
-  if (written) return { resolved: true, repoUrl: written }
+  if (written) return { resolved: true, repoUrl: written, via: 'request-url' }
 
   const candidates = [...new Set(input.known)]
   const named = candidates.filter((repoUrl) => namedIn(input.request, repositoryName(repoUrl)))
-  if (named.length === 1 && named[0]) return { resolved: true, repoUrl: named[0] }
+  if (named.length === 1 && named[0]) {
+    return { resolved: true, repoUrl: named[0], via: 'known-name' }
+  }
 
-  if (named.length > 1) return { resolved: false, candidates: named }
+  if (named.length > 1) return { resolved: false, reason: 'ambiguous', candidates: named }
 
-  if (input.defaultRepoUrl) return { resolved: true, repoUrl: input.defaultRepoUrl }
+  if (input.defaultRepoUrl) {
+    return { resolved: true, repoUrl: input.defaultRepoUrl, via: 'default' }
+  }
 
-  return { resolved: false, candidates }
+  return { resolved: false, reason: 'nothing-named', candidates }
 }
 
 /** The title column is not nullable and the slug is cut from it, so intake needs one now. */

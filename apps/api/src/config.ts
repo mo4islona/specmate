@@ -12,6 +12,12 @@ const Env = z.object({
   SPECMATE_STALL_HOURS: z.coerce.number().positive().default(4),
   /** Single-owner auth (§9.3). Unset is allowed only outside production. */
   SPECMATE_PASSWORD: optionalString,
+  /**
+   * Public OAuth app identifier, the same one the orchestrator carries. Absent
+   * only costs the reading of a GitHub reference, which degrades by design
+   * (REQ-1021) — so it must never be required at startup.
+   */
+  GITHUB_APP_CLIENT_ID: optionalString,
 })
 
 export type Config = z.infer<typeof Env>

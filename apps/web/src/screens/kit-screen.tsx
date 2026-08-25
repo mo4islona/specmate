@@ -32,6 +32,7 @@ import {
   PanelLink,
   Popover,
   QuietLink,
+  Reveal,
   Section,
   Select,
   Skeleton,
@@ -201,6 +202,30 @@ export function KitScreen() {
       </Section>
 
       <Section
+        eyebrow="Waiting"
+        title="Arrival"
+        description="A panel that fills while somebody is typing beside it has two jobs: hold its shape before it has anything, and not blank what is already true while it fetches what is newer."
+      >
+        <Specimen name="skeleton">
+          <div className="max-w-sm space-y-1.5">
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </Specimen>
+
+        <Specimen name="reveal · reveal refreshing">
+          <Row>
+            <Reveal className="max-w-[12rem]">
+              <Note size="xs">Settles in when it arrives.</Note>
+            </Reveal>
+            <Reveal refreshing className="max-w-[12rem]">
+              <Note size="xs">Still true, just not the newest answer.</Note>
+            </Reveal>
+          </Row>
+        </Specimen>
+      </Section>
+
+      <Section
         eyebrow="Voice"
         title="Type"
         description="Four registers and no others: the page's name, a section's, the eyebrow over either, and the quiet sentence under them."
@@ -270,7 +295,7 @@ export function KitScreen() {
           </Subpanel>
         </Panel>
 
-        <PanelLink href="/kit" className="group block transition-colors hover:border-accent/40">
+        <PanelLink href="/kit" className="group block transition-colors hover:border-border-bright">
           <Note size="xs">panel-link — a panel that goes somewhere</Note>
         </PanelLink>
 
@@ -408,7 +433,7 @@ export function KitScreen() {
           onDismiss={() => setDrawer(false)}
           label="File diff"
           detail={
-            <p className="mt-1 break-all font-mono text-xs text-info">
+            <p className="mt-1 break-all font-mono text-xs text-muted">
               openspec/changes/pie-chart-axis-fade/proposal.md
             </p>
           }

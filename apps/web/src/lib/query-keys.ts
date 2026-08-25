@@ -26,4 +26,15 @@ export const queryKeys = {
   defaultRepository: ['settings', 'default-repository'] as const,
   specConventions: ['settings', 'spec-conventions'] as const,
   repositories: ['repositories'] as const,
+  repository: (repositoryId: string) => ['repositories', repositoryId] as const,
+  repositoryProbe: (repoUrl: string) => ['repositories', 'probe', repoUrl] as const,
+  /**
+   * Keyed on the text, so editing the request refetches the preview — and only
+   * the preview. What the preview resolves to is keyed on the repository and the
+   * reference instead, which is why typing another sentence about one issue does
+   * not fetch that issue again.
+   */
+  intakePreview: (description: string, repoUrl: string) =>
+    ['intake', 'preview', description, repoUrl] as const,
+  reference: (url: string) => ['reference', url] as const,
 }

@@ -154,6 +154,17 @@ type ActivityPatchResponse = InferResponseType<
   200
 >
 type RepositoriesResponse = InferResponseType<typeof apiClient.api.v1.repositories.$get, 200>
+type RepositoryResponse = InferResponseType<
+  (typeof apiClient.api.v1.repositories)[':id']['$get'],
+  200
+>
+type RepositoryProbeResponse = InferResponseType<
+  (typeof apiClient.api.v1.repositories)['probe']['$get'],
+  200
+>
+type IntakePreviewResponse = InferResponseType<typeof apiClient.api.v1.intake.preview.$post, 200>
+type IntakePreviewRequest = InferRequestType<typeof apiClient.api.v1.intake.preview.$post>
+type ReferenceResponse = InferResponseType<typeof apiClient.api.v1.references.$get, 200>
 type ModelDefaultsResponse = InferResponseType<
   (typeof apiClient.api.v1.settings)['model-defaults']['$get'],
   200
@@ -199,6 +210,14 @@ export type Repository = RepositoriesResponse['repositories'][number]
 export type ModelDefaults = ModelDefaultsResponse['modelDefaults']
 export type DefaultRepository = DefaultRepositoryResponse['defaultRepository']
 export type UpdateModelDefaultsInput = UpdateModelDefaultsRequest['json']
+export type RepositoryDetail = RepositoryResponse
+export type RepositoryProbe = RepositoryProbeResponse
+export type MemoryEntry = RepositoryResponse['memory']['entries'][number]
+export type RecentTask = RepositoryResponse['recentTasks'][number]
+export type IntakePreview = IntakePreviewResponse
+export type IntakePreviewInput = IntakePreviewRequest['json']
+export type ForgeReference = IntakePreviewResponse['references'][number]
+export type ReferenceRead = ReferenceResponse['result']
 export type SpecConventions = SpecConventionsResponse['specConventions']
 export type SpecConventionSetting = NonNullable<UpdateSpecConventionRequest['json']['setting']>
 export type UpdateSpecConventionInput = UpdateSpecConventionRequest['json']
@@ -213,6 +232,57 @@ export async function listRepositories(signal?: AbortSignal): Promise<Repositori
   const response = await apiClient.api.v1.repositories.$get(undefined, { init: { signal } })
 
   return readJson<RepositoriesResponse>(response)
+}
+
+export async function getRepository(
+  repositoryId: string,
+  signal?: AbortSignal,
+): Promise<RepositoryDetail> {
+  const response = await apiClient.api.v1.repositories[':id'].$get(
+    { param: { id: repositoryId } },
+    { init: { signal } },
+  )
+
+  return readJson<RepositoryDetail>(response)
+}
+
+/** What a repository with no history here turns out to be, asked of the forge rather than a model. */
+export async function probeRepository(
+  repoUrl: string,
+  signal?: AbortSignal,
+): Promise<RepositoryProbe> {
+  const response = await apiClient.api.v1.repositories.probe.$get(
+    { query: { repoUrl } },
+    { init: { signal } },
+  )
+
+  return readJson<RepositoryProbe>(response)
+}
+
+/** What a launch of this text would do. Creates nothing, and is called as the text is written. */
+export async function previewIntake(
+  input: IntakePreviewInput,
+  signal?: AbortSignal,
+): Promise<IntakePreview> {
+  const response = await apiClient.api.v1.intake.preview.$post(
+    { json: input },
+    { init: { signal } },
+  )
+
+  return readJson<IntakePreview>(response)
+}
+
+export async function readReference(
+  reference: ForgeReference,
+  signal?: AbortSignal,
+): Promise<ReferenceRead> {
+  const { host, owner, repo, number, kind } = reference
+  const response = await apiClient.api.v1.references.$get(
+    { query: { host, owner, repo, number: String(number), kind } },
+    { init: { signal } },
+  )
+
+  return (await readJson<ReferenceResponse>(response)).result
 }
 
 export async function revokeCoverageWaiver(repositoryId: string): Promise<void> {
