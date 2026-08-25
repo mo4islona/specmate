@@ -18,7 +18,8 @@ bands:
   task-lifecycle: 600
   workspace-lifecycle: 700
   execution-environment: 800
-  operator-ui: 900
+  # Two numbers left in 900 when the Files surface needed more than two.
+  operator-ui: [900, 1800]
   # Split out of operator-ui, which keeps 900. The launch screen's existing IDs
   # stay in that block — an ID may not move — and everything new comes from 1900.
   launch-screen: [900, 1900]
