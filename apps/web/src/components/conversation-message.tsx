@@ -1,12 +1,14 @@
 import type { ConversationMessage } from '../lib/api-client.ts'
 import { formatClock } from '../lib/format.ts'
-import { cx, Dot, MicroLabel, type Tone } from '../ui/index.ts'
+import { cx, Dot, MicroLabel } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
+import { signalDot, signalText } from './tone.ts'
 
-const AUTHORS: Record<ConversationMessage['role'], { label: string; tone: Tone }> = {
-  owner: { label: 'you', tone: 'accent' },
-  assistant: { label: 'guide', tone: 'info' },
-  system: { label: 'system', tone: 'muted' },
+/** Three speakers, told apart by the word rather than by a hue each. */
+const AUTHORS: Record<ConversationMessage['role'], string> = {
+  owner: 'you',
+  assistant: 'guide',
+  system: 'system',
 }
 
 /**
@@ -16,17 +18,11 @@ const AUTHORS: Record<ConversationMessage['role'], { label: string; tone: Tone }
  */
 export function ConversationMessageItem({ message }: { message: ConversationMessage }) {
   const isPending = message.status === 'queued' || message.status === 'responding'
-  const author = AUTHORS[message.role]
 
   return (
-    <li
-      className={cx('py-2', isPending && 'attention-pulse rounded-xl px-3')}
-      data-timeline-kind="conversation-message"
-    >
+    <li className="py-2" data-timeline-kind="conversation-message">
       <div className="flex items-baseline gap-2">
-        <MicroLabel as="span" tone={author.tone}>
-          {author.label}
-        </MicroLabel>
+        <MicroLabel as="span">{AUTHORS[message.role]}</MicroLabel>
         <span className="font-mono text-[0.6rem] text-muted">
           at {message.taskState.replaceAll('_', ' ')}
         </span>
@@ -45,14 +41,17 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
       )}
 
       {isPending && (
-        <p className="mt-2 flex items-center gap-2 font-mono text-xs text-attention" role="status">
-          <Dot className="bg-attention" live />
+        <p
+          className={cx('mt-2 flex items-center gap-2 font-mono text-xs', signalText('asking'))}
+          role="status"
+        >
+          <Dot className={signalDot('asking')} live halo />
           {message.status === 'responding' ? 'Responding…' : 'Waiting for a response slot…'}
         </p>
       )}
 
       {message.status === 'failed' && (
-        <p className="mt-2 text-sm text-danger">
+        <p className={cx('mt-2 text-sm', signalText('stopped'))}>
           Response failed: {message.failureReason ?? 'no reason was recorded'}
         </p>
       )}

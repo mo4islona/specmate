@@ -4,6 +4,7 @@ import { getActivityPatch } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { type ActivityEdit, editSummary } from '../lib/task-thread.ts'
 import { Diff, TextButton } from '../ui/index.ts'
+import { signalText } from './tone.ts'
 
 interface ActivityEditBlockProps {
   readonly taskId: string
@@ -59,7 +60,9 @@ export function ActivityEditBlock({ taskId, seq, edit, onOpenFile }: ActivityEdi
           (expanded ? (
             <>
               {whole.isPending && <span>loading the whole edit…</span>}
-              {whole.isError && <span className="text-danger">The whole edit is unavailable.</span>}
+              {whole.isError && (
+                <span className={signalText('stopped')}>The whole edit is unavailable.</span>
+              )}
               {edit.truncated && whole.data && <span>this edit was too large to record whole</span>}
               <TextButton onClick={() => setExpanded(false)}>clamp it back</TextButton>
             </>

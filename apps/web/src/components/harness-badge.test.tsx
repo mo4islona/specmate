@@ -1,36 +1,52 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { HarnessBadge } from './harness-badge.tsx'
 
 describe('harness badge', () => {
-  test('renders nothing for adequate coverage', () => {
+  it('renders nothing for adequate coverage', () => {
     expect(renderToStaticMarkup(<HarnessBadge status="adequate" />)).toBe('')
   })
 
-  test('renders nothing before planning has classified anything', () => {
+  it('renders nothing before planning has classified anything', () => {
     expect(renderToStaticMarkup(<HarnessBadge status="unknown" />)).toBe('')
   })
 
-  test('states a partial gap, styled for attention', () => {
+  it('states a partial gap', () => {
     const rendered = renderToStaticMarkup(<HarnessBadge status="partial" />)
 
     expect(rendered).toContain('harness gap: partial')
     expect(rendered).toContain('data-harness-status="partial"')
-    expect(rendered).toContain('badge-warning')
   })
 
-  test('states a missing gap the same way as partial', () => {
-    const rendered = renderToStaticMarkup(<HarnessBadge status="missing" />)
-
-    expect(rendered).toContain('harness gap: missing')
-    expect(rendered).toContain('badge-warning')
+  it('states a missing gap the same way as partial', () => {
+    expect(renderToStaticMarkup(<HarnessBadge status="missing" />)).toContain(
+      'harness gap: missing',
+    )
   })
 
-  test('a waiver is visually distinct from an open, undecided gap — REQ-1405, AC-1416', () => {
+  it('shows a waiver on the task view without an artifact — REQ-1405, AC-1416', () => {
     const rendered = renderToStaticMarkup(<HarnessBadge status="waived" />)
 
     expect(rendered).toContain('harness: waived')
     expect(rendered).toContain('data-harness-status="waived"')
-    expect(rendered).not.toContain('badge-warning')
+  })
+
+  /**
+   * The badge qualifies the header's state sentence; it is not a second one.
+   * Both readings say what they are in the word, and neither spends a signal
+   * colour doing it — see the budget at the top of `index.css`.
+   */
+  it('tells a waiver from an open gap in the word, not in a colour', () => {
+    const waived = renderToStaticMarkup(<HarnessBadge status="waived" />)
+    const open = renderToStaticMarkup(<HarnessBadge status="partial" />)
+
+    expect.soft(waived).not.toContain('harness gap')
+    expect.soft(open).toContain('harness gap')
+
+    for (const rendered of [waived, open]) {
+      expect.soft(rendered).toContain('badge-muted')
+      expect.soft(rendered).not.toContain('badge-warning')
+      expect.soft(rendered).not.toContain('badge-failed')
+    }
   })
 })

@@ -47,6 +47,11 @@ function fileName(path: string): string {
  * than as documents: the kind was set biggest and brightest and the file name
  * came third, in the page's own face. A file says it is a file with a page
  * glyph and a name in the mono face every other path in this app is set in.
+ *
+ * The kind does not appear at all, for the same reason: it is derived from the
+ * file's own name and every one of them round-trips — `proposal.md` is the
+ * `proposal`, `decisions.md` is the `decision log` — so the column printed the
+ * name a second time and nothing else.
  */
 export function StepDocuments({ taskId, documents, current }: StepDocumentsProps) {
   const contents = useQueries({
@@ -87,15 +92,13 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                 )}
               >
                 <FileIcon
-                  className={cx('h-3.5 w-3.5 shrink-0', selected ? 'text-info' : 'text-muted')}
+                  className={cx('h-3.5 w-3.5 shrink-0', selected ? 'text-text' : 'text-muted')}
                 />
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-text">
                   {fileName(document.path)}
                 </span>
-                <span className="flex shrink-0 items-baseline gap-2 font-mono text-[0.62rem] text-muted">
-                  <span>{document.kind.replaceAll('_', ' ')}</span>
-                  <span className="text-border-bright">·</span>
-                  <span>{sizeFact(contents[index]?.data?.artifact.content ?? null)}</span>
+                <span className="shrink-0 font-mono text-[0.62rem] text-muted">
+                  {sizeFact(contents[index]?.data?.artifact.content ?? null)}
                 </span>
               </button>
             </li>

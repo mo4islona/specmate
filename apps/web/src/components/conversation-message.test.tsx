@@ -29,9 +29,13 @@ describe('conversation message item', () => {
     const rendered = renderToStaticMarkup(<ConversationMessageItem message={message()} />)
 
     expect(rendered).toContain('data-timeline-kind="conversation-message"')
-    expect(rendered).toContain('attention-pulse')
     expect(rendered).toContain('spec review')
     expect(rendered).toContain('Waiting for a response slot')
+    // The one device that says something is happening: a breathing mark beside
+    // the line that says what. The ring that used to breathe around the whole
+    // row said it a second time, in the form the owner found hardest to ignore.
+    expect(rendered).toContain('dot-live')
+    expect(rendered).not.toContain('attention-pulse')
   })
 
   test('names who is speaking, so the thread reads as a conversation', () => {

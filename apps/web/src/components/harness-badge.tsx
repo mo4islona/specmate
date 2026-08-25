@@ -1,5 +1,5 @@
 import type { HarnessStatus } from '@specmate/core'
-import { Badge, type BadgeTone } from '../ui/index.ts'
+import { Badge } from '../ui/index.ts'
 
 interface HarnessBadgeProps {
   status: HarnessStatus
@@ -14,25 +14,14 @@ const LABELS: Record<HarnessStatus, string> = {
 }
 
 /**
- * REQ-1405: a waiver stays visible without opening an artifact — styled apart
- * from an open, undecided gap (the 'warning' tone, matching the decision-card
- * convention for something awaiting the owner) since a waiver is already a
- * decided, accepted risk, not a pending one.
+ * REQ-1405: a waiver stays visible without opening an artifact, and it reads
+ * apart from an open, undecided gap — in the word rather than in a colour. The
+ * badge qualifies the state sentence beside it; it is not a second one. Amber
+ * here put two things asking for the owner in one header row, and a waiver in
+ * red claimed something had gone wrong when a decision had in fact been made.
  */
-function statusTone(status: HarnessStatus): BadgeTone {
-  if (status === 'waived') return 'failed'
-  if (status === 'partial' || status === 'missing') return 'warning'
-
-  return 'muted'
-}
-
-/** Renders nothing for `adequate` or `unknown` — nothing here needs the owner's attention. */
 export function HarnessBadge({ status }: HarnessBadgeProps) {
   if (status === 'adequate' || status === 'unknown') return null
 
-  return (
-    <Badge tone={statusTone(status)} data-harness-status={status}>
-      {LABELS[status]}
-    </Badge>
-  )
+  return <Badge data-harness-status={status}>{LABELS[status]}</Badge>
 }

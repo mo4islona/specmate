@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react'
 import { ThemeSection } from '../components/theme-section.tsx'
+import { type Signal, signalBreathes, signalDot, signalText } from '../components/tone.ts'
 import {
   Badge,
   type BadgeTone,
@@ -9,6 +10,7 @@ import {
   Chip,
   Console,
   ConsoleField,
+  cx,
   Diff,
   Dot,
   Drawer,
@@ -49,9 +51,10 @@ const BUTTONS: readonly ButtonVariant[] = [
 
 const BADGES: readonly BadgeTone[] = ['active', 'parked', 'failed', 'done', 'muted', 'warning']
 
-const TONES: readonly Tone[] = ['muted', 'accent', 'info', 'attention', 'danger', 'success']
+const TONES: readonly Tone[] = ['muted', 'accent', 'attention', 'danger']
 
-const DOTS = ['bg-status-active', 'bg-status-parked', 'bg-status-failed', 'bg-status-done'] as const
+/** The whole colour budget, in the order it gets louder. */
+const SIGNALS: readonly Signal[] = ['idle', 'settled', 'live', 'asking', 'stopped']
 
 const SPECIMEN_DIFF = [
   '@@ -41,6 +41,7 @@',
@@ -172,13 +175,22 @@ export function KitScreen() {
           </Row>
         </Specimen>
 
-        <Specimen name="dot">
+        {/* The five signals together, which is the one place in the app they are
+            allowed to appear together. Everywhere else, at most one is lit — two
+            of them breathe, and one of those wears the halo as well, which is
+            the whole of the app's motion and the whole of its emphasis. */}
+        <Specimen name="signal · dot and name">
           <Row>
-            {DOTS.map((colour) => (
-              <Dot key={colour} className={colour} />
+            {SIGNALS.map((signal) => (
+              <span key={signal} className="flex items-center gap-2.5">
+                <Dot
+                  className={signalDot(signal)}
+                  live={signalBreathes(signal)}
+                  halo={signal === 'asking'}
+                />
+                <span className={cx('font-mono text-[0.72rem]', signalText(signal))}>{signal}</span>
+              </span>
             ))}
-            <Dot className="bg-accent" live />
-            <span className="font-mono text-[0.62rem] text-muted">last one is live</span>
           </Row>
         </Specimen>
       </Section>

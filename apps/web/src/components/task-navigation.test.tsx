@@ -61,6 +61,26 @@ describe('TaskNavigation', () => {
     expect(row.textContent).toContain('Spec gate')
   })
 
+  it('a task waiting on the owner breathes and wears a halo; a moving one only breathes', async () => {
+    draw(
+      [task('gate', 'human_spec_gate'), task('run', 'implement'), task('old', 'archived')],
+      ['gate'],
+    )
+
+    const rows = await screen.findAllByRole('link')
+    const marks = rows.map((row) => ({
+      breathes: row.querySelector('.dot-live') !== null,
+      halo: row.querySelector('.dot-halo') !== null,
+    }))
+
+    // Needs input, Active, Complete — in the order the rail draws its groups.
+    expect(marks).toEqual([
+      { breathes: true, halo: true },
+      { breathes: true, halo: false },
+      { breathes: false, halo: false },
+    ])
+  })
+
   it('the task being read is the current page', async () => {
     draw([task('task-1', 'implement'), task('task-2', 'implement')], [], '/tasks/task-2/files')
 

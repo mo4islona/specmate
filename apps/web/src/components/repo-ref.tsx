@@ -17,8 +17,8 @@ interface RepoRefProps {
 }
 
 const PR_TONE: Record<string, string> = {
-  open: 'text-accent',
-  merged: 'text-info',
+  open: 'text-text',
+  merged: 'text-muted',
   closed: 'text-muted',
 }
 
@@ -44,7 +44,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="truncate text-info hover:underline"
+            className="truncate text-muted hover:text-text hover:underline"
           >
             {label}
           </a>

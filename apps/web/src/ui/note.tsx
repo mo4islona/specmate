@@ -1,16 +1,19 @@
 import type { ComponentPropsWithRef, HTMLAttributes, ReactNode } from 'react'
 import { cx } from './cx.ts'
 
-/** The colour a small label wears. A role, never a hue. */
-export type Tone = 'muted' | 'accent' | 'info' | 'attention' | 'danger' | 'success'
+/**
+ * The colour a small label wears. A role, never a hue — and a short list, because
+ * a label is not a state: `muted` is the answer almost everywhere, and the three
+ * that are left are only for a label that *is* the signal. See the colour budget
+ * at the top of `index.css`.
+ */
+export type Tone = 'muted' | 'accent' | 'attention' | 'danger'
 
 const TONE: Record<Tone, string> = {
   muted: 'text-muted',
   accent: 'text-accent',
-  info: 'text-info',
   attention: 'text-attention',
   danger: 'text-danger',
-  success: 'text-success',
 }
 
 export function toneClass(tone: Tone): string {
@@ -74,7 +77,10 @@ export function TextButton({ className, children, ...rest }: ComponentPropsWithR
   return (
     <button
       type="button"
-      className={cx('font-mono text-[0.62rem] text-info hover:underline', className)}
+      className={cx(
+        'font-mono text-[0.62rem] text-muted hover:text-text hover:underline',
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -87,14 +93,25 @@ interface DotProps {
   readonly className?: string
   /** Breathing, for a marker that stands for something happening now. */
   readonly live?: boolean
+  /**
+   * A ring of its own colour spread behind it. The mark that is a *question*
+   * wears it and nothing else does — a running step is ambient, and a queue of
+   * haloed marks is the strobe this app already threw out once.
+   */
+  readonly halo?: boolean
 }
 
 /** A state as a mark rather than a word. One size, everywhere it appears. */
-export function Dot({ className, live = false }: DotProps) {
+export function Dot({ className, live = false, halo = false }: DotProps) {
   return (
     <span
       aria-hidden="true"
-      className={cx('h-1.5 w-1.5 shrink-0 rounded-full', live && 'dot-live', className)}
+      className={cx(
+        'h-1.5 w-1.5 shrink-0 rounded-full',
+        live && 'dot-live',
+        halo && 'dot-halo',
+        className,
+      )}
     />
   )
 }

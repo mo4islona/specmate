@@ -11,16 +11,17 @@ import type {
 import { cx, TextButton } from '../ui/index.ts'
 import { ActivityEditBlock } from './activity-edit.tsx'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
+import { signalText } from './tone.ts'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
-  guide: 'text-info',
+  guide: 'text-muted',
   task: 'text-muted',
 }
 
 /** The bullet carries the colour; the words stay in the reading tone. */
 const BULLET_TONE: Record<LineTone, string> = {
-  boundary: 'text-accent',
-  trouble: 'text-danger',
+  boundary: 'text-border-bright',
+  trouble: signalText('stopped'),
   plain: 'text-muted',
 }
 
@@ -80,12 +81,12 @@ function LiveLine({ live }: { live: LiveActivity }) {
       aria-live="polite"
       className="flex items-baseline gap-2 py-[0.12rem] font-mono text-[0.72rem] leading-5"
     >
-      <span className="dot-live shrink-0 leading-none text-accent" aria-hidden="true">
+      <span className={cx('dot-live shrink-0 leading-none', signalText('live'))} aria-hidden="true">
         +
       </span>
 
       <span className="min-w-0 break-all">
-        <span className="text-accent">{live.action}…</span>
+        <span className={signalText('live')}>{live.action}…</span>
         {live.target && <span className="text-muted"> {live.target}</span>}
       </span>
     </li>
@@ -126,7 +127,7 @@ function RunLine({
         <span
           className={cx(
             'shrink-0 leading-none',
-            entry.live ? 'dot-live text-accent' : BULLET_TONE[entry.tone],
+            entry.live ? `dot-live ${signalText('live')}` : BULLET_TONE[entry.tone],
           )}
           aria-hidden="true"
         >
@@ -142,7 +143,7 @@ function RunLine({
           <span
             className={cx(
               'min-w-0 break-words',
-              entry.tone === 'trouble' ? 'text-danger' : 'text-text',
+              entry.tone === 'trouble' ? signalText('stopped') : 'text-text',
             )}
           >
             {entry.action}

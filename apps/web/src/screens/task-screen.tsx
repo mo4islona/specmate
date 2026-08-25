@@ -9,6 +9,7 @@ import { StepHeader } from '../components/step-header.tsx'
 import { type OpenQuestion, TaskComposer } from '../components/task-composer.tsx'
 import { TaskRail } from '../components/task-rail.tsx'
 import { ThreadView } from '../components/thread-view.tsx'
+import { signalText } from '../components/tone.ts'
 import { mergeTimelineEvents } from '../hooks/use-task-stream.ts'
 import {
   answerDecision,
@@ -39,7 +40,7 @@ import { consoleDestination, parkedStop } from '../lib/task-console.ts'
 import { stepDocuments } from '../lib/task-documents.ts'
 import { buildPipelineNodes } from '../lib/task-pipeline.ts'
 import { buildStepFeed, countGateRedirects, liveActivity, nodeLabel } from '../lib/task-thread.ts'
-import { Button, ConsoleDock, ErrorState, LoadingState } from '../ui/index.ts'
+import { Button, ConsoleDock, cx, ErrorState, LoadingState } from '../ui/index.ts'
 
 interface TaskScreenProps {
   taskId: string
@@ -591,9 +592,11 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               {actions.map((action) => (
                 <li
                   key={action.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-attention/[0.06] py-1.5 pl-3.5 pr-1.5"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-text/[0.05] py-1.5 pl-3.5 pr-1.5"
                 >
-                  <span className="font-mono text-[0.72rem] text-attention">{action.kind}</span>
+                  <span className={cx('font-mono text-[0.72rem]', signalText('asking'))}>
+                    {action.kind}
+                  </span>
                   <span className="min-w-0 flex-1 break-words text-sm">
                     {action.instruction ?? 'No instruction'}
                   </span>

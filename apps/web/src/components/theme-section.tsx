@@ -12,7 +12,7 @@ function ThemeSwatch({ id }: { id: ThemeId }) {
   return (
     <span
       data-theme={id}
-      className="block rounded-lg border border-border bg-ground p-3 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-info"
+      className="block rounded-lg border border-border bg-ground p-3 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
     >
       <span className="flex items-center gap-1.5">
         <span className="block h-2 w-2 rounded-full bg-accent" />
@@ -49,7 +49,7 @@ export function ThemeSection() {
               key={theme.id}
               className={cx(
                 'cursor-pointer rounded-xl border p-1.5 transition-colors',
-                chosen ? 'border-accent' : 'border-border hover:border-border-bright',
+                chosen ? 'border-text' : 'border-border hover:border-border-bright',
               )}
             >
               <input
@@ -65,7 +65,10 @@ export function ThemeSection() {
 
               <span className="flex items-baseline justify-between gap-2 px-1.5 pt-2 pb-0.5">
                 <span
-                  className={cx('font-mono text-[0.75rem]', chosen ? 'text-accent' : 'text-text')}
+                  className={cx(
+                    'font-mono text-[0.75rem]',
+                    chosen ? 'font-medium text-text' : 'text-text',
+                  )}
                 >
                   {theme.label}
                 </span>

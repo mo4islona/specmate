@@ -5,6 +5,7 @@ import { useStreamStatus } from '../lib/stream-status.ts'
 import { ButtonLink, cx, NavRow } from '../ui/index.ts'
 import { GearIcon, SpecMateMark } from './icons.tsx'
 import { TaskNavigation } from './task-navigation.tsx'
+import { signalText, streamSignal } from './tone.ts'
 
 /**
  * The stream is only news when it is not working. A `live` badge on every
@@ -12,8 +13,8 @@ import { TaskNavigation } from './task-navigation.tsx'
  * where what they are reading may be behind what is happening.
  */
 const STREAM_TROUBLE: Partial<Record<StreamConnectionState, { label: string; tone: string }>> = {
-  connecting: { label: 'reconnecting', tone: 'text-attention' },
-  stale: { label: 'stream stalled', tone: 'text-danger' },
+  connecting: { label: 'reconnecting', tone: signalText(streamSignal('connecting')) },
+  stale: { label: 'stream stalled', tone: signalText(streamSignal('stale')) },
 }
 
 interface LockupProps {
