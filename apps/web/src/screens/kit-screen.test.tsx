@@ -40,7 +40,7 @@ describe('KitScreen', () => {
   it('the specimens are live, not pictures of controls', async () => {
     renderKit()
 
-    await userEvent.click(screen.getByRole('button', { name: 'open a menu ⌄' }))
+    await userEvent.click(screen.getByRole('button', { name: 'open a menu' }))
     expect(screen.getByRole('menu', { name: 'A menu' })).toBeTruthy()
 
     await userEvent.keyboard('{Escape}')

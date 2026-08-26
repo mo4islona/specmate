@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArtifactMarkdown } from '../components/artifact-markdown.tsx'
-import { FileIcon } from '../components/icons.tsx'
 import { ListDetailPanel } from '../components/list-detail-panel.tsx'
 import { type ArtifactSummary, getArtifact, listArtifacts } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { cx, ErrorState, LoadingState, MicroLabel, NavRow, Note } from '../ui/index.ts'
+import { cx, ErrorState, Icon, LoadingState, MicroLabel, NavRow, Note } from '../ui/index.ts'
 
 interface ArtifactsScreenProps {
   taskId: string
@@ -72,12 +71,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                           active={open}
                           className="flex min-w-0 items-center gap-2.5"
                         >
-                          <FileIcon
-                            className={cx(
-                              'h-3.5 w-3.5 shrink-0',
-                              open ? 'text-text' : 'text-muted',
-                            )}
-                          />
+                          <Icon name="file" className={open ? 'text-text' : 'text-muted'} />
                           <span className="min-w-0 flex-1">
                             <span
                               className={cx(

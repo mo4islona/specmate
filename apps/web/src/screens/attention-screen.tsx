@@ -7,6 +7,7 @@ import { queryKeys } from '../lib/query-keys.ts'
 import {
   Dot,
   ErrorState,
+  Icon,
   LoadingState,
   MicroLabel,
   Note,
@@ -53,7 +54,7 @@ export function AttentionScreen() {
       {attention.data.items.length === 0 ? (
         <Panel className="grid min-h-72 place-items-center text-center">
           <div>
-            <p className="font-mono text-5xl text-muted">✓</p>
+            <Icon name="check" size="xl" className="mx-auto text-muted" />
             <h2 className="mt-5 text-xl font-semibold">Nothing needs the owner</h2>
             <Note className="mt-2">All tracked work is moving or complete.</Note>
           </div>

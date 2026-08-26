@@ -20,7 +20,7 @@
  * Everything here is on `/kit`, in every theme, in every state.
  */
 export { Badge, type BadgeTone } from './badge.tsx'
-export { Button, ButtonLink, type ButtonVariant, buttonClass } from './button.tsx'
+export { Button, ButtonLink, type ButtonVariant, buttonClass, IconButton } from './button.tsx'
 export { Chip } from './chip.tsx'
 export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.tsx'
 export { cx } from './cx.ts'
@@ -29,6 +29,7 @@ export { Drawer } from './drawer.tsx'
 export { Checkbox, Field, FieldLabel, Input, Select, Textarea } from './field.tsx'
 export { Meter, StatBar } from './gauge.tsx'
 export { HoverHint } from './hover-hint.tsx'
+export { ICON_NAMES, ICON_SIZES, Icon, type IconName, type IconSize } from './icon.tsx'
 export { InlineLink, QuietLink } from './link.tsx'
 export {
   Skeleton,

@@ -11,10 +11,17 @@ Three layers, and a change belongs to exactly one of them:
 - `apps/web/src/ui` — the React kit: a name and a typed set of choices per part. **Nothing outside
   `src/ui` writes one of those classes.** `Button`, not `className="button-primary"`.
 
+Marks are the fourth thing, and they follow the same shape: `apps/web/src/ui/icon.tsx` holds the
+whole set, addressed by what a mark means here (`check`, `unfold`, `pull-request`) rather than by
+what the library calls it, at one size scale and one stroke weight. It is the only file that names
+`lucide-react`. Nothing is drawn by hand and nothing is typed as a glyph — a `⌄` or a `✓` in JSX
+takes the metrics of whatever face it lands in and goes into the element's accessible name.
+
 A call site owns its layout — every primitive takes a `className` and appends it last, so a margin
 or a width written beside it means what it says. What a call site does not own is the part.
-`ui/kit-discipline.test.ts` enforces both halves of that: no component class outside the kit, and
-every colour utility naming a role the theme actually defines.
+`ui/kit-discipline.test.ts` enforces all of that: no component class outside the kit, every colour
+utility naming a role the theme actually defines, one importer of the icon library, and no mark
+typed as a glyph.
 
 `/kit` renders every part in every variant and state under the theme switcher. Look at it after
 changing anything in `src/ui`, and add the new part to it.

@@ -2,9 +2,8 @@ import { useQueries } from '@tanstack/react-query'
 import { useState } from 'react'
 import { type ArtifactSummary, getArtifact } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { cx, MicroLabel, QuietLink, TextButton } from '../ui/index.ts'
+import { cx, Icon, MicroLabel, QuietLink, TextButton } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
-import { FileIcon } from './icons.tsx'
 import { KickoffBrief } from './kickoff-brief.tsx'
 
 interface StepDocumentsProps {
@@ -91,9 +90,7 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                   selected ? 'bg-text/[0.07]' : 'hover:bg-text/[0.04]',
                 )}
               >
-                <FileIcon
-                  className={cx('h-3.5 w-3.5 shrink-0', selected ? 'text-text' : 'text-muted')}
-                />
+                <Icon name="file" className={selected ? 'text-text' : 'text-muted'} />
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-text">
                   {fileName(document.path)}
                 </span>

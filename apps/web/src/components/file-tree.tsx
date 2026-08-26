@@ -1,6 +1,6 @@
 import type { DiffFileSummary } from '../lib/api-client.ts'
 import { type DirectoryGroup, fileName, shortDirectory } from '../lib/diff-tree.ts'
-import { FolderName, NavRow } from '../ui/index.ts'
+import { FolderName, Icon, NavRow } from '../ui/index.ts'
 import { StatCounts } from './diff-file-facts.tsx'
 
 interface FileListProps {
@@ -32,15 +32,12 @@ export function FileList({ groups, selected, viewed, onSelect }: FileListProps) 
                   active={selected === file.path}
                   onClick={() => onSelect(file)}
                   title={file.path}
-                  className="flex min-w-0 items-baseline justify-between gap-2"
+                  className="flex min-w-0 items-center justify-between gap-2"
                 >
-                  <span className="flex min-w-0 items-baseline gap-1.5 ps-2">
-                    <span
-                      aria-hidden="true"
-                      className={viewed.has(file.path) ? 'text-[0.6rem] text-muted' : 'sr-only'}
-                    >
-                      ✓
-                    </span>
+                  <span className="flex min-w-0 items-center gap-1.5 ps-2">
+                    {viewed.has(file.path) && (
+                      <Icon name="check" size="xs" label="viewed" className="text-muted" />
+                    )}
                     <span className="min-w-0 truncate font-mono text-xs">
                       {fileName(file.path)}
                     </span>

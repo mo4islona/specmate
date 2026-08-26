@@ -76,6 +76,36 @@ export function Button({
   )
 }
 
+interface IconButtonProps extends ComponentPropsWithRef<'button'> {
+  /** The word the glyph stands for. It is the button's whole accessible name. */
+  readonly label: string
+}
+
+/**
+ * A verb drawn rather than written, for the controls that sit over what they
+ * act on: a row of words under every edit in a step was more of the record than
+ * the record. The label is never optional — a glyph nobody can name is a guess.
+ */
+export function IconButton({
+  label,
+  className,
+  children,
+  type = 'button',
+  ...rest
+}: IconButtonProps) {
+  return (
+    <button
+      type={type}
+      aria-label={label}
+      title={label}
+      className={cx('button-icon', className)}
+      {...rest}
+    >
+      {children}
+    </button>
+  )
+}
+
 interface ButtonLinkProps {
   readonly href: string
   readonly variant?: ButtonVariant

@@ -21,6 +21,7 @@ import {
   Badge,
   Chip,
   cx,
+  Icon,
   MicroLabel,
   Note,
   Panel,
@@ -29,7 +30,6 @@ import {
   Skeleton,
   TextButton,
 } from '../ui/index.ts'
-import { RepoIcon } from './icons.tsx'
 import { signalText } from './tone.ts'
 
 interface IntakeRailProps {
@@ -217,7 +217,7 @@ function RepositorySection({ preview, refreshing, pinned, onPin }: RepositorySec
         {repository.resolved ? (
           <>
             <p className="flex min-w-0 items-center gap-1.5 font-mono text-xs">
-              <RepoIcon className="h-3 w-3 shrink-0 opacity-70" />
+              <Icon name="repo" size="xs" className="opacity-70" />
               <RepositoryName repoUrl={repository.repoUrl} />
             </p>
 

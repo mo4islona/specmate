@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Button, buttonClass, ErrorNote, Popover, Select } from '../ui/index.ts'
+import { Button, buttonClass, cx, ErrorNote, Icon, Popover, Select } from '../ui/index.ts'
 
 interface GateVerbsProps {
   readonly gateKey: string
@@ -59,7 +59,12 @@ export function GateVerbs({
               aria-expanded={reworking}
               onClick={() => setReworking(!reworking)}
             >
-              Rework ⌄
+              Rework
+              <Icon
+                name="chevron-down"
+                size="xs"
+                className={cx('transition-transform', reworking && 'rotate-180')}
+              />
             </Button>
           }
         >

@@ -104,14 +104,12 @@ describe('Chip', () => {
     render(
       <>
         <Chip pressed>medium</Chip>
-        <Chip expanded>size ⌄</Chip>
+        <Chip expanded>size</Chip>
       </>,
     )
 
     expect(screen.getByRole('button', { name: 'medium' }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: 'size ⌄' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    )
+    expect(screen.getByRole('button', { name: 'size' }).getAttribute('aria-expanded')).toBe('true')
   })
 })
 
