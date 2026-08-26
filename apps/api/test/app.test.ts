@@ -1640,6 +1640,77 @@ describeDb('api', () => {
     })
   })
 
+  it('guidance on a paused task addresses the node it resumes into, not the one after', async () => {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `paused-guidance-${crypto.randomUUID().slice(0, 8)}`,
+        title: 'Paused guidance fixture',
+        type: 'feature',
+        repoUrl: 'https://github.com/example/paused-guidance-fixture',
+        status: 'paused',
+        resumeStatus: 'implement',
+      })
+      .returning()
+    if (!task) throw new Error('task insert returned no row')
+    createdTaskIds.push(task.id)
+
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({
+        taskId: task.id,
+        dag: {
+          pipeline: 'feature-bugfix',
+          terminal: 'archived',
+          entry: 'specify',
+          nodes: [
+            { kind: 'stage', key: 'specify', role: 'planner', binding: 'role_default' },
+            { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+            { kind: 'stage', key: 'validate', role: 'validator', binding: 'cross_review' },
+          ],
+        },
+      })
+      .returning()
+    if (!graph) throw new Error('run graph insert returned no row')
+
+    // The interrupted attempt is what makes this case its own: `implement` has a row,
+    // so a scan for the first node that never started steps over it and lands on
+    // `validate` — a node no run will reach until this one finishes.
+    await db.insert(stages).values([
+      {
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'specify',
+        role: 'planner',
+        provider: 'claude-code',
+        status: 'succeeded',
+        attempt: 0,
+      },
+      {
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'implement',
+        role: 'implementer',
+        provider: 'claude-code',
+        status: 'interrupted',
+        attempt: 0,
+      },
+    ])
+
+    const sent = await app.request(`/api/v1/tasks/${task.id}/feedback`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ comment: 'Continue where you left off.' }),
+    })
+    expect(sent.status).toBe(201)
+
+    const [guidance] = await db.select().from(feedback).where(eq(feedback.taskId, task.id))
+    expect(guidance).toMatchObject({
+      kind: 'intervention',
+      target: { graphId: graph.id, nodeKey: 'implement' },
+    })
+  })
+
   it('a finished task takes a note, not guidance no run will read', async () => {
     const [task] = await db
       .insert(tasks)

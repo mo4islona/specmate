@@ -22,7 +22,7 @@ export function createStageDispatcher({
   executor,
   pinnedEnvironment,
 }: StageDispatcherDeps): StageDispatcher {
-  return async ({ task, node, stageId, attempt, provider, workspace, resume }) => {
+  return async ({ task, node, stageId, attempt, provider, workspace, resume, signal }) => {
     const binding = task.modelBindings[node.role]
 
     return executor.execute({
@@ -38,6 +38,7 @@ export function createStageDispatcher({
       environment: await pinnedEnvironment(task.id),
       attempt,
       resume,
+      signal,
       specConvention: task.specConvention,
     })
   }

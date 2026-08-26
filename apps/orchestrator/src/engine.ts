@@ -373,6 +373,12 @@ export interface StageDispatch {
    * Read from the resumed stage row, so it survives a restart and any length of gate.
    */
   readonly resume: StageResumption | null
+  /**
+   * Aborted when the owner's stop wins this stage. Killing the container ends the
+   * attempt on the wire; this ends the retry loop behind it, which would otherwise
+   * read the kill as one more failure and start again (REQ-1607).
+   */
+  readonly signal: AbortSignal
 }
 
 export type StageDispatcher = (dispatch: StageDispatch) => Promise<StageExecution>
@@ -510,6 +516,12 @@ const INTERRUPTION_CLEANUP_RETRY_MS = 60_000
 /** An action can only sit in 'applying' while a single confirmAction call is on the stack; past this age that call has crashed. */
 const STUCK_ACTION_TIMEOUT_MS = 5 * 60_000
 
+/** An in-flight stage run, with the handle that ends its retry loop. */
+interface StageRun {
+  readonly run: Promise<void>
+  readonly abort: AbortController
+}
+
 /**
  * The loop. Picks up runnable tasks, walks each along its pinned graph through
  * dispatch → outcome → advance, and exposes the gate operations the future UI
@@ -518,7 +530,7 @@ const STUCK_ACTION_TIMEOUT_MS = 5 * 60_000
  */
 export class Engine {
   private readonly inFlight = new Set<Promise<void>>()
-  private readonly stageRuns = new Map<string, Promise<void>>()
+  private readonly stageRuns = new Map<string, StageRun>()
   private readonly actionRuns = new Map<string, Promise<void>>()
 
   constructor(private readonly deps: EngineDeps) {}
@@ -607,7 +619,8 @@ export class Engine {
 
         dispatched += 1
         stagesDispatched += 1
-        const run = this.runStage(task, graph, node, claimed, dispatcher)
+        const abort = new AbortController()
+        const run = this.runStage(task, graph, node, claimed, dispatcher, abort.signal)
           .catch((e: Error) => {
             this.deps.log?.(
               `stage ${task.id}/${node.key} attempt ${claimed.attempt} did not settle: ${e.message}`,
@@ -615,10 +628,10 @@ export class Engine {
           })
           .finally(() => {
             this.inFlight.delete(run)
-            if (this.stageRuns.get(claimed.id) === run) this.stageRuns.delete(claimed.id)
+            if (this.stageRuns.get(claimed.id)?.run === run) this.stageRuns.delete(claimed.id)
           })
         this.inFlight.add(run)
-        this.stageRuns.set(claimed.id, run)
+        this.stageRuns.set(claimed.id, { run, abort })
       }
     }
 
@@ -1577,6 +1590,7 @@ export class Engine {
     node: StageNode,
     row: Stage,
     dispatcher: StageDispatcher,
+    signal: AbortSignal,
   ): Promise<void> {
     const { db, workspaces, log } = this.deps
 
@@ -1629,6 +1643,7 @@ export class Engine {
         provider: row.provider,
         workspace,
         resume,
+        signal,
       })
     } catch (e) {
       await this.failAttempt(task, graph, node, row, 'crash', (e as Error).message, workspace, null)
@@ -2486,7 +2501,12 @@ export class Engine {
         'specmate.node': stage.nodeKey,
         'specmate.attempt': String(stage.attempt),
       })
-      await this.stageRuns.get(stage.id)
+      // Abort first, then wait: the kill above only ends the attempt on the wire,
+      // and an un-aborted loop would answer it with the next attempt while this
+      // very cleanup discards the workspace underneath it.
+      const inFlight = this.stageRuns.get(stage.id)
+      inFlight?.abort.abort()
+      await inFlight?.run
       const workspace = await this.deps.workspaces.provision({
         taskId: task.id,
         slug: task.slug,

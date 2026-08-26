@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition, type StageNode } from '@specmate/core'
 import type { ConversationMessage, Task } from '@specmate/db'
 import type {
@@ -64,6 +64,7 @@ function dispatchOf(overrides: Partial<StageDispatch> = {}): StageDispatch {
     provider: 'claude-code',
     workspace: WORKSPACE,
     resume: { node: 'planning', sessionId: 'sess-planning' },
+    signal: new AbortController().signal,
     ...overrides,
   }
 }
@@ -103,6 +104,12 @@ describe('the stage dispatcher', () => {
 
   test('carries a node that continues nothing as continuing nothing', async () => {
     expect((await dispatched({ resume: null })).resume).toBeNull()
+  })
+
+  it('carries the stop handle that ends the run’s retry loop', async () => {
+    const abort = new AbortController()
+
+    expect((await dispatched({ signal: abort.signal })).signal).toBe(abort.signal)
   })
 
   test('resolves the model from the binding for this node’s role', async () => {

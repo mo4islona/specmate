@@ -51,6 +51,12 @@ export interface StageRequest {
   /** Attempt number of the first try; a retry records the next one. */
   readonly attempt?: number
   /**
+   * Aborted when the owner's stop claims this stage (REQ-1607). Read between
+   * attempts; terminating the attempt already running belongs to whoever owns
+   * its container.
+   */
+  readonly signal?: AbortSignal
+  /**
    * The earlier node this run continues by forking its session (REQ-410), or null
    * when it continues nothing. Required rather than optional: a caller that leaves
    * it out is a caller that forgot, and the stage would silently run cold.
@@ -144,6 +150,10 @@ export class StageExecutor {
           telemetry: outcome.telemetry ?? null,
         }
       }
+
+      // The stop already ended this stage: another attempt would put an agent back
+      // on a workspace the orchestrator is in the middle of discarding.
+      if (request.signal?.aborted) break
 
       // Only before another try: a stage that has run out of attempts leaves its
       // working tree as it was, which is what a human will be asked to look at.

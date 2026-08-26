@@ -200,6 +200,11 @@ export function createRouteContext({
       .limit(1)
     if (running) return { graphId: graph.id, nodeKey: running.nodeKey }
 
+    // An interrupted task resumes into the node it stopped in, and that node already
+    // has an attempt on record — the never-started scan below would step over it and
+    // address the one after.
+    if (task.resumeStatus) return { graphId: graph.id, nodeKey: task.resumeStatus }
+
     const run = await db
       .select({ nodeKey: stages.nodeKey })
       .from(stages)

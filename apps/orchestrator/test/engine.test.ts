@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, it, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { appendOwnerMessage, openConversation } from '@specmate/core'
 import {
@@ -311,6 +311,40 @@ describeDb('conversation scheduling and interruption', () => {
     expect((await db.select().from(stages).where(eq(stages.id, running.id)))[0]?.status).toBe(
       'interrupted',
     )
+  })
+
+  it('the stop aborts the run behind the kill, not only its container', async () => {
+    const { engine, stagesDispatcher } = makeEngine()
+    const { task } = await seed({ at: 'specify' })
+    let finish: (value: StageExecution) => void = () => {}
+    stagesDispatcher.plan(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    await engine.tick()
+    await until(() => stagesDispatcher.dispatches.length === 1)
+    const [running] = await db.select().from(stages).where(eq(stages.taskId, task.id))
+    assert(running)
+    const [dispatch] = stagesDispatcher.dispatches
+    assert(dispatch)
+    expect(dispatch.signal.aborted).toBe(false)
+
+    const stopping = engine.stopStage({
+      taskId: task.id,
+      stageId: running.id,
+      graphId: running.graphId,
+      nodeKey: running.nodeKey,
+      attempt: running.attempt,
+      actor: 'owner',
+    })
+
+    // The kill ends the attempt on the wire; the signal is what stops the retry
+    // loop from reading that kill as one more failure and starting again.
+    await until(() => dispatch.signal.aborted)
+    finish(okExecution('planner'))
+    await stopping
   })
 
   test('persists proposals inertly until confirmation records a future-run intervention', async () => {
