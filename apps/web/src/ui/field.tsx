@@ -1,5 +1,6 @@
 import { type ComponentPropsWithRef, createContext, type ReactNode, useContext, useId } from 'react'
 import { cx } from './cx.ts'
+import { Icon } from './icon.tsx'
 import { ErrorNote, Note } from './note.tsx'
 
 interface FieldContextValue {
@@ -110,6 +111,11 @@ export function Input({
  * A tick with its word beside it. The label is part of the control because the
  * two are never apart, and a bare checkbox with a `<span>` next to it is a
  * target the size of the box rather than of the phrase.
+ *
+ * The tick is a real icon laid over the box rather than the usual two rotated
+ * CSS borders. That trick turns a square about its own centre, but the mark it
+ * makes hangs below and left of that centre, so the tick never sits straight in
+ * the box no matter what the margins say.
  */
 export function Checkbox({
   label,
@@ -117,13 +123,35 @@ export function Checkbox({
   ...rest
 }: ComponentPropsWithRef<'input'> & { readonly label: ReactNode }) {
   return (
-    <label className={cx('flex cursor-pointer items-center gap-1.5 text-muted text-xs', className)}>
-      <input type="checkbox" className="checkbox" {...rest} />
+    <label
+      className={cx(
+        'flex cursor-pointer items-center gap-1.5 text-muted text-xs',
+        // The word goes quiet with the box. A live label beside a dead tick
+        // reads as a checkbox you may still click.
+        'has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-[0.38]',
+        className,
+      )}
+    >
+      <span className="relative inline-flex">
+        <input type="checkbox" className="checkbox peer" {...rest} />
+        <Icon
+          name="check"
+          size="xs"
+          className="pointer-events-none absolute inset-0 m-auto text-ground opacity-0 peer-checked:opacity-100"
+        />
+      </span>
       {label}
     </label>
   )
 }
 
+/**
+ * The value, and the one mark that says the value can be changed. Left to
+ * itself the browser draws that mark: an arrow in the OS's own weight and
+ * colour, sitting in a box the page has no way to measure. Ours is the same
+ * chevron as everywhere else, so `appearance` goes and the room it needs is
+ * spelled out in `select.control`.
+ */
 export function Select({
   mono = false,
   fullWidth = true,
@@ -132,12 +160,19 @@ export function Select({
   children,
   ...rest
 }: ComponentPropsWithRef<'select'> & ControlProps) {
-  const control = useControl(mono, fullWidth, id, className)
+  const control = useControl(mono, fullWidth, id, undefined)
 
   return (
-    <select {...control} {...rest}>
-      {children}
-    </select>
+    <span className={cx('relative', fullWidth ? 'block' : 'inline-block', className)}>
+      <select {...control} {...rest}>
+        {children}
+      </select>
+
+      <Icon
+        name="chevron-down"
+        className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-muted"
+      />
+    </span>
   )
 }
 

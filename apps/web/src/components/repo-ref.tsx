@@ -1,6 +1,5 @@
 import { pullRequestNumber, repoLabel, repoWebUrl } from '../lib/repo-link.ts'
-import { cx } from '../ui/index.ts'
-import { PullRequestIcon, RepoIcon } from './icons.tsx'
+import { cx, Icon } from '../ui/index.ts'
 
 /** What the task opened against the repository, once it has opened one. */
 export interface PullRequestRef {
@@ -37,7 +36,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
   return (
     <p className="flex min-w-0 items-center gap-x-2 pb-2 font-mono text-[0.62rem] text-muted">
       <span className="flex min-w-0 items-center gap-1.5">
-        <RepoIcon className="h-3 w-3 shrink-0 opacity-70" />
+        <Icon name="repo" size="xs" className="opacity-70" />
 
         {href ? (
           <a
@@ -68,7 +67,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
             PR_TONE[pullRequest.state] ?? 'text-muted',
           )}
         >
-          <PullRequestIcon className="h-3 w-3" />
+          <Icon name="pull-request" size="xs" />
           {number}
         </a>
       )}

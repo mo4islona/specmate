@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Button } from './button.tsx'
 import { cx } from './cx.ts'
+import { Icon } from './icon.tsx'
 import { MicroLabel } from './note.tsx'
 
 interface DrawerProps {
@@ -85,7 +86,8 @@ export function Drawer({
           </div>
 
           <Button variant="ghost" onClick={onDismiss} aria-label={`Close ${label.toLowerCase()}`}>
-            ✕ close
+            <Icon name="close" size="xs" />
+            close
           </Button>
         </header>
 

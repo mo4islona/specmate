@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import { Link, useLocation } from 'wouter'
 import type { StreamConnectionState } from '../lib/event-stream.ts'
 import { useStreamStatus } from '../lib/stream-status.ts'
-import { ButtonLink, cx, NavRow } from '../ui/index.ts'
-import { GearIcon, SpecMateMark } from './icons.tsx'
+import { ButtonLink, cx, Icon, NavRow } from '../ui/index.ts'
+import { SpecMateMark } from './mark.tsx'
 import { TaskNavigation } from './task-navigation.tsx'
 import { signalText, streamSignal } from './tone.ts'
 
@@ -91,7 +91,7 @@ export function AppShell({ children }: AppShellProps) {
             active={isSettings}
             className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest"
           >
-            <GearIcon className="h-4 w-4 shrink-0" />
+            <Icon name="settings" size="md" />
             Settings
           </NavRow>
         </div>
@@ -110,7 +110,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-current={isSettings ? 'page' : undefined}
                 aria-label="Settings"
               >
-                <GearIcon className="h-4 w-4 shrink-0" />
+                <Icon name="settings" size="md" />
               </ButtonLink>
             </div>
           </div>
@@ -125,7 +125,10 @@ export function AppShell({ children }: AppShellProps) {
           </details>
         </header>
 
-        <main className="shell-main mx-auto min-h-screen w-full max-w-[100rem] overflow-x-hidden">
+        {/* `clip`, not `hidden`: an element with one axis hidden and the other
+            visible has the visible one computed to `auto`, which quietly made
+            this a vertical scroll container wrapping every screen. */}
+        <main className="shell-main mx-auto min-h-screen w-full max-w-[100rem] overflow-x-clip">
           {children}
         </main>
       </div>

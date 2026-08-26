@@ -291,6 +291,45 @@ describe('kit discipline', () => {
     expect(offences, 'ask components/tone.ts for the class, or use a grey').toEqual([])
   })
 
+  /**
+   * The third layer of the same idea. A part comes from the kit, a signal comes
+   * from `tone.ts`, and a mark comes from `ui/icon.tsx` — which is also the only
+   * file that knows the icon set is lucide. Swapping it, or one glyph of it, is
+   * then an edit to one map rather than a search across the app.
+   */
+  it('one file names the icon library', () => {
+    const importers = ALL_FILES.filter((path) =>
+      /from ['"]lucide-react['"]/.test(readFileSync(path, 'utf8')),
+    ).map(relative)
+
+    expect(importers, 'ask ui/icon.tsx for the mark, or add it to its map').toEqual(['ui/icon.tsx'])
+  })
+
+  /**
+   * What a `⌄` typed into JSX actually does: take the metrics of whatever face
+   * it lands in. In the mono stack the chevron sits high and hairline-thin
+   * beside the word it belongs to, the tick lands off the box it is supposed to
+   * fill, and both go into the element's accessible name — `open a menu ⌄` was
+   * the button's whole name until this rule.
+   *
+   * `tone.ts` is the deliberate exception and is not JSX: its marks are a set
+   * of six that includes `●`, `○` and `–`, aligned on the rail's baseline grid
+   * rather than boxed like an icon. Six glyphs that agree beat five icons and
+   * a dash.
+   */
+  it('no mark is typed as a glyph', () => {
+    const GLYPHS = /[⌄⌃▾▴▸◂✓✔✕✖✗]/gu
+    const offences: string[] = []
+
+    for (const path of ALL_FILES.filter((path) => path.endsWith('.tsx'))) {
+      const found = stripComments(readFileSync(path, 'utf8')).match(GLYPHS)
+
+      for (const glyph of new Set(found ?? [])) offences.push(`${relative(path)} types ${glyph}`)
+    }
+
+    expect(offences, 'use <Icon name="…" /> from the kit').toEqual([])
+  })
+
   it('reads the stylesheet it is checking against', () => {
     const parts = definedClasses()
 

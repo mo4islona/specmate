@@ -22,6 +22,10 @@ import {
   FieldLabel,
   FolderName,
   HoverHint,
+  ICON_NAMES,
+  ICON_SIZES,
+  Icon,
+  IconButton,
   InlineLink,
   Input,
   ListRow,
@@ -75,6 +79,20 @@ const SPECIMEN_DIFF = [
   '+',
   '+The accumulator half is not a trade-off: an earlier series can fully fold',
   ' an event before a later one fails on the *same* event.',
+].join('\n')
+
+/** A change to code rather than to prose, which is what the colours are for. */
+const SPECIMEN_CODE_DIFF = [
+  '@@ -12,7 +12,8 @@',
+  ' /** Every attempt at this node, oldest first. */',
+  '-export function stageTokens(stage: Stage): number {',
+  '-  return stage.telemetry.tokens.input_tokens',
+  '+export function stageTokens(stage: Stage): number | null {',
+  '+  const tokens = stage.telemetry?.tokens',
+  '+  if (!tokens) return null // a run that reported nothing spent nothing',
+  '+',
+  '+  return Object.values(tokens).reduce((total, value) => total + value, 0)',
+  ' }',
 ].join('\n')
 
 /**
@@ -168,6 +186,20 @@ export function KitScreen() {
             <TextButton>read the whole thing →</TextButton>
             <QuietLink href="/kit">open on Docs ↗</QuietLink>
             <InlineLink href="/kit">a task by name</InlineLink>
+          </Row>
+        </Specimen>
+
+        <Specimen name="icon-button · a verb that sits over what it acts on">
+          <Row>
+            <IconButton label="Show the whole edit">
+              <Icon name="unfold" />
+            </IconButton>
+            <IconButton label="Clamp the edit back">
+              <Icon name="fold" />
+            </IconButton>
+            <IconButton label="Open the file's diff">
+              <Icon name="expand" />
+            </IconButton>
           </Row>
         </Specimen>
       </Section>
@@ -268,6 +300,51 @@ export function KitScreen() {
       </Section>
 
       <Section
+        eyebrow="Marks"
+        title="Icons"
+        description="One set at one weight, addressed by what a mark means here rather than by what the library calls it — which is why ui/icon.tsx is the only file that knows the set is lucide. The stroke is pinned in px rather than scaled with the box, so the chevron in a chip and the gear in the sidebar are drawn by the same hand."
+      >
+        <Specimen name="the set">
+          <Row>
+            {ICON_NAMES.map((name) => (
+              <span key={name} className="flex items-center gap-1.5">
+                <Icon name={name} />
+                <span className="font-mono text-[0.62rem] text-muted">{name}</span>
+              </span>
+            ))}
+          </Row>
+        </Specimen>
+
+        <Specimen name="sizes">
+          <Row>
+            {ICON_SIZES.map((size) => (
+              <span key={size} className="flex items-center gap-1.5">
+                <Icon name="settings" size={size} />
+                <span className="font-mono text-[0.62rem] text-muted">{size}</span>
+              </span>
+            ))}
+          </Row>
+        </Specimen>
+
+        <Specimen name="beside a word, in the parts that carry one">
+          <Row>
+            <Button variant="ghost">
+              <Icon name="close" size="xs" />
+              close
+            </Button>
+            <Chip>
+              <Icon name="repo" size="xs" />
+              specmate
+            </Chip>
+            <Chip expanded>
+              pick one
+              <Icon name="chevron-down" size="xs" className="rotate-180" />
+            </Chip>
+          </Row>
+        </Specimen>
+      </Section>
+
+      <Section
         eyebrow="Input"
         title="Fields"
         description="A label, an optional sentence, the control, and the error — one rhythm, and the control finds its own label, invalid flag and description without the call site wiring four attributes."
@@ -355,7 +432,8 @@ export function KitScreen() {
             label="A menu"
             trigger={
               <Chip expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}>
-                open a menu ⌄
+                open a menu
+                <Icon name="chevron-down" size="xs" />
               </Chip>
             }
           >
@@ -372,7 +450,7 @@ export function KitScreen() {
                 }}
               >
                 <span className="font-mono text-[0.78rem]">{size}</span>
-                {size === chosen && <span aria-hidden="true">✓</span>}
+                {size === chosen && <Icon name="check" />}
               </button>
             ))}
           </Popover>
@@ -449,6 +527,7 @@ export function KitScreen() {
             <Checkbox label="Viewed" defaultChecked={false} />
             <Checkbox label="Viewed" defaultChecked />
             <Checkbox label="Viewed" disabled />
+            <Checkbox label="Viewed" defaultChecked disabled />
           </div>
         </Specimen>
 
@@ -464,8 +543,16 @@ export function KitScreen() {
       <Section
         eyebrow="What a run changed"
         title="Diffs"
-        description="One face, two readings: a whole file is read as prose, and an edit inside a record is read by line, so the gutter is a choice rather than a second stylesheet."
+        description="One face, two readings: a whole file is read as prose, and an edit inside a record is read by line, so the gutter is a choice rather than a second stylesheet. Given the file's path it reads the language too — five hues, and everything else in the reading colour."
       >
+        <Specimen name="Diff · coloured by the language its path names">
+          <Diff diff={SPECIMEN_CODE_DIFF} path="src/lib/task-thread.ts" lineNumbers />
+        </Specimen>
+
+        <Specimen name="Diff · coloured, split">
+          <Diff diff={SPECIMEN_CODE_DIFF} path="src/lib/task-thread.ts" view="split" lineNumbers />
+        </Specimen>
+
         <Specimen name="Diff">
           <Diff diff={SPECIMEN_DIFF} />
         </Specimen>
