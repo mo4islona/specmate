@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it, test } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -371,6 +371,33 @@ describe('stage execution', () => {
     expect(execution.status).toBe('failed')
     expect(execution.failure).toBe('no_result')
     expect(execution.attempts).toHaveLength(2)
+  })
+
+  it('a stop ends the loop instead of being answered with another attempt', async () => {
+    const harness = await makeHarness('retry-stopped')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['no-result', 'ok']))
+    const stop = new AbortController()
+
+    // The ledger is assembled once per attempt, so aborting from it lands while the
+    // first attempt is still on the wire — which is where a real stop lands.
+    const stopMidRun = async () => {
+      stop.abort()
+
+      return '## Task\n\n- Title: a task\n'
+    }
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE_FILE: queue },
+      {},
+      { ledger: stopMidRun },
+    ).execute(request(harness, { signal: stop.signal }))
+
+    // Without the stop the queued 'ok' would have made this a success.
+    expect(execution.attempts).toHaveLength(1)
+    expect(execution.status).toBe('failed')
   })
 
   test('starts the retry from committed state, not from what the failure left', async () => {
