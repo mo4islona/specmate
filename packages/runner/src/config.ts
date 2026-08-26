@@ -29,6 +29,7 @@ export interface RunnerConfig {
    * code change. Values are never placed on the command line.
    */
   readonly forwardEnv: readonly string[]
+  /** Wall clock one attempt gets, counted from spawn — activity does not extend it. */
   readonly stageTimeoutMs: number
   readonly cpus: string
   readonly memory: string
@@ -59,7 +60,7 @@ export const DEFAULT_RUNNER_CONFIG = {
   homeDir: '/home/agent',
   user: '10001:10001',
   forwardEnv: [],
-  stageTimeoutMs: 30 * 60_000,
+  stageTimeoutMs: 3 * 60 * 60_000,
   cpus: '2',
   memory: '4g',
   diffBytesLimit: 256 * 1024,

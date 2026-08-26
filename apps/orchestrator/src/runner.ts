@@ -26,7 +26,7 @@ export const RunnerEnv = z.object({
     .number()
     .int()
     .positive()
-    .default(30 * 60_000),
+    .default(3 * 60 * 60_000),
   /** Comma-separated names forwarded into a stage, e.g. an API key. */
   RUNNER_FORWARD_ENV: optionalString,
 })
