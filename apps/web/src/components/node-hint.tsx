@@ -61,11 +61,22 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
   return (
     <span className="block">
       <span className="flex items-baseline justify-between gap-3">
-        <span className="text-[0.8rem] font-medium text-text">{node.label}</span>
+        <span className="min-w-0 text-[0.8rem] font-medium text-text">{node.label}</span>
         <span className={`shrink-0 font-mono text-[0.62rem] ${nodeName(node.state)}`}>
-          {node.reason ?? NODE_MARK[node.state].label}
+          {NODE_MARK[node.state].label}
         </span>
       </span>
+
+      {/* A reason is a sentence — "the specification declares 0 scenario(s)…" —
+          and beside the name it wrapped the name into two lines and then ran off
+          the hint's own edge. It reads under the name, where a sentence goes. */}
+      {node.reason && (
+        <span
+          className={`mt-1 block font-mono text-[0.62rem] leading-[1.5] ${nodeName(node.state)}`}
+        >
+          {node.reason}
+        </span>
+      )}
 
       {help && <span className="mt-2 block text-muted">{help}</span>}
 

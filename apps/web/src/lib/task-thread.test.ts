@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import type { ConversationMessage, DecisionItem, TaskDetail, TimelineEvent } from './api-client.ts'
 import {
   assignSteps,
@@ -349,6 +349,32 @@ describe('buildStepFeed (REQ-919, REQ-915)', () => {
     expect(feed.map((entry) => (entry.kind === 'line' ? entry.action : null))).toEqual([
       'Stage started',
       'Run stopped',
+    ])
+  })
+
+  it('a shell call that only looked leaves nothing behind either', () => {
+    const run = stage({ id: 'stage-1', nodeKey: 'research', status: 'succeeded' })
+    const shell = (seq: number, command: string) =>
+      timelineEvent({
+        seq,
+        type: 'stage.activity',
+        stageId: run.id,
+        payload: { tool: 'Bash', target: command },
+      })
+    const feed = buildStepFeed({
+      ...base,
+      events: [
+        shell(1, `sed -n '1,140p' src/helpers/mount-chart.tsx`),
+        shell(2, 'tail -40 /tmp/task.output'),
+        shell(3, 'git status --short'),
+        shell(4, 'bun run test'),
+      ],
+      stages: [run],
+      nodeKey: 'research',
+    })
+
+    expect(feed.map((entry) => (entry.kind === 'line' ? entry.target : null))).toEqual([
+      'bun run test',
     ])
   })
 

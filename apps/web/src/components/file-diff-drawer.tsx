@@ -39,7 +39,7 @@ export function FileDiffDrawer({ taskId, path, onClose }: FileDiffDrawerProps) {
           </Note>
         ) : (
           <div className="min-w-0 p-4 sm:p-6">
-            <Diff diff={diff.data.diff} lineNumbers />
+            <Diff diff={diff.data.diff} path={path ?? undefined} lineNumbers />
           </div>
         ))}
     </Drawer>

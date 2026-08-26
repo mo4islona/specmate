@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { type UIEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { DecisionOptions } from '../components/decision-options.tsx'
 import { FileDiffDrawer } from '../components/file-diff-drawer.tsx'
 import { GateVerbs } from '../components/gate-panel.tsx'
@@ -10,8 +10,9 @@ import { type OpenQuestion, TaskComposer } from '../components/task-composer.tsx
 import { TaskRail } from '../components/task-rail.tsx'
 import { ThreadView } from '../components/thread-view.tsx'
 import { signalText } from '../components/tone.ts'
-import { mergeTimelineEvents } from '../hooks/use-task-stream.ts'
+import { mergeTimelineEvents, mergeTimelinePage } from '../hooks/use-task-stream.ts'
 import {
+  type ArtifactSummary,
   answerDecision,
   approveGate,
   type ConversationResponse,
@@ -33,12 +34,13 @@ import {
   reworkGate,
   type StopStageInput,
   stopStage,
+  type TaskDetail,
   type TimelineResponse,
 } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { consoleDestination, parkedStop } from '../lib/task-console.ts'
 import { stepDocuments } from '../lib/task-documents.ts'
-import { buildPipelineNodes } from '../lib/task-pipeline.ts'
+import { buildPipelineNodes, type PipelineNodeView } from '../lib/task-pipeline.ts'
 import { buildStepFeed, countGateRedirects, liveActivity, nodeLabel } from '../lib/task-thread.ts'
 import { Button, ConsoleDock, cx, ErrorState, LoadingState } from '../ui/index.ts'
 
@@ -46,16 +48,23 @@ interface TaskScreenProps {
   taskId: string
 }
 
+// One empty of each, so a query that has not answered yet does not hand the
+// memos below a fresh array to be told the world changed.
+const NO_EVENTS: TimelineResponse['events'] = []
+const NO_STAGES: TaskDetail['stages'] = []
+const NO_MESSAGES: ConversationResponse['messages'] = []
+const NO_DECISIONS: DecisionItem[] = []
+const NO_ARTIFACTS: ArtifactSummary[] = []
+const NO_NODES: PipelineNodeView[] = []
+
+/** How long after the last scroll event the record counts as standing still. */
+const SETTLED_MS = 120
+
 function mergeEventResponses(
   previous: TimelineResponse | undefined,
   current: TimelineResponse,
 ): TimelineResponse {
-  let merged = previous?.events ?? []
-  for (const event of current.events) {
-    merged = mergeTimelineEvents(merged, event)
-  }
-
-  return { events: merged }
+  return { events: mergeTimelinePage(previous?.events ?? [], current.events) }
 }
 
 export function TaskScreen({ taskId }: TaskScreenProps) {
@@ -115,9 +124,14 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     Record<string, { pending: boolean; error?: string }>
   >({})
 
-  const threadRef = useRef<HTMLDivElement | null>(null)
+  // The record's own box, held as state rather than in a ref: it does not exist
+  // on the render that mounts this screen — the guards below are still drawing
+  // the wait — so an effect that reads a ref once, on mount, reads null and
+  // never looks again. Which is what left the observer under this unbuilt.
+  const [thread, setThread] = useState<HTMLDivElement | null>(null)
   const documentsRef = useRef<HTMLDivElement | null>(null)
   const pinnedToBottom = useRef(true)
+  const scrollSettling = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSeq = timeline.data?.events.at(-1)?.seq ?? 0
   const messageCount = conversation.data?.messages.length ?? 0
 
@@ -126,21 +140,59 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   // switched to opens at its end too, which is why the scope is a trigger.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the counts are the trigger, not an input — the effect runs *because* a new event or message arrived.
   useEffect(() => {
-    const node = threadRef.current
-    if (!node || !pinnedToBottom.current) return
+    if (!thread || !pinnedToBottom.current) return
 
-    // A document is read from its first line. Where the step ends in one, the
-    // end of the thread is its top rather than the bottom of the container.
+    readFromTheEnd(thread)
+  }, [thread, lastSeq, messageCount, readingNode])
+
+  // The record arrives before its height does: a patch reserves its lines and
+  // then draws them, a document opens, markdown wraps at a width nobody knew
+  // yet. Each of those moves the foot of the column out from under a thread
+  // that was pinned to it one frame ago, which is how a task opened a screen
+  // short of its own end. This holds it there until the reader leaves.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the callback reads refs, which is what makes one observer per box correct.
+  useEffect(() => {
+    const content = thread?.firstElementChild
+    if (!thread || !content || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => {
+      if (pinnedToBottom.current) readFromTheEnd(thread)
+    })
+    observer.observe(content)
+
+    return () => observer.disconnect()
+  }, [thread])
+
+  useEffect(
+    () => () => {
+      if (scrollSettling.current) clearTimeout(scrollSettling.current)
+    },
+    [],
+  )
+
+  /**
+   * Where the record ends. Usually the foot of the column — but a document is
+   * read from its first line, so where the step ends in one, the end of the
+   * thread is that document's top rather than the bottom of the box.
+   *
+   * Measured, not computed from `offsetTop`: that reads against whichever
+   * ancestor happens to be positioned, and the pane became one the day it was
+   * made a containing block for the `sr-only` clocks down the record. The
+   * subtraction that was correct beforehand then took a second helping off
+   * every jump, and the thread landed a screen short of the document it was
+   * opening on.
+   */
+  function readFromTheEnd(node: HTMLDivElement): void {
     const documents = documentsRef.current
     const opened = documents?.querySelector('[data-document-open]')
     if (documents && opened) {
-      node.scrollTop = documents.offsetTop - node.offsetTop
+      node.scrollTop += documents.getBoundingClientRect().top - node.getBoundingClientRect().top
 
       return
     }
 
     node.scrollTop = node.scrollHeight
-  }, [lastSeq, messageCount, readingNode])
+  }
 
   function markDecisionPending(decisionId: string): void {
     setDecisionActivity((prev) => ({ ...prev, [decisionId]: { pending: true } }))
@@ -287,7 +339,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     },
     onError: (error, decisionId) => markDecisionSettled(decisionId, error.message),
   })
-  const stageRows = detail.data?.stages ?? []
+  const stageRows = detail.data?.stages ?? NO_STAGES
   const runningStage = stageRows.find((stage) => stage.status === 'running')
   const interruptedAttempt = parkedStop(detail.data?.task ?? null, stageRows)
   const interruptedStage =
@@ -324,6 +376,68 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     },
   })
 
+  // ── what the screen is made of ──────────────────────────────────────────────
+  // Derived once per change rather than once per render. The console at the foot
+  // of the thread holds the composer's own text, so every keystroke redraws this
+  // screen, and a running stage redraws it several times a second — reading two
+  // hundred events into a step's record on each of those is what made a long
+  // thread expensive to type into.
+  const events = timeline.data?.events ?? NO_EVENTS
+  const messages = conversation.data?.messages ?? NO_MESSAGES
+  const decisionRows = decisions.data?.decisions ?? NO_DECISIONS
+  const decisionsById = useMemo(
+    () => new Map(decisionRows.map((decision) => [decision.id, decision])),
+    [decisionRows],
+  )
+
+  const pipelineNodes = useMemo(() => {
+    if (!detail.data) return NO_NODES
+
+    return buildPipelineNodes({
+      nodes: detail.data.graph?.dag.nodes ?? [],
+      stages: detail.data.stages,
+      status: detail.data.task.status,
+      resumeStatus: detail.data.task.resumeStatus,
+      modelBindings: detail.data.task.modelBindings,
+      events,
+    })
+  }, [detail.data, events])
+
+  const currentNodeKey = pipelineNodes.find((node) => node.current)?.key ?? null
+  const firstNodeKey = pipelineNodes[0]?.key ?? null
+  // What the thread is reading: the step the owner pinned, or the one the task
+  // stands on. Everything below is scoped to it (REQ-919).
+  const stepKey = readingNode ?? currentNodeKey ?? firstNodeKey
+  const step = pipelineNodes.find((node) => node.key === stepKey) ?? null
+
+  const feed = useMemo(
+    () =>
+      buildStepFeed({
+        events,
+        messages,
+        stages: stageRows,
+        decisionsById,
+        nodeKey: stepKey,
+        firstNodeKey,
+      }),
+    [events, messages, stageRows, decisionsById, stepKey, firstNodeKey],
+  )
+  // What the run is doing at this instant, in place of the forty lines of
+  // reading it would otherwise have left in the record (REQ-915).
+  const live = useMemo(
+    () => liveActivity({ events, stages: stageRows, nodeKey: stepKey }),
+    [events, stageRows, stepKey],
+  )
+  const documents = useMemo(
+    () =>
+      stepDocuments({
+        artifacts: artifacts.data?.artifacts ?? NO_ARTIFACTS,
+        step,
+        nodes: pipelineNodes,
+      }),
+    [artifacts.data, step, pipelineNodes],
+  )
+
   if (detail.isPending || timeline.isPending || conversations.isPending || decisions.isPending) {
     return <LoadingState title="Loading task channel…" shape="document" />
   }
@@ -359,12 +473,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       ? { key: currentGate.redirect.cap, limit: task.caps[currentGate.redirect.cap] }
       : undefined
   const redirectsUsed =
-    currentGate?.kind === 'gate' ? countGateRedirects(timeline.data.events, currentGate.key) : 0
-  const events = timeline.data.events
-  const messages = conversation.data?.messages ?? []
+    currentGate?.kind === 'gate' ? countGateRedirects(events, currentGate.key) : 0
   const actions = conversation.data?.actions ?? []
-  const decisionRows = decisions.data.decisions
-  const decisionsById = new Map(decisionRows.map((decision) => [decision.id, decision]))
   // `blocked` is what the engine parks a task in when a blocking decision is
   // open — leaving it out here is what let three stopping questions render as
   // if the task were merely running.
@@ -379,14 +489,6 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     ...openDecisions.filter((decision) => !blocks(decision)),
   ]
 
-  const pipelineNodes = buildPipelineNodes({
-    nodes: graph?.dag.nodes ?? [],
-    stages: stageRows,
-    status: task.status,
-    resumeStatus: task.resumeStatus,
-    modelBindings: task.modelBindings,
-    events,
-  })
   // REQ-411: an edge into a node this walk skipped sends the task somewhere it will
   // decline again, one loop counter poorer. The server refuses it too — this only keeps
   // the owner from being offered it.
@@ -398,33 +500,11 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
       ? (currentGate.rework ?? []).filter((target) => !skippedKeys.has(target))
       : []
 
-  const currentNodeKey = pipelineNodes.find((node) => node.current)?.key ?? null
-  const firstNodeKey = pipelineNodes[0]?.key ?? null
-  // What the thread is reading: the step the owner pinned, or the one the task
-  // stands on. Everything below is scoped to it (REQ-919).
-  const stepKey = readingNode ?? currentNodeKey ?? firstNodeKey
-  const step = pipelineNodes.find((node) => node.key === stepKey) ?? null
-  const feed = buildStepFeed({
-    events,
-    messages,
-    stages: stageRows,
-    decisionsById,
-    nodeKey: stepKey,
-    firstNodeKey,
-  })
   // A step the owner went back to themselves, with a run to pin words to
   // (REQ-906). Following the task is not reading an older step, so this stays
   // null while the thread is where the task is.
   const wentBack = readingNode !== null && step !== null && step.key !== currentNodeKey
   const pinnedStep = wentBack && step?.latest ? step : null
-  const documents = stepDocuments({
-    artifacts: artifacts.data?.artifacts ?? [],
-    step,
-    nodes: pipelineNodes,
-  })
-  // What the run is doing at this instant, in place of the forty lines of
-  // reading it would otherwise have left in the record (REQ-915).
-  const live = liveActivity({ events, stages: stageRows, nodeKey: stepKey })
 
   const answeringIndex = Math.min(questionIndex, Math.max(0, queued.length - 1))
   const answering = queued[answeringIndex] ?? null
@@ -493,11 +573,22 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
     }
   }
 
-  function onThreadScroll(): void {
-    const node = threadRef.current
-    if (!node) return
+  /**
+   * Where the reader is, and whether they are still moving.
+   *
+   * A column in motion is not being pointed at, so it stops answering the
+   * pointer while it moves: the hover the browser hit-tests and repaints for
+   * every row that passes the cursor is work spent on a thing nobody is
+   * touching. It answers again as soon as the scroll settles.
+   */
+  function onThreadScroll(event: UIEvent<HTMLDivElement>): void {
+    const node = event.currentTarget
 
     pinnedToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 240
+
+    node.dataset.scrolling = ''
+    if (scrollSettling.current) clearTimeout(scrollSettling.current)
+    scrollSettling.current = setTimeout(() => node.removeAttribute('data-scrolling'), SETTLED_MS)
   }
 
   /**
@@ -552,7 +643,12 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
   }
 
   return (
-    <div className="grid min-h-0 min-w-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_16rem]">
+    // `xl:grid-rows-[minmax(0,1fr)]` is what keeps the column to the viewport.
+    // An implicit `auto` row sizes to its content, so the whole thread — not the
+    // window onto it — set the height of the page: the record scrolled inside
+    // its own box *and* the page scrolled under it, and the ground below the
+    // column was the rest of a thread nobody could see.
+    <div className="grid min-h-0 min-w-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_16rem] xl:grid-rows-[minmax(0,1fr)]">
       <div className="flex min-h-0 min-w-0 flex-col gap-3">
         {step && (
           <StepHeader
@@ -564,7 +660,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
         )}
 
         <div
-          ref={threadRef}
+          ref={setThread}
           onScroll={onThreadScroll}
           data-thread=""
           className="scroll-thin min-h-0 flex-1 xl:overflow-y-auto"

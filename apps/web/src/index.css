@@ -116,14 +116,20 @@ body {
   --block-inset: 0.75rem;
 }
 
-@media (min-width: 640px) {
+/* In `rem`, and that matters: every breakpoint written beside these — `sm:`,
+   `lg:`, `xl:` — is Tailwind's, and Tailwind's are `40rem`/`64rem`/`80rem`. A
+   `px` query here agrees with them only while the browser's default text size is
+   16px, and disagrees at every other setting: the task column would take the
+   viewport's height from one query while the thread inside it took its scrolling
+   from the other, and the page grew by the whole record. */
+@media (width >= 40rem) {
   :root {
     --shell-gutter: 1.5rem;
     --panel-inset: 1.5rem;
   }
 }
 
-@media (min-width: 1280px) {
+@media (width >= 80rem) {
   :root {
     --shell-gutter: 2rem;
   }
@@ -187,7 +193,7 @@ body {
   /* The task screen is a column that ends where the viewport does, so its
      thread and its rail scroll inside it rather than the page scrolling under
      them. */
-  @media (min-width: 1280px) {
+  @media (width >= 80rem) {
     .shell-column {
       height: calc(100vh - 2 * var(--shell-gutter));
     }
@@ -344,10 +350,10 @@ body {
   .checkbox {
     appearance: none;
     flex: none;
-    width: 0.9rem;
-    height: 0.9rem;
+    width: 1rem;
+    height: 1rem;
     border: 1px solid var(--color-border-bright);
-    border-radius: 0.28rem;
+    border-radius: 0.3rem;
     background: color-mix(in srgb, var(--color-text) 4%, transparent);
     cursor: pointer;
     transition:
@@ -362,18 +368,6 @@ body {
   .checkbox:checked {
     border-color: var(--color-success);
     background: var(--color-success);
-  }
-
-  /* The mark itself: two borders of an empty box, turned. */
-  .checkbox:checked::after {
-    content: "";
-    display: block;
-    width: 0.2rem;
-    height: 0.42rem;
-    margin: 0.02rem auto 0;
-    border: solid var(--color-ground);
-    border-width: 0 1.5px 1.5px 0;
-    transform: rotate(45deg);
   }
 
   .checkbox:focus-visible {
@@ -394,11 +388,13 @@ body {
     line-height: 1.4;
   }
 
-  /* The browser draws its own arrow inside the box and tells nobody how wide it
-     is. Without the room, the arrow sat on the last two glyphs of the value —
-     which is how `claude-sonnet-5` came to read as `claude-sonnet-!`. */
+  /* The arrow is ours — `Select` lays the kit's chevron over the box — so the
+     browser's own is turned off and the room it would have taken is spelled
+     out. Without that room the chevron sat on the last two glyphs of the
+     value, which is how `claude-sonnet-5` came to read as `claude-sonnet-!`. */
   select.control {
-    padding-right: 1.75rem;
+    appearance: none;
+    padding-inline-end: 1.75rem;
     text-overflow: ellipsis;
   }
 
@@ -531,6 +527,29 @@ body {
 
   .button-ghost:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-text) 7%, transparent);
+    color: var(--color-text);
+  }
+
+  /* A verb with no room for its word, for the controls that sit *over* what they
+     act on rather than beside it. It carries its own ground, because the thing
+     under it is usually code and an unbacked glyph on code is neither. */
+  .button-icon {
+    display: inline-flex;
+    height: 1.55rem;
+    width: 1.55rem;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.45rem;
+    background: color-mix(in srgb, var(--color-elevated) 90%, transparent);
+    color: var(--color-muted);
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .button-icon:hover:not(:disabled) {
+    background: var(--color-elevated);
     color: var(--color-text);
   }
 
@@ -759,8 +778,16 @@ body {
     backdrop-filter: blur(1px);
   }
 
-  /* Scroll panes inside the page (thread, rail) — visible, but not furniture. */
+  /* Scroll panes inside the page (thread, rail) — visible, but not furniture.
+     This class is where the app says "this box scrolls", so it is also where the
+     box is made a containing block. `overflow` only clips a descendant whose
+     containing block is inside the scroller: every `sr-only` is
+     `position: absolute`, and against a static pane they resolved against the
+     page itself, escaped the clip and laid themselves out down the whole record.
+     A thread of four hundred lines each carrying an `sr-only` clock gave the
+     page ten thousand pixels of empty ground under an app one viewport tall. */
   .scroll-thin {
+    position: relative;
     scrollbar-color: var(--color-border-bright) transparent;
     scrollbar-width: thin;
   }
@@ -772,6 +799,18 @@ body {
 
   .scroll-thin::-webkit-scrollbar-thumb {
     background: var(--color-border-bright);
+  }
+
+  /* A record that has stopped answering the pointer, because the pointer is not
+     asking it anything: while the column moves under the cursor the browser
+     hit-tests every row that passes it and repaints the hover it lands on, and
+     none of that is something anyone is trying to touch. It comes back as soon
+     as the scroll settles.
+
+     The children, not the box: a scroll container that ignores pointer events
+     also stops answering the wheel, and the gesture dies halfway down. */
+  [data-thread][data-scrolling] > * {
+    pointer-events: none;
   }
 
   /* Live markers breathe instead of blinking: the eye finds them without being
@@ -966,11 +1005,30 @@ body {
     font-size: 0.75rem;
   }
 
+  /* A diff is a block of some other file's text, and it reads as one: its own
+     ground under it and a hairline around it, so a change is a slab on the page
+     rather than a few tinted lines floating on the page's own background. The
+     tints below mix into that ground rather than into the page's — mixed into
+     the page's, an added line reads as a hole in the slab. */
   .diff-document {
+    --diff-ground: color-mix(in srgb, var(--color-text) 4%, var(--color-ground));
     overflow-x: auto;
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+    border-radius: 0.6rem;
+    background: var(--diff-ground);
     font-family: var(--font-mono);
     font-size: 0.8rem;
     line-height: 1.6;
+
+    /* A step's record holds one of these per edit, forty lines each: a screen
+       showing three of them was laying out and painting two hundred. This hands
+       the ones nobody is looking at back to the browser — no style, no layout,
+       no paint until one comes near — and the height it reserves in the
+       meantime is exact rather than guessed, because `Diff` writes down how many
+       lines it is about to draw. `1lh` is a line of this box, so the two stay in
+       step with the type above on their own. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto calc(var(--diff-lines, 24) * 1lh);
   }
 
   .diff-line {
@@ -978,18 +1036,67 @@ body {
     padding: 0 1.25rem;
   }
 
+  /* A tinted line runs the width of what is being read, not the width of the
+     window onto it: without this, scrolling a wide diff right walks off the end
+     of every add and remove and leaves bare ground under the code. */
+  .diff-document > .diff-line {
+    width: max-content;
+    min-width: 100%;
+  }
+
   /* A line added is green and a line removed is red under every theme — the
      accent is the theme's, and in half of them it is not green. The tint is mixed
      into the ground rather than washed over the page for the reason a badge is:
-     a wash walks the background toward the text sitting on it. */
+     a wash walks the background toward the text sitting on it.
+
+     The colour is on the line's ground and on its sign, not on its words: the
+     words are code, and code is coloured by what it says. A whole line in one
+     hue is the diff shouting over the change it is showing. */
   .diff-line-add {
-    background: color-mix(in srgb, var(--color-success) 9%, var(--color-ground));
+    background: color-mix(in srgb, var(--color-success) 9%, var(--diff-ground));
+  }
+
+  .diff-line-add .diff-sign {
     color: var(--color-success);
   }
 
   .diff-line-remove {
-    background: color-mix(in srgb, var(--color-danger) 9%, var(--color-ground));
+    background: color-mix(in srgb, var(--color-danger) 9%, var(--diff-ground));
+  }
+
+  .diff-line-remove .diff-sign {
     color: var(--color-danger);
+  }
+
+  /* ── Code, coloured by what it says ───────────────────────────────────────
+     The third place colour is the data rather than a signal, after a diff's two
+     grounds and the telemetry canvas. Five hues and no more: every token Prism
+     names that is not one of these reads in the same colour as the file around
+     it, which is most of any file and is the point. Each theme's five are its
+     own editor preset's, walked to AA the way every other colour here was. */
+  .syntax-comment {
+    color: var(--color-syntax-comment);
+    font-style: italic;
+  }
+
+  .syntax-string {
+    color: var(--color-syntax-string);
+  }
+
+  .syntax-keyword {
+    color: var(--color-syntax-keyword);
+  }
+
+  .syntax-number {
+    color: var(--color-syntax-number);
+  }
+
+  .syntax-name {
+    color: var(--color-syntax-name);
+  }
+
+  .syntax-punctuation {
+    color: var(--color-muted);
   }
 
   .diff-line-hunk {
@@ -1005,18 +1112,31 @@ body {
     color: var(--color-text);
   }
 
-  /* One gutter column, sized for four digits and holding its width when empty. */
-  .diff-document-numbered .diff-line {
-    display: grid;
-    grid-template-columns: 2.75rem minmax(0, 1fr);
-    gap: 0.75rem;
-    padding: 0 0.5rem;
-  }
+  /* One gutter, sized for four digits and holding its width when empty, beside a
+     line that is never wrapped.
 
+     The line stays a block and the gutter is inline-block inside it. Neither a
+     grid nor a flex row survives contact with coloured code: every token is a
+     box of its own, so a grid gives each one a cell and a flex row puts its
+     `gap` between all of them — which is the space that opened up between every
+     word of every line. And `minmax(0, 1fr)` was worse still: under the
+     `max-content` above it contributes nothing, so the row stopped at the width
+     of the window onto it and every tint was cut off the moment a diff scrolled. */
   .diff-gutter {
+    display: inline-block;
+    width: 2.75rem;
     text-align: right;
     color: color-mix(in srgb, var(--color-muted) 80%, transparent);
     user-select: none;
+  }
+
+  .diff-document-numbered .diff-line {
+    padding: 0 0.5rem;
+  }
+
+  /* Only in one column: the two-column reading gives its gutters a track. */
+  .diff-document-numbered .diff-gutter {
+    margin-right: 0.75rem;
   }
 
   /* Two columns: the file a line left beside the file it is in. Each side keeps
@@ -1041,7 +1161,7 @@ body {
 
   /* A side with no counterpart is ground, not an empty line of code. */
   .diff-line-absent {
-    background: color-mix(in srgb, var(--color-muted) 6%, var(--color-ground));
+    background: color-mix(in srgb, var(--color-muted) 6%, var(--diff-ground));
   }
 
   /* The stretch of unchanged file a hunk header stands in for, offered rather

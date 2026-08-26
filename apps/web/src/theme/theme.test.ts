@@ -25,6 +25,11 @@ const TOKENS = [
   '--color-danger',
   '--color-info',
   '--color-success',
+  '--color-syntax-comment',
+  '--color-syntax-string',
+  '--color-syntax-keyword',
+  '--color-syntax-number',
+  '--color-syntax-name',
   '--color-on-accent',
   '--color-on-attention',
   '--color-hover-tint',
@@ -71,6 +76,14 @@ const ROLES = [
   '--color-danger',
   '--color-info',
   '--color-success',
+  // Code is read for minutes at a time, so its five hues hold the same floor
+  // every other colour here does — on the diff's ground, which is a few per
+  // cent off `--color-ground` and is measured as it.
+  '--color-syntax-comment',
+  '--color-syntax-string',
+  '--color-syntax-keyword',
+  '--color-syntax-number',
+  '--color-syntax-name',
 ]
 
 describe('theme palettes', () => {

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import type { LineEntry, TurnEntry } from '../lib/task-thread.ts'
+import { diffLine } from '../test-helpers.ts'
 import { ThreadView } from './thread-view.tsx'
 
 function turn(overrides: Partial<TurnEntry> = {}): TurnEntry {
@@ -146,7 +147,7 @@ describe('ThreadView (REQ-919, REQ-915)', () => {
     expect(screen.getByText('Wrote')).not.toBeNull()
     expect(screen.getByText('(openspec/changes/pie-charts/proposal.md)')).not.toBeNull()
     expect(screen.getByText(/Added 2 lines, removed 1 line/)).not.toBeNull()
-    expect(screen.getByText('+TWO')).not.toBeNull()
+    expect(diffLine('+TWO')).not.toBeNull()
   })
 
   it('a tool use that changed nothing keeps its single line — AC-994', () => {

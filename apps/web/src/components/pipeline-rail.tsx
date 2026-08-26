@@ -26,7 +26,7 @@ interface PipelineRailProps {
  * open one is offering an empty room.
  */
 export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps) {
-  const now = useNow()
+  const now = useNow(nodes.some((node) => node.state === 'running'))
 
   return (
     <section aria-label="Pinned pipeline">
@@ -74,23 +74,36 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
 
 function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactNode {
   const mark = NODE_MARK[node.state]
+  // A skipped node keeps its place so the decision to skip it is visible rather
+  // than inferred from an absence — but its reason is a sentence, not a number.
+  // In the fact column it took the width the name needed and `Spec review`
+  // rendered as nothing at all, so it wraps under the name, where a sentence goes.
+  const skipReason = node.state === 'skipped' ? node.reason : null
 
   return (
-    <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2 text-[0.79rem]">
-      <span
-        className={cx(
-          'text-center font-mono text-[0.7rem] leading-none',
-          nodeMarkClass(node.state),
-        )}
-        title={mark.label}
-      >
-        {mark.glyph}
-        <span className="sr-only">{mark.label}</span>
+    <span className="block text-[0.79rem]">
+      <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
+        <span
+          className={cx(
+            'text-center font-mono text-[0.7rem] leading-none',
+            nodeMarkClass(node.state),
+          )}
+          title={mark.label}
+        >
+          {mark.glyph}
+          <span className="sr-only">{mark.label}</span>
+        </span>
+
+        <span className={cx('min-w-0 truncate', nodeName(node.state))}>{node.label}</span>
+
+        <NodeFact node={node} now={now} />
       </span>
 
-      <span className={cx('min-w-0 truncate', nodeName(node.state))}>{node.label}</span>
-
-      <NodeFact node={node} now={now} />
+      {skipReason !== null && (
+        <span className="mt-0.5 block pl-[1.35rem] text-[0.67rem] leading-[1.45] text-muted">
+          {skipReason}
+        </span>
+      )}
     </span>
   )
 }
@@ -111,11 +124,7 @@ function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
 
     return <span className={classes}>{reason}</span>
   }
-  // Kept in the rail rather than dropped from it: an absent node hides the
-  // decision that removed it, and this one has a reason worth reading.
-  if (node.state === 'skipped') {
-    return <span className={classes}>{node.reason}</span>
-  }
+
   if (node.state === 'running') {
     const started = node.latest?.startedAt ? new Date(node.latest.startedAt).getTime() : null
 

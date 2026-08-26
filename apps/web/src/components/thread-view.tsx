@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { formatClock, formatTimestamp } from '../lib/format.ts'
 import type {
   FeedAuthor,
@@ -51,8 +51,19 @@ interface ThreadViewProps {
  *
  * The record ends where the run is now: a single line that replaces itself as
  * the run reads and searches its way to the next change (REQ-915).
+ *
+ * Every entry below is memoized against the one the last render drew, and every
+ * one of them is skipped while it is off the screen. A record of a few hundred
+ * entries is redrawn on every keystroke in the console under it and again on
+ * every event a live run emits; without both of those, each of those redraws
+ * re-read every patch in the step and re-tokenized every line of it.
  */
-export function ThreadView({ entries, live = null, taskId, onOpenFile }: ThreadViewProps) {
+export const ThreadView = memo(function ThreadView({
+  entries,
+  live = null,
+  taskId,
+  onOpenFile,
+}: ThreadViewProps) {
   return (
     <ol aria-label="Task thread">
       {entries.map((entry) =>
@@ -66,7 +77,7 @@ export function ThreadView({ entries, live = null, taskId, onOpenFile }: ThreadV
       {live && <LiveLine live={live} />}
     </ol>
   )
-}
+})
 
 /**
  * The one line every read collapses into. It carries no clock — it is now —
@@ -101,7 +112,7 @@ function LiveLine({ live }: { live: LiveActivity }) {
  * a column of timestamps down the left was buying an ordering the order already
  * gives. The exact moment stays in the tooltip and in an `sr-only` `<time>`.
  */
-function RunLine({
+const RunLine = memo(function RunLine({
   entry,
   taskId,
   onOpenFile,
@@ -172,7 +183,7 @@ function RunLine({
       )}
     </li>
   )
-}
+})
 
 /** Two lines of this column, near enough — the clamp itself does the exact work. */
 function isLong(body: string | null): boolean {
@@ -186,7 +197,7 @@ function isLong(body: string | null): boolean {
  * under the name of the node that said it: a box around it would put the two on
  * equal footing, and they are not.
  */
-function FeedTurn({ entry }: { entry: TurnEntry }) {
+const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
   // A resolved question is two lines until asked otherwise: history must not
   // shout over the thing that still needs an answer. An exchange that already
   // fits gets no control, since there is nothing behind it to open.
@@ -266,4 +277,4 @@ function FeedTurn({ entry }: { entry: TurnEntry }) {
       </div>
     </li>
   )
-}
+})

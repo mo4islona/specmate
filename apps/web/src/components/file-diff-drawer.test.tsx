@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { findDiffLine } from '../test-helpers.ts'
 import { FileDiffDrawer } from './file-diff-drawer.tsx'
 
 const getFileDiff = vi.fn()
@@ -34,7 +35,7 @@ describe('FileDiffDrawer (REQ-916)', () => {
     renderDrawer(<FileDiffDrawer taskId="task-1" path="src/thing.ts" onClose={onClose} />)
 
     expect(await screen.findByRole('dialog', { name: 'File diff' })).toBeTruthy()
-    expect(await screen.findByText('+new')).toBeTruthy()
+    expect(await findDiffLine('+new')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: 'Close file diff' }))
 
