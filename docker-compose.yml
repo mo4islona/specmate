@@ -82,7 +82,7 @@ services:
       RUNNER_TOOLCHAINS_VOLUME: ${RUNNER_TOOLCHAINS_VOLUME:-specmate_toolchains}
       RUNNER_CPUS: ${RUNNER_CPUS:-2}
       RUNNER_MEMORY: ${RUNNER_MEMORY:-4g}
-      STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-1800000}
+      STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-10800000}
       RUNNER_FORWARD_ENV: ${RUNNER_FORWARD_ENV:-CLAUDE_CODE_OAUTH_TOKEN}
       # Not read by the orchestrator itself — it is here so RUNNER_FORWARD_ENV
       # can hand it to a stage by name, which is what keeps the value off the
