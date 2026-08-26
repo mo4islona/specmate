@@ -1,4 +1,6 @@
-import { z } from 'zod'
+// The union and the schema that checks it are one name, declared together in
+// `state-schemas.ts`. The import is a type, so nothing of zod comes with it.
+import type { TaskState } from './state-schemas.ts'
 
 /**
  * Task lifecycle from §5. Transitions are orchestrator-owned; agents never set state.
@@ -31,9 +33,6 @@ export const TASK_STATES = [
   'cancelled',
   'failed',
 ] as const
-
-export const TaskState = z.enum(TASK_STATES)
-export type TaskState = z.infer<typeof TaskState>
 
 export const HUMAN_GATES = ['human_kickoff_gate', 'human_spec_gate', 'human_final_gate'] as const
 export type HumanGate = (typeof HUMAN_GATES)[number]
@@ -78,44 +77,7 @@ export const DEFAULT_CAPS = {
   max_questions_per_stage: 3,
 } as const
 
-export const Caps = z.object({
-  max_spec_iterations: z.number().int().positive().default(DEFAULT_CAPS.max_spec_iterations),
-  max_impl_iterations: z.number().int().positive().default(DEFAULT_CAPS.max_impl_iterations),
-  max_kickoff_regenerations: z
-    .number()
-    .int()
-    .nonnegative()
-    .default(DEFAULT_CAPS.max_kickoff_regenerations),
-  repeated_finding_threshold: z
-    .number()
-    .int()
-    .positive()
-    .default(DEFAULT_CAPS.repeated_finding_threshold),
-  max_plan_depth: z.number().int().nonnegative().default(DEFAULT_CAPS.max_plan_depth),
-  max_prerequisite_tasks: z
-    .number()
-    .int()
-    .nonnegative()
-    .default(DEFAULT_CAPS.max_prerequisite_tasks),
-  max_questions_per_stage: z
-    .number()
-    .int()
-    .nonnegative()
-    .default(DEFAULT_CAPS.max_questions_per_stage),
-})
-export type Caps = z.infer<typeof Caps>
-
 export const DEFAULT_BUDGETS = {
   max_wall_clock_minutes: 180,
   max_cost_usd: 20,
 } as const
-
-export const Budgets = z.object({
-  max_wall_clock_minutes: z
-    .number()
-    .int()
-    .positive()
-    .default(DEFAULT_BUDGETS.max_wall_clock_minutes),
-  max_cost_usd: z.number().positive().default(DEFAULT_BUDGETS.max_cost_usd),
-})
-export type Budgets = z.infer<typeof Budgets>

@@ -7,7 +7,8 @@ import {
   pickReviewProvider,
   ROLE_CONTRACTS,
 } from './roles.ts'
-import { type Caps, isTerminal, TASK_STATES, type TaskState } from './state.ts'
+import { isTerminal, TASK_STATES } from './state.ts'
+import type { Caps, TaskState } from './state-schemas.ts'
 
 /**
  * Pipelines are data: a task type maps to a declarative definition, one generic

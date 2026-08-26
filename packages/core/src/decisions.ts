@@ -7,7 +7,7 @@ import {
   type ReviewVerdict,
   renderFindingBullets,
 } from './result.ts'
-import type { Budgets, TaskState } from './state.ts'
+import type { Budgets, TaskState } from './state-schemas.ts'
 
 export const DECISION_STATUSES = ['open', 'answered', 'dismissed'] as const
 export type DecisionStatus = (typeof DECISION_STATUSES)[number]

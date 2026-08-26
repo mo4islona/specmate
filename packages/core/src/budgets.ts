@@ -1,4 +1,4 @@
-import type { Budgets } from './state.ts'
+import type { Budgets } from './state-schemas.ts'
 
 export const BUDGET_KEYS = ['max_cost_usd', 'max_wall_clock_minutes'] as const
 export type BudgetKey = (typeof BUDGET_KEYS)[number]
