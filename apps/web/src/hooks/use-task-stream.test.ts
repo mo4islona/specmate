@@ -10,6 +10,12 @@ import { mergeTimelineEvents, useTaskStream } from './use-task-stream.ts'
 const consumeTaskEventStream = vi.hoisted(() => vi.fn())
 vi.mock('../lib/event-stream.ts', () => ({ consumeTaskEventStream }))
 
+const listEvents = vi.hoisted(() => vi.fn(async () => ({ events: [] as TimelineEvent[] })))
+vi.mock('../lib/api-client.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api-client.ts')>()),
+  listEvents,
+}))
+
 interface Invalidation {
   readonly queryKey: readonly unknown[]
   readonly exact?: boolean
@@ -40,33 +46,48 @@ describe('useTaskStream', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     consumeTaskEventStream.mockReset()
+    listEvents.mockReset().mockResolvedValue({ events: [] })
     setSecret('owner-secret')
   })
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  function listen(): {
+  async function listen(): Promise<{
+    opened: EventStreamOptions
     onEvent: EventStreamOptions['onEvent']
     invalidations: () => Invalidation[]
-  } {
+  }> {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue(undefined)
     renderHook(() => useTaskStream('task-1'), {
       wrapper: ({ children }: { children: ReactNode }) =>
         createElement(QueryClientProvider, { client }, children),
     })
-    const opened = consumeTaskEventStream.mock.calls.at(0)?.at(0) as EventStreamOptions | undefined
-    if (!opened) throw new Error('the hook never opened a stream')
+    // The stream now waits on the page it starts from, so opening it is a turn
+    // of the microtask queue rather than part of the render.
+    await vi.waitFor(() => {
+      if (consumeTaskEventStream.mock.calls.length === 0) throw new Error('no stream yet')
+    })
+    const opened = consumeTaskEventStream.mock.calls.at(0)?.at(0) as EventStreamOptions
 
     return {
+      opened,
       onEvent: opened.onEvent,
       invalidations: () => invalidate.mock.calls.map(([filters]) => filters as Invalidation),
     }
   }
 
-  it('collapses a burst of events into one round of invalidations', () => {
-    const { onEvent, invalidations } = listen()
+  it('starts the stream where the page the screen reads ends, not at the task’s first event', async () => {
+    listEvents.mockResolvedValue({ events: [event(401), event(600)] })
+
+    const { opened } = await listen()
+
+    expect(opened.initialCursor).toBe(600)
+  })
+
+  it('collapses a burst of events into one round of invalidations', async () => {
+    const { onEvent, invalidations } = await listen()
 
     for (let seq = 1; seq <= 40; seq += 1) onEvent(event(seq))
     expect(invalidations()).toEqual([])
@@ -82,8 +103,8 @@ describe('useTaskStream', () => {
     ])
   })
 
-  it('refetches the file diff when a stage finishes, not on every event', () => {
-    const { onEvent, invalidations } = listen()
+  it('refetches the file diff when a stage finishes, not on every event', async () => {
+    const { onEvent, invalidations } = await listen()
     const diff = ['task', 'task-1', 'diff', 'files']
 
     onEvent(event(1, 'stage.started'))
@@ -95,8 +116,8 @@ describe('useTaskStream', () => {
     expect(invalidations().map((call) => call.queryKey)).toContainEqual(diff)
   })
 
-  it('leaves every query alone through a stage-activity storm', () => {
-    const { onEvent, invalidations } = listen()
+  it('leaves every query alone through a stage-activity storm', async () => {
+    const { onEvent, invalidations } = await listen()
 
     for (let seq = 1; seq <= 100; seq += 1) onEvent(event(seq, 'stage.activity'))
     vi.advanceTimersByTime(250)

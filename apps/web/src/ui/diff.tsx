@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { type CSSProperties, memo, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { cx } from './cx.ts'
+import { useNearViewport } from './near-viewport.ts'
 import { Note } from './note.tsx'
+import { highlightSide, languageOf, loadSyntax, syntaxReady } from './syntax.tsx'
 
 interface DiffLine {
   readonly kind: 'meta' | 'hunk' | 'add' | 'remove' | 'context'
@@ -209,7 +211,76 @@ interface DiffProps {
   readonly wholeFile?: string
   /** Called when a reader widens a gap and the whole file is not here yet. */
   readonly onWholeFileNeeded?: () => void
+  /**
+   * The file being read, which is how the diff knows what language it is in.
+   * Without one it renders uncoloured, which is what it always did.
+   */
+  readonly path?: string
   readonly className?: string
+}
+
+/** What a line's code is coloured as, looked up by the line it belongs to. */
+type Colours = ReadonlyMap<DiffLine, ReactNode>
+
+/** A diff nobody has scrolled to yet, read in one colour. */
+const UNCOLOURED: Colours = new Map()
+
+/** What the two-column reading is not asked for. */
+const NO_SPLIT: SplitRow[] = []
+
+/**
+ * How much room to keep for a diff the browser is not drawing yet. The height
+ * is exact — one line each — which is what keeps the scrollbar of a column of
+ * these still while it is read (`--diff-lines` in `index.css`).
+ */
+function reservedHeight(lines: number): CSSProperties {
+  return { '--diff-lines': lines } as CSSProperties
+}
+
+/**
+ * Both sides of the change, each tokenized as the document it is (REQ-916).
+ *
+ * A line the other side does not have is a blank line here rather than a
+ * missing one, which keeps each side line-for-line with the rows being drawn —
+ * so a row's colour is looked up by its position and never slides.
+ */
+function colourRows(rows: readonly DiffRow[], language: string | null): Colours {
+  const sideOf = (row: DiffRow, kinds: readonly DiffLine['kind'][]) =>
+    kinds.includes(row.line.kind) ? row.line.text.slice(1) : ''
+
+  const before = highlightSide(
+    rows.map((row) => sideOf(row, ['remove', 'context'])),
+    language,
+  )
+  const after = highlightSide(
+    rows.map((row) => sideOf(row, ['add', 'context'])),
+    language,
+  )
+
+  const colours = new Map<DiffLine, ReactNode>()
+  for (const [at, row] of rows.entries()) {
+    colours.set(row.line, row.line.kind === 'remove' ? before[at] : after[at])
+  }
+
+  return colours
+}
+
+/**
+ * A changed line is `+` or `-` and then a line of code. The two are drawn
+ * apart: the sign keeps the colour that says which side it is on, and the code
+ * after it takes the colours it would have in the file it belongs to (REQ-916).
+ */
+function DiffText({ line, colours }: { line: DiffLine; colours: Colours }) {
+  // A line with nothing on it still has to be a line high.
+  if (line.text.length === 0) return ' '
+  if (line.kind === 'meta' || line.kind === 'hunk') return line.text
+
+  return (
+    <>
+      <span className="diff-sign">{line.text.slice(0, 1)}</span>
+      {colours.get(line) ?? line.text.slice(1)}
+    </>
+  )
 }
 
 /**
@@ -218,61 +289,95 @@ interface DiffProps {
  * as one column or two, and its hunk headers widen into the file they stand in
  * for (REQ-916).
  */
-export function Diff({
+export const Diff = memo(function Diff({
   diff,
   lineNumbers = false,
   view = 'unified',
   fileHeader = true,
   wholeFile,
   onWholeFileNeeded,
+  path,
   className,
 }: DiffProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
+  const [frame, near] = useNearViewport<HTMLDivElement>()
+  const [coloursHere, setColoursHere] = useState(syntaxReady)
 
-  if (!diff.trim()) {
-    return <Note className="p-5">This file has no textual changes to show.</Note>
-  }
+  const language = useMemo(() => languageOf(path), [path])
 
-  const file = wholeFile ? unchangedByLine(wholeFile) : null
+  // The grammars are fetched by the first diff that needs them and are here for
+  // every diff after it. Asking while the diff is still off the screen would put
+  // a sixth of the app's weight on the wire to colour something nobody is
+  // looking at.
+  useEffect(() => {
+    if (!near || coloursHere || language === null) return
 
-  const widen = (index: number) => {
-    setExpanded((current) => new Set(current).add(index))
-    if (!wholeFile) onWholeFileNeeded?.()
-  }
+    let wanted = true
+    void loadSyntax().then(() => {
+      if (wanted) setColoursHere(true)
+    })
 
-  const parsed = parseUnifiedDiff(diff)
-  const body = fileHeader ? parsed : parsed.filter((line) => line.kind !== 'meta')
+    return () => {
+      wanted = false
+    }
+  }, [near, coloursHere, language])
+  const file = useMemo(() => (wholeFile ? unchangedByLine(wholeFile) : null), [wholeFile])
 
   // A gap only offers to open where the caller can actually supply the file.
   // Everywhere else — a stage's edit, a drawer — it still has to say that the
   // lines below it are not the lines above it.
   const expandable = wholeFile !== undefined || onWholeFileNeeded !== undefined
 
-  /**
-   * Which hunk headers earn a row.
-   *
-   * One that hides nothing is `@@ -0,0 +1 @@` over a file's first line: git's
-   * own bookkeeping, repeating the gutter beside it. One that hides something
-   * before the first line drawn separates nothing — a stage's edit opens at the
-   * line it edited, and "49 lines" over the top of it is a fact about a file
-   * nobody is reading here. It stays only where it can be opened, which is what
-   * makes it an offer rather than a remark.
-   */
-  const worthARow = (row: DiffRow) =>
-    row.line.kind !== 'hunk' || (row.gap !== null && (expandable || !row.leading))
+  const rows = useMemo(() => {
+    const parsed = parseUnifiedDiff(diff)
+    const body = fileHeader ? parsed : parsed.filter((line) => line.kind !== 'meta')
 
-  // A gap the reader asked for but whose lines have not arrived stays an
-  // expander, so the ask is still visible while the read is in flight.
-  const rows = toRows(body)
-    .filter(worthARow)
-    .flatMap((row) => {
-      if (!row.gap || !expanded.has(row.index) || !file) return [row]
+    /**
+     * Which hunk headers earn a row.
+     *
+     * One that hides nothing is `@@ -0,0 +1 @@` over a file's first line: git's
+     * own bookkeeping, repeating the gutter beside it. One that hides something
+     * before the first line drawn separates nothing — a stage's edit opens at
+     * the line it edited, and "49 lines" over the top of it is a fact about a
+     * file nobody is reading here. It stays only where it can be opened, which
+     * is what makes it an offer rather than a remark.
+     */
+    const worthARow = (row: DiffRow) =>
+      row.line.kind !== 'hunk' || (row.gap !== null && (expandable || !row.leading))
 
-      const revealed = revealGap(row.gap, file)
-      if (revealed.length === 0) return [row]
+    // A gap the reader asked for but whose lines have not arrived stays an
+    // expander, so the ask is still visible while the read is in flight.
+    return toRows(body)
+      .filter(worthARow)
+      .flatMap((row) => {
+        if (!row.gap || !expanded.has(row.index) || !file) return [row]
 
-      return revealed.map((line) => ({ line, gap: null, leading: false, index: row.index }))
-    })
+        const revealed = revealGap(row.gap, file)
+        if (revealed.length === 0) return [row]
+
+        return revealed.map((line) => ({ line, gap: null, leading: false, index: row.index }))
+      })
+  }, [diff, expandable, expanded, file, fileHeader])
+
+  // Tokenizing is the expensive half of drawing a diff, and a step's record
+  // holds one per edit — a hundred of them on a screen showing three. A diff
+  // that has not been scrolled to reads perfectly well in the file's own
+  // colour and takes the rest when it comes near, which costs no height: the
+  // colours are spans around text that is already there.
+  const colours = useMemo(
+    () => (near && coloursHere ? colourRows(rows, language) : UNCOLOURED),
+    [near, coloursHere, rows, language],
+  )
+  const split = useMemo(() => (view === 'split' ? toSplitRows(rows) : NO_SPLIT), [view, rows])
+
+  if (!diff.trim()) {
+    return <Note className="p-5">This file has no textual changes to show.</Note>
+  }
+
+  const widen = (index: number) => {
+    setExpanded((current) => new Set(current).add(index))
+    if (!wholeFile) onWholeFileNeeded?.()
+  }
 
   const gapRow = (row: DiffRow) => {
     if (!row.gap) return null
@@ -307,19 +412,33 @@ export function Diff({
 
   if (view === 'split') {
     return (
-      <div className={cx('diff-document diff-document-split', className)}>
-        {toSplitRows(rows).map((row, index) => (
+      <div
+        ref={frame}
+        style={reservedHeight(split.length)}
+        className={cx('diff-document diff-document-split', className)}
+      >
+        {split.map((row, index) => (
           // The diff text has no stable per-line identity of its own; render order never changes.
           // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
           <div key={index} className={cx('diff-row', lineNumbers && 'diff-row-numbered')}>
             {row.full ? (
               <div className={cx('diff-line', `diff-line-${row.full.line.kind}`, 'diff-row-full')}>
-                {gapRow(row.full) ?? (row.full.line.text.length > 0 ? row.full.line.text : ' ')}
+                {gapRow(row.full) ?? <DiffText line={row.full.line} colours={colours} />}
               </div>
             ) : (
               <>
-                <DiffCell line={row.left} side="before" lineNumbers={lineNumbers} />
-                <DiffCell line={row.right} side="after" lineNumbers={lineNumbers} />
+                <DiffCell
+                  line={row.left}
+                  side="before"
+                  lineNumbers={lineNumbers}
+                  colours={colours}
+                />
+                <DiffCell
+                  line={row.right}
+                  side="after"
+                  lineNumbers={lineNumbers}
+                  colours={colours}
+                />
               </>
             )}
           </div>
@@ -329,27 +448,33 @@ export function Diff({
   }
 
   return (
-    <div className={cx('diff-document', lineNumbers && 'diff-document-numbered', className)}>
+    <div
+      ref={frame}
+      style={reservedHeight(rows.length)}
+      className={cx('diff-document', lineNumbers && 'diff-document-numbered', className)}
+    >
       {rows.map((row, position) => (
         // The diff text has no stable per-line identity of its own; render order never changes.
         // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
         <div key={position} className={cx('diff-line', `diff-line-${row.line.kind}`)}>
           {lineNumbers && <span className="diff-gutter">{gutterNumber(row.line) ?? ''}</span>}
-          {gapRow(row) ?? (row.line.text.length > 0 ? row.line.text : ' ')}
+          {gapRow(row) ?? <DiffText line={row.line} colours={colours} />}
         </div>
       ))}
     </div>
   )
-}
+})
 
 function DiffCell({
   line,
   side,
   lineNumbers,
+  colours,
 }: {
   readonly line: DiffLine | null
   readonly side: 'before' | 'after'
   readonly lineNumbers: boolean
+  readonly colours: Colours
 }) {
   const number = line === null ? null : side === 'before' ? line.before : line.after
 
@@ -357,7 +482,7 @@ function DiffCell({
     <>
       {lineNumbers && <span className="diff-gutter">{number ?? ''}</span>}
       <div className={cx('diff-line', line ? `diff-line-${line.kind}` : 'diff-line-absent')}>
-        {line && line.text.length > 0 ? line.text : ' '}
+        {line ? <DiffText line={line} colours={colours} /> : ' '}
       </div>
     </>
   )

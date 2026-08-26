@@ -82,9 +82,22 @@ describe('NodeHint', () => {
     expect(screen.getByText('not started')).not.toBeNull()
   })
 
-  it('a stop says how it stopped, in place of the bare state word', () => {
+  it('a stop says how it stopped, under the state word rather than beside it', () => {
     render(<NodeHint node={node({ state: 'stopped', reason: 'failed 3 times' })} now={NOW} />)
 
     expect(screen.getByText('failed 3 times')).not.toBeNull()
+    expect(screen.getByText('stopped')).not.toBeNull()
+  })
+
+  it('a reason the length of a sentence reads as one, and never off the hint’s edge', () => {
+    const reason = 'the specification declares 0 scenario(s), under the 4 this node is worth'
+    render(<NodeHint node={node({ state: 'skipped', reason })} now={NOW} />)
+
+    const said = screen.getByText(reason)
+
+    // Beside the name it wrapped `Spec review` into two lines and then ran off
+    // the hint's own 300px, over the rail behind it.
+    expect(said.className).not.toContain('shrink-0')
+    expect(said.parentElement).not.toBe(screen.getByText('Specify').parentElement)
   })
 })

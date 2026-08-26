@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { type DiffFileSummary, getFileDiff, getWholeFileDiff } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import {
@@ -61,8 +61,17 @@ export function FileDiffCard({
     enabled: open && wholeFileWanted,
   })
 
-  const lines = diff.data ? diff.data.diff.split('\n') : []
+  // Everything the card hands `Diff` is held still across a render: the whole
+  // stack redraws whenever the filter above it is typed into or a file is
+  // ticked, and a diff whose text is the same string it was does not have to be
+  // read or coloured again.
+  const lines = useMemo(() => (diff.data ? diff.data.diff.split('\n') : []), [diff.data])
   const clamped = lines.length > CLAMP_LINES && !showWhole
+  const shown = useMemo(
+    () => (clamped ? lines.slice(0, CLAMP_LINES).join('\n') : (diff.data?.diff ?? '')),
+    [clamped, lines, diff.data],
+  )
+  const wantWholeFile = useCallback(() => setWholeFileWanted(true), [])
 
   return (
     // Named, because a stack of them puts a dozen `Viewed` ticks on one page
@@ -116,12 +125,13 @@ export function FileDiffCard({
             ) : (
               <>
                 <Diff
-                  diff={clamped ? lines.slice(0, CLAMP_LINES).join('\n') : diff.data.diff}
+                  diff={shown}
+                  path={file.path}
                   view={view}
                   fileHeader={false}
                   lineNumbers
                   wholeFile={wholeFile.data?.diff}
-                  onWholeFileNeeded={() => setWholeFileWanted(true)}
+                  onWholeFileNeeded={wantWholeFile}
                 />
 
                 {clamped && (

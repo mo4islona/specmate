@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffFileSummary } from '../lib/api-client.ts'
+import { diffLine, findDiffLine, queryDiffLine } from '../test-helpers.ts'
 import { FilesChangedScreen } from './files-changed-screen.tsx'
 
 const listDiffFiles = vi.fn()
@@ -238,11 +239,11 @@ describe('FilesChangedScreen (REQ-916)', () => {
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
     expect(await screen.findByText(/Clamped to the first 300 of 401 lines/)).toBeTruthy()
-    expect(screen.queryByText(/^line 350$/)).toBeNull()
+    expect(queryDiffLine(' line 350')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Draw the rest' }))
 
-    expect(screen.getByText(/^line 350$/)).toBeTruthy()
+    expect(diffLine(' line 350')).toBeTruthy()
   })
 
   it('leaves a diff under the clamp alone', async () => {
@@ -250,7 +251,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
-    expect(await screen.findByText('+new')).toBeTruthy()
+    expect(await findDiffLine('+new')).toBeTruthy()
     expect(screen.queryByText(/Clamped to the first/)).toBeNull()
   })
 

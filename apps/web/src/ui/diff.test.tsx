@@ -4,6 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { Diff } from './diff.tsx'
 
+/** A changed line is its sign and then its code, in two elements. */
+const signed = (sign: string, code: string) => `<span class="diff-sign">${sign}</span>${code}`
+
 describe('Diff', () => {
   it('renders a placeholder when the file has no textual changes', () => {
     const rendered = renderToStaticMarkup(<Diff diff="" />)
@@ -33,9 +36,15 @@ describe('Diff', () => {
     )
     expect(rendered).toContain('<div class="diff-line diff-line-meta">--- a/src/thing.ts</div>')
     expect(rendered).toContain('<div class="diff-line diff-line-meta">+++ b/src/thing.ts</div>')
-    expect(rendered).toContain('<div class="diff-line diff-line-context"> const kept = 1</div>')
-    expect(rendered).toContain('<div class="diff-line diff-line-remove">-const old = 2</div>')
-    expect(rendered).toContain('<div class="diff-line diff-line-add">+const updated = 2</div>')
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-context">${signed(' ', 'const kept = 1')}</div>`,
+    )
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-remove">${signed('-', 'const old = 2')}</div>`,
+    )
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-add">${signed('+', 'const updated = 2')}</div>`,
+    )
   })
 
   it("drops git's preamble where the surface has already named the file", () => {
@@ -53,7 +62,9 @@ describe('Diff', () => {
     const rendered = renderToStaticMarkup(<Diff diff={diff} fileHeader={false} />)
 
     expect(rendered).not.toContain('diff-line-meta')
-    expect(rendered).toContain('<div class="diff-line diff-line-add">+const updated = 2</div>')
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-add">${signed('+', 'const updated = 2')}</div>`,
+    )
   })
 
   it('classifies a removed/added line whose own content starts with -- or ++ as remove/add, not a header (regression)', () => {
@@ -70,8 +81,12 @@ describe('Diff', () => {
 
     const rendered = renderToStaticMarkup(<Diff diff={diff} />)
 
-    expect(rendered).toContain('<div class="diff-line diff-line-remove">--- a lua comment</div>')
-    expect(rendered).toContain('<div class="diff-line diff-line-add">+++ a lua comment</div>')
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-remove">${signed('-', '-- a lua comment')}</div>`,
+    )
+    expect(rendered).toContain(
+      `<div class="diff-line diff-line-add">${signed('+', '++ a lua comment')}</div>`,
+    )
   })
 
   it('does not render a spurious blank line for the trailing newline real git output always ends with (regression)', () => {
@@ -98,10 +113,10 @@ describe('Diff', () => {
 
     const rendered = renderToStaticMarkup(<Diff diff={diff} lineNumbers />)
 
-    expect(rendered).toContain('<span class="diff-gutter">41</span> kept one')
-    expect(rendered).toContain('<span class="diff-gutter">42</span>-gone')
-    expect(rendered).toContain('<span class="diff-gutter">42</span>+arrived')
-    expect(rendered).toContain('<span class="diff-gutter">43</span> kept two')
+    expect(rendered).toContain(`<span class="diff-gutter">41</span>${signed(' ', 'kept one')}`)
+    expect(rendered).toContain(`<span class="diff-gutter">42</span>${signed('-', 'gone')}`)
+    expect(rendered).toContain(`<span class="diff-gutter">42</span>${signed('+', 'arrived')}`)
+    expect(rendered).toContain(`<span class="diff-gutter">43</span>${signed(' ', 'kept two')}`)
   })
 
   it('resumes numbering at each hunk rather than counting through the gap', () => {
@@ -109,8 +124,8 @@ describe('Diff', () => {
 
     const rendered = renderToStaticMarkup(<Diff diff={diff} lineNumbers />)
 
-    expect(rendered).toContain('<span class="diff-gutter">30</span>-b')
-    expect(rendered).toContain('<span class="diff-gutter">30</span>+B')
+    expect(rendered).toContain(`<span class="diff-gutter">30</span>${signed('-', 'b')}`)
+    expect(rendered).toContain(`<span class="diff-gutter">30</span>${signed('+', 'B')}`)
   })
 
   it('leaves the gutter out entirely unless it is asked for', () => {
@@ -153,8 +168,8 @@ describe('Diff, read as two columns', () => {
     // One row carries both sides: the line as it left on the left, its
     // replacement on the right, each numbered in the file it belongs to.
     expect(rendered).toContain(
-      '<span class="diff-gutter">2</span><div class="diff-line diff-line-remove">-gone</div>' +
-        '<span class="diff-gutter">2</span><div class="diff-line diff-line-add">+arrived</div>',
+      `<span class="diff-gutter">2</span><div class="diff-line diff-line-remove">${signed('-', 'gone')}</div>` +
+        `<span class="diff-gutter">2</span><div class="diff-line diff-line-add">${signed('+', 'arrived')}</div>`,
     )
   })
 
@@ -176,7 +191,7 @@ describe('Diff, read as two columns', () => {
 
     const rendered = renderToStaticMarkup(<Diff diff={diff} view="split" />)
 
-    expect(rendered).toContain('<div class="diff-line diff-line-add">+first</div>')
+    expect(rendered).toContain(`<div class="diff-line diff-line-add">${signed('+', 'first')}</div>`)
     expect(rendered).toContain('diff-line-absent')
     expect(rendered).not.toContain('diff-line-remove')
   })

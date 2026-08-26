@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityEdit } from '../lib/task-thread.ts'
+import { diffLine, findDiffLine } from '../test-helpers.ts'
 import { ActivityEditBlock } from './activity-edit.tsx'
 
 const getActivityPatch = vi.fn()
@@ -43,8 +44,8 @@ describe('ActivityEditBlock (REQ-915)', () => {
     renderBlock(<ActivityEditBlock taskId="task-1" seq={12} edit={edit()} />)
 
     expect(screen.getByText(/Added 10 lines, removed 4 lines/)).toBeTruthy()
-    expect(screen.getByText('-gone')).toBeTruthy()
-    expect(screen.getByText('+arrived')).toBeTruthy()
+    expect(diffLine('-gone')).toBeTruthy()
+    expect(diffLine('+arrived')).toBeTruthy()
   })
 
   it('numbers the diff from the file when the edit was placed in it', () => {
@@ -74,7 +75,7 @@ describe('ActivityEditBlock (REQ-915)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /show the whole edit/i }))
 
-    expect(await screen.findByText('+one more line')).toBeTruthy()
+    expect(await findDiffLine('+one more line')).toBeTruthy()
     expect(getActivityPatch).toHaveBeenCalledWith('task-1', 12, expect.anything())
   })
 
@@ -97,6 +98,15 @@ describe('ActivityEditBlock (REQ-915)', () => {
     await userEvent.click(screen.getByRole('button', { name: /show the whole edit/i }))
 
     expect(await screen.findByText(/too large to record whole/)).toBeTruthy()
+  })
+
+  it('says an event kept no whole edit rather than redrawing the preview under a new label', async () => {
+    getActivityPatch.mockResolvedValue({ seq: 12, patch: null })
+
+    renderBlock(<ActivityEditBlock taskId="task-1" seq={12} edit={edit({ clamped: true })} />)
+    await userEvent.click(screen.getByRole('button', { name: /show the whole edit/i }))
+
+    expect(await screen.findByText(/recorded before its whole text was kept/)).toBeTruthy()
   })
 
   it("hands the path to the surface that opens the file's whole diff — AC-996", async () => {

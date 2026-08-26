@@ -1,4 +1,5 @@
 import type { ConversationMessage, DecisionItem, TaskDetail, TimelineEvent } from './api-client.ts'
+import { isReadOnlyShell } from './shell-reads.ts'
 
 type Stage = TaskDetail['stages'][number]
 
@@ -68,7 +69,8 @@ interface ToolVerb {
   /**
    * Whether the tool changes anything. Only a change earns a permanent line:
    * a run that read forty files and edited two is two lines and a count, not
-   * forty-two (REQ-915).
+   * forty-two (REQ-915). `Bash` is the one entry this cannot settle on its own
+   * — see `isMutatingActivity`.
    */
   readonly mutates: boolean
 }
@@ -95,7 +97,15 @@ function toolVerb(tool: string): ToolVerb {
 }
 
 export function isMutatingActivity(event: TimelineEvent): boolean {
-  return toolVerb(payloadValue(event, 'tool') ?? 'Unknown tool').mutates
+  const tool = payloadValue(event, 'tool') ?? 'Unknown tool'
+
+  // A shell call is judged by what it ran, not by the fact that it was a shell.
+  // `sed -n '1,140p'` and `tail -40` are how a run reads what the Read tool
+  // cannot page, and a permanent line for each of those is exactly the
+  // forty-two lines REQ-915 exists to prevent.
+  if (tool === 'Bash') return !isReadOnlyShell(payloadValue(event, 'target') ?? '')
+
+  return toolVerb(tool).mutates
 }
 
 /**
@@ -589,7 +599,26 @@ export function buildStepFeed({
   firstNodeKey,
 }: StepFeedInput): FeedEntry[] {
   const steps = assignSteps({ events, stages, firstNodeKey })
-  const entries: FeedEntry[] = []
+  const stagesById = new Map(stages.map((stage) => [stage.id, stage]))
+  const newestActivity = newestActivityByStage(events)
+  // Reading a timestamp costs a date parse, and every event's was read once per
+  // message to place it and again on every comparison of the sort below — two
+  // hundred events sorting is some thousands of parses. They are read here,
+  // once, and everything downstream works in numbers.
+  const at = new Map(events.map((event) => [event.seq, millis(event.createdAt) ?? 0]))
+  const entries: { at: number; entry: FeedEntry }[] = []
+
+  /**
+   * REQ-915: the newest action of a run still under way is what is happening
+   * now. Once that run ends the line stays in the record, but it stops claiming
+   * to be live — the outcome beneath it is the fresher fact.
+   */
+  const live = (event: TimelineEvent): boolean => {
+    if (event.type !== 'stage.activity' || !event.stageId) return false
+    if (stagesById.get(event.stageId)?.status !== 'running') return false
+
+    return newestActivity.get(event.stageId) === event.seq
+  }
 
   for (const event of events) {
     if (steps.get(event.seq) !== nodeKey) continue
@@ -605,18 +634,21 @@ export function buildStepFeed({
     if (event.type === 'stage.activity' && !isMutatingActivity(event)) continue
 
     if (TURN_EVENTS.has(event.type)) {
-      const stage = stages.find((row) => row.id === event.stageId)
+      const stage = event.stageId ? stagesById.get(event.stageId) : undefined
 
       entries.push({
-        kind: 'turn',
-        id: `event-${event.seq}`,
-        at: String(event.createdAt),
-        author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
-        verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
-        title: eventTitle(event),
-        label: feedLabel(event, stage),
-        body: eventDetail(event, decisionsById),
-        decisionId: decision ? decision.id : null,
+        at: at.get(event.seq) ?? 0,
+        entry: {
+          kind: 'turn',
+          id: `event-${event.seq}`,
+          at: String(event.createdAt),
+          author: OWNER_EVENTS.has(event.type) ? 'owner' : 'task',
+          verb: EVENT_VERBS[event.type] ?? eventTitle(event).toLowerCase(),
+          title: eventTitle(event),
+          label: feedLabel(event, stage),
+          body: eventDetail(event, decisionsById),
+          decisionId: decision ? decision.id : null,
+        },
       })
 
       continue
@@ -626,41 +658,61 @@ export function buildStepFeed({
     const edit = event.type === 'stage.activity' ? activityEdit(event) : null
 
     entries.push({
-      kind: 'line',
-      id: `event-${event.seq}`,
-      at: String(event.createdAt),
-      shape: event.type === 'stage.activity' ? 'call' : 'event',
-      // The edit knows the path relative to the repository; the raw target is
-      // whatever the CLI reported, which is the fallback rather than the answer.
-      action,
-      target: edit ? edit.path : target,
-      tone: lineTone(event),
-      live: isLiveActivity(event, stages, events),
-      seq: event.seq,
-      edit,
+      at: at.get(event.seq) ?? 0,
+      entry: {
+        kind: 'line',
+        id: `event-${event.seq}`,
+        at: String(event.createdAt),
+        shape: event.type === 'stage.activity' ? 'call' : 'event',
+        // The edit knows the path relative to the repository; the raw target is
+        // whatever the CLI reported, which is the fallback rather than the answer.
+        action,
+        target: edit ? edit.path : target,
+        tone: lineTone(event),
+        live: live(event),
+        seq: event.seq,
+        edit,
+      },
     })
   }
 
   for (const message of messages) {
-    if (messageStep(message.createdAt, events, steps, firstNodeKey) !== nodeKey) continue
+    const wrote = millis(message.createdAt) ?? 0
+    if (messageStep(wrote, events, at, steps, firstNodeKey) !== nodeKey) continue
 
     entries.push({
-      kind: 'turn',
-      id: `message-${message.id}`,
-      at: String(message.createdAt),
-      author: message.role === 'owner' ? 'owner' : 'guide',
-      verb: message.role === 'owner' ? 'asked' : 'answered',
-      title: message.role === 'owner' ? 'Message sent' : 'Guide replied',
-      label: message.role === 'owner' ? 'You' : 'Guide',
-      body: message.contentMd,
-      decisionId: null,
+      at: wrote,
+      entry: {
+        kind: 'turn',
+        id: `message-${message.id}`,
+        at: String(message.createdAt),
+        author: message.role === 'owner' ? 'owner' : 'guide',
+        verb: message.role === 'owner' ? 'asked' : 'answered',
+        title: message.role === 'owner' ? 'Message sent' : 'Guide replied',
+        label: message.role === 'owner' ? 'You' : 'Guide',
+        body: message.contentMd,
+        decisionId: null,
+      },
     })
   }
 
-  return entries.sort(
-    (left, right) =>
-      (millis(left.at) ?? 0) - (millis(right.at) ?? 0) || left.id.localeCompare(right.id),
-  )
+  return entries
+    .sort((left, right) => left.at - right.at || left.entry.id.localeCompare(right.entry.id))
+    .map((row) => row.entry)
+}
+
+/** The newest `stage.activity` each run has reported, by run. */
+function newestActivityByStage(events: readonly TimelineEvent[]): Map<string, number> {
+  const newest = new Map<string, number>()
+
+  for (const event of events) {
+    if (event.type !== 'stage.activity' || !event.stageId) continue
+
+    const seen = newest.get(event.stageId)
+    if (seen === undefined || event.seq > seen) newest.set(event.stageId, event.seq)
+  }
+
+  return newest
 }
 
 /** What a run is doing at this moment, in its own words. */
@@ -701,40 +753,19 @@ export function liveActivity({
   return { action: kind, target, stageId: running.id }
 }
 
-/**
- * REQ-915: the newest action of a run still under way is what is happening now.
- * Once that run ends the line stays in the record, but it stops claiming to be
- * live — the outcome beneath it is the fresher fact.
- */
-function isLiveActivity(
-  event: TimelineEvent,
-  stages: readonly Stage[],
-  events: readonly TimelineEvent[],
-): boolean {
-  if (event.type !== 'stage.activity' || !event.stageId) return false
-
-  const stage = stages.find((row) => row.id === event.stageId)
-  if (stage?.status !== 'running') return false
-
-  return !events.some(
-    (other) =>
-      other.type === 'stage.activity' && other.stageId === event.stageId && other.seq > event.seq,
-  )
-}
-
 /** A message carries no node of its own: it belongs to the step the task stood on when it was written. */
 function messageStep(
-  at: string | Date,
+  moment: number,
   events: readonly TimelineEvent[],
+  at: ReadonlyMap<number, number>,
   steps: Map<number, string | null>,
   firstNodeKey: string | null,
 ): string | null {
-  const moment = millis(at) ?? 0
   let latest = -1
   let step = firstNodeKey
 
   for (const event of events) {
-    const when = millis(event.createdAt) ?? 0
+    const when = at.get(event.seq) ?? 0
     if (when > moment || event.seq <= latest) continue
 
     latest = event.seq

@@ -2,9 +2,8 @@ import { useNow } from '../hooks/use-now.ts'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { nodeSpend } from '../lib/task-pipeline.ts'
 import { formatDuration } from '../lib/task-thread.ts'
-import { Button, cx, Dot, HoverHint } from '../ui/index.ts'
+import { Button, cx, Dot, HoverHint, Icon } from '../ui/index.ts'
 import { CommitRef } from './commit-ref.tsx'
-import { InfoIcon } from './icons.tsx'
 import { NodeHint } from './node-hint.tsx'
 import { nodeDot, nodeName, nodeSignal, signalBreathes, signalDot, signalText } from './tone.ts'
 
@@ -52,7 +51,7 @@ function stateFact(node: PipelineNodeView, duration: number | null): string {
  * about the step, and only then does the step light its own signal.
  */
 export function StepHeader({ node, repoUrl, current, notice = null }: StepHeaderProps) {
-  const now = useNow()
+  const now = useNow(node.state === 'running')
   const spend = nodeSpend(node, now)
   const facts = [
     current ? null : stateFact(node, spend.durationMs),
@@ -109,7 +108,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
           className="min-h-0 px-1.5 py-1.5"
           aria-label={`What ${node.label} ran on, and what it spent`}
         >
-          <InfoIcon className="h-3.5 w-3.5" />
+          <Icon name="info" />
         </Button>
       </HoverHint>
     </header>

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, it, test, vi } from 'vitest'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { PipelineRail } from './pipeline-rail.tsx'
 
@@ -107,6 +107,24 @@ describe('PipelineRail (REQ-914)', () => {
     )
 
     expect(screen.getByText('failed 3 times')).not.toBeNull()
+  })
+
+  it('a skip states its reason without taking the width of the name it explains', () => {
+    const reason = 'the specification declares 0 scenario(s), under the 4 this node is worth'
+    render(
+      <PipelineRail
+        {...props}
+        nodes={[node({ key: 'spec_review', label: 'Spec review', state: 'skipped', reason })]}
+      />,
+    )
+
+    const name = screen.getByText('Spec review')
+    const said = screen.getByText(reason)
+
+    // Two lines of the row, not two halves of one: a sentence in the fact
+    // column squeezed `Spec review` down to nothing at all.
+    expect(said).not.toBeNull()
+    expect(name.parentElement).not.toBe(said.parentElement)
   })
 
   test('activating a node is what opens its run log', async () => {
