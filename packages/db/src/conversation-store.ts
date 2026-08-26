@@ -167,14 +167,29 @@ export function createConversationStore(db: Database): ConversationStore {
         .where(eq(conversations.taskId, taskId))
         .orderBy(asc(conversations.createdAt), asc(conversations.id))
     },
-    async listMessages(conversationId) {
+    async listMessages(conversationId, newest) {
+      const where = eq(conversationMessages.conversationId, conversationId)
+      if (newest === undefined) {
+        const rows = await db
+          .select()
+          .from(conversationMessages)
+          .where(where)
+          .orderBy(asc(conversationMessages.sequence))
+
+        return rows.map(asMessage)
+      }
+
+      // Taken from the end and turned back around, so the caller still reads a
+      // discussion forwards. Ordering ascending and slicing in memory would
+      // have the database hand over every message of it first.
       const rows = await db
         .select()
         .from(conversationMessages)
-        .where(eq(conversationMessages.conversationId, conversationId))
-        .orderBy(asc(conversationMessages.sequence))
+        .where(where)
+        .orderBy(desc(conversationMessages.sequence))
+        .limit(newest)
 
-      return rows.map(asMessage)
+      return rows.reverse().map(asMessage)
     },
     async listActions(conversationId) {
       const rows = await db

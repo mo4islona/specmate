@@ -7,10 +7,12 @@ import {
   type ConversationRecord,
   type ConversationRepository,
   type ConversationStore,
+  MESSAGE_WINDOW,
   openConversation,
+  readConversation,
   TerminalTaskConversationError,
 } from '../src/index.ts'
-import type { TaskState } from '../src/state.ts'
+import type { TaskState } from '../src/state-schemas.ts'
 
 class MemoryConversationStore implements ConversationStore {
   readonly conversations: ConversationRecord[] = []
@@ -123,8 +125,13 @@ class MemoryConversationStore implements ConversationStore {
     return this.conversations.filter((item) => item.taskId === taskId)
   }
 
-  async listMessages(conversationId: string): Promise<ConversationMessageRecord[]> {
-    return this.messages.filter((item) => item.conversationId === conversationId)
+  async listMessages(
+    conversationId: string,
+    newest?: number,
+  ): Promise<ConversationMessageRecord[]> {
+    const all = this.messages.filter((item) => item.conversationId === conversationId)
+
+    return newest === undefined ? all : all.slice(-newest)
   }
 
   async listActions(conversationId: string): Promise<ConversationActionRecord[]> {
@@ -202,6 +209,34 @@ describe('conversation operations', () => {
     expect(second).toEqual(first)
     expect(store.messages).toHaveLength(2)
     expect(store.feedback).toHaveLength(1)
+  })
+
+  /**
+   * A discussion is drawn from its end, and every message in it is a body of
+   * markdown to parse and lay out — so a read is bounded the way the timeline's
+   * is. The record keeps all of it; this is what one read hands over.
+   */
+  test('a read returns the newest messages and no more', async () => {
+    const store = new MemoryConversationStore()
+    store.tasks.set('task-1', 'implement')
+    const conversation = await openConversation(store, { taskId: 'task-1', idempotencyKey: 'open' })
+
+    // Each turn is two records — what was asked, and the reply queued for it.
+    for (let n = 0; n < MESSAGE_WINDOW; n++) {
+      await appendOwnerMessage(store, {
+        conversationId: conversation.id,
+        content: `message ${n}`,
+        idempotencyKey: `message-${n}`,
+      })
+    }
+
+    const said = store.messages.length
+    const read = await readConversation(store, conversation.id)
+
+    expect(said).toBeGreaterThan(MESSAGE_WINDOW)
+    expect(read.messages).toHaveLength(MESSAGE_WINDOW)
+    expect(read.messages.at(-1)?.sequence).toBe(said)
+    expect(read.messages.at(0)?.sequence).toBe(said - MESSAGE_WINDOW + 1)
   })
 
   test('rejects new conversation work on terminal tasks', async () => {

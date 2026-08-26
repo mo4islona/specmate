@@ -1,7 +1,7 @@
 import type { ExecutionUsage } from './provider.ts'
 import type { ProviderId } from './roles.ts'
-import type { TaskState } from './state.ts'
 import { isTerminal } from './state.ts'
+import type { TaskState } from './state-schemas.ts'
 
 export const CONVERSATION_STATUSES = ['open', 'closed'] as const
 export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number]
@@ -176,7 +176,8 @@ export interface ConversationRepository {
 export interface ConversationStore {
   transaction<T>(operation: (repository: ConversationRepository) => Promise<T>): Promise<T>
   list(taskId: string): Promise<ConversationRecord[]>
-  listMessages(conversationId: string): Promise<ConversationMessageRecord[]>
+  /** Oldest first. `newest` keeps that order and drops from the front — see `MESSAGE_WINDOW`. */
+  listMessages(conversationId: string, newest?: number): Promise<ConversationMessageRecord[]>
   listActions(conversationId: string): Promise<ConversationActionRecord[]>
 }
 
@@ -376,6 +377,15 @@ export function listConversations(
   return store.list(taskId)
 }
 
+/**
+ * How much of a discussion one read returns, newest kept. It matches the
+ * timeline's own window, and for the same reason: a surface draws what it is
+ * given, and every one of these is a body of markdown to parse and lay out. The
+ * store keeps the whole conversation either way — this bounds the read, not the
+ * record.
+ */
+export const MESSAGE_WINDOW = 200
+
 export async function readConversation(
   store: ConversationStore,
   conversationId: string,
@@ -384,7 +394,7 @@ export async function readConversation(
   actions: ConversationActionRecord[]
 }> {
   const [messages, actions] = await Promise.all([
-    store.listMessages(conversationId),
+    store.listMessages(conversationId, MESSAGE_WINDOW),
     store.listActions(conversationId),
   ])
 
