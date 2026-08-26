@@ -3,7 +3,7 @@ import { CONVERSATION_ACTION_KINDS } from './conversations.ts'
 import { HarnessCoverageAssessment } from './harness.ts'
 import { duplicatePrerequisiteKeys, PlanShape } from './plan.ts'
 import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
-import { TaskState } from './state.ts'
+import { TaskState } from './state-schemas.ts'
 
 /**
  * RESULT.json — the only structured channel out of an agent run. A stage that

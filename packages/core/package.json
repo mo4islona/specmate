@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "comment:sideEffects": "Nothing here is imported for what importing it does. The one top-level call, pipeline.ts's catalog check, guards the very export that retains it, so a bundle that drops the module drops what the check was for. Worth 82 kB to the web app, which reaches this package for a handful of constants and would otherwise carry every schema behind them.",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./roles": "./src/roles.ts",
