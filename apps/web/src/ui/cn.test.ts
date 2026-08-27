@@ -42,4 +42,24 @@ describe('cn', () => {
     expect(cn('text-muted-foreground', 'text-primary')).toBe('text-primary')
     expect(cn('bg-card', 'bg-popover')).toBe('bg-popover')
   })
+
+  /**
+   * The one that bit. In Tailwind v4 a size utility carries a line height of its
+   * own, so `tailwind-merge` treats a later `text-<size>` as replacing an earlier
+   * `leading-*` — and a `cva` table writes its base before its variant. A part
+   * with the leading in the base and the size in the variant therefore loses the
+   * leading silently: every solid button came out at 1.333 instead of 1.25, which
+   * is a taller button and no error anywhere.
+   *
+   * Writing the pair as one utility is what makes the order stop mattering.
+   */
+  it('drops a leading that a later size would have overridden', () => {
+    expect(cn('leading-tight', 'text-xs')).toBe('text-xs')
+    expect(cn('text-xs', 'leading-tight')).toBe('text-xs leading-tight')
+  })
+
+  it('keeps a size and its leading when they are written as one', () => {
+    expect(cn('leading-tight', 'text-xs/[1.25]')).toBe('text-xs/[1.25]')
+    expect(cn('text-xs/[1.25]', 'px-2')).toBe('text-xs/[1.25] px-2')
+  })
 })

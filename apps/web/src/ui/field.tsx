@@ -87,7 +87,7 @@ export function Field({ label, hint, error, id, className, children }: FieldProp
  */
 const CONTROL = [
   'min-h-[2.4rem] rounded-lg border border-input bg-background px-[0.7rem] py-2',
-  'text-[0.8rem] leading-[1.4] text-foreground placeholder:text-muted-foreground',
+  'text-[0.8rem]/[1.4] text-foreground placeholder:text-muted-foreground',
   'transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
   'hover:border-[color-mix(in_srgb,var(--color-foreground)_22%,var(--color-border-strong))]',
   'focus:border-[color-mix(in_srgb,var(--color-foreground)_45%,var(--color-border-strong))]',
@@ -301,7 +301,7 @@ export function SelectOption({
       value={value === '' ? EMPTY : value}
       className={cn(
         'relative flex cursor-pointer select-none items-center gap-2 rounded-md py-1.5 pe-2 ps-7',
-        'text-[0.8rem] leading-[1.4] text-foreground outline-none',
+        'text-[0.8rem]/[1.4] text-foreground outline-none',
         'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
         'data-[disabled]:pointer-events-none data-[disabled]:opacity-[0.38]',
         className,

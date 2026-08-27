@@ -59,7 +59,7 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
         </div>
       </Popover>
 
-      {error && <ErrorNote className="w-full px-2.5 text-[0.72rem]">{error}</ErrorNote>}
+      {error && <ErrorNote className="w-full px-2.5 text-[0.72rem]/[1.4]">{error}</ErrorNote>}
     </>
   )
 }

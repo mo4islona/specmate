@@ -70,7 +70,7 @@ export function Drawer({
               {/* The title is the layer's name to a screen reader as well as its
                   eyebrow on screen, so it is one element rather than an
                   `aria-label` repeating what is already written. */}
-              <DialogPrimitive.Title className="font-mono text-[0.68rem] font-semibold uppercase leading-tight tracking-[0.16em] text-muted-foreground">
+              <DialogPrimitive.Title className="font-mono text-[0.68rem]/[1.25] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 {label}
               </DialogPrimitive.Title>
               {detail}
