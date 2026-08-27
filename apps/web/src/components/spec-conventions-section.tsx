@@ -15,6 +15,7 @@ import {
   Note,
   Section,
   Select,
+  SelectOption,
   SkeletonFacts,
   Textarea,
   Waiting,
@@ -152,11 +153,11 @@ export function SpecConventionsSection() {
         </datalist>
 
         <Field label="Convention" id="spec-convention-profile">
-          <Select value={profile} onChange={(event) => setProfile(event.currentTarget.value)}>
+          <Select value={profile} onValueChange={setProfile}>
             {Object.entries(PROFILE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
+              <SelectOption key={value} value={value}>
                 {label}
-              </option>
+              </SelectOption>
             ))}
           </Select>
         </Field>

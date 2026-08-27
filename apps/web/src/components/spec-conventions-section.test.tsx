@@ -83,7 +83,11 @@ describe('SpecConventionsSection', () => {
     await screen.findByText(/No repository has one set/)
 
     await user.type(screen.getByLabelText(/Repository/), 'https://github.com/example/api')
-    await user.selectOptions(screen.getByLabelText(/Convention/), 'custom')
+
+    // The list is the app's own rather than the browser's, so choosing is two
+    // clicks: the one that opens it, and the one that answers.
+    await user.click(screen.getByLabelText(/Convention/))
+    await user.click(await screen.findByRole('option', { name: 'A suite at a path' }))
 
     expect(screen.getByText(/needs the path it lives at/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
