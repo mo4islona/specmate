@@ -4,7 +4,7 @@ import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { formatDuration, stageDuration } from '../lib/task-thread.ts'
 import { cn, HoverHint, Icon, MicroLabel } from '../ui/index.ts'
 import { NodeHint } from './node-hint.tsx'
-import { NODE_MARK, nodeMarkClass, nodeName, signalText } from './tone.ts'
+import { NODE_MARK, nodeAhead, nodeMarkClass, nodeName, signalText } from './tone.ts'
 
 interface PipelineRailProps {
   readonly nodes: readonly PipelineNodeView[]
@@ -83,7 +83,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
   const skipReason = node.state === 'skipped' ? node.reason : null
 
   return (
-    <span className="block text-[0.79rem]">
+    <span className={cn('block text-[0.79rem]', nodeAhead(node.state))}>
       <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
         {/* Centred on the row rather than sat on its baseline. The row aligns by
             baseline because a name and a duration have to share one, but a box

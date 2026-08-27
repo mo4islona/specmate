@@ -19,10 +19,18 @@ interface TaskRailProps {
  */
 export function TaskRail({ nodes, selectedKey, onSelect, task, spend }: TaskRailProps) {
   return (
-    <div className="space-y-7">
+    // What has been spent sits at the foot of the column rather than trailing
+    // the walk. The pipeline is a list that grows with the task; a total is not
+    // part of that list, and following it up and down the rail is what made the
+    // two read as one run-on section.
+    //
+    // `min-h-full` only resolves where the column has a height of its own, which
+    // is the wide layout. Under it the rail is inside a disclosure with no
+    // height to measure against, and the two sections simply stack.
+    <div className="flex min-h-full flex-col">
       <PipelineRail nodes={nodes} selectedKey={selectedKey} onSelect={onSelect} />
 
-      <BudgetPanel budgets={task.budgets} spend={spend} />
+      <BudgetPanel budgets={task.budgets} spend={spend} className="mt-auto pt-7" />
     </div>
   )
 }

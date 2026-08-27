@@ -136,6 +136,19 @@ export const NODE_MARK: Record<NodeState, { icon: IconName; label: string }> = {
   pending: { icon: 'pending', label: 'not started' },
 }
 
+/**
+ * A step that has not started is quieter than the walk that reached it. The rail
+ * reads top to bottom as a sequence, and what is still ahead should not compete
+ * for the eye with where the run actually is — the grey ramp alone was not
+ * enough separation once every row carried a drawn mark rather than a character.
+ *
+ * A skipped step keeps its weight: the decision to skip it is news, and its
+ * reason is a sentence someone has to be able to read.
+ */
+export function nodeAhead(state: NodeState): string {
+  return state === 'pending' ? 'opacity-60' : ''
+}
+
 /** The mark's own classes — `settled` reads as grey here, not as a green tick. */
 export function nodeMarkClass(state: NodeState): string {
   const signal = NODE_SIGNAL[state]
