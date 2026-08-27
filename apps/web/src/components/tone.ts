@@ -139,7 +139,7 @@ export const NODE_MARK: Record<NodeState, { glyph: string; label: string }> = {
 /** The glyph's own classes — `settled` reads as grey here, not as a green tick. */
 export function nodeMarkClass(state: NodeState): string {
   const signal = NODE_SIGNAL[state]
-  const live = state === 'running' ? 'dot-live ' : ''
+  const live = state === 'running' ? 'animate-breath ' : ''
 
   return `${live}${signal === 'settled' ? 'text-muted-foreground' : SIGNAL_TEXT[signal]}`
 }

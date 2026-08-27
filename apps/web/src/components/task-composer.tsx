@@ -55,7 +55,7 @@ const TONE_SLAB: Record<ConsoleTone, SlabTone> = {
 }
 
 function markClass(tone: ConsoleTone): string {
-  const live = tone === 'running' ? 'dot-live ' : ''
+  const live = tone === 'running' ? 'animate-breath ' : ''
 
   return `${live}${signalText(consoleSignal(tone))}`
 }

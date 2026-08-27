@@ -35,8 +35,17 @@ export function Waiting({ label, className, children }: WaitingProps) {
  * no use for six grey rectangles; what it needs is the one sentence saying what
  * is being waited on, and that belongs to the pane, not to the slots.
  */
+const SKELETON = [
+  'relative block overflow-hidden rounded-md',
+  'bg-[color-mix(in_srgb,var(--color-foreground)_8%,transparent)]',
+  // The sheen travels the way the line will be read, at a contrast the eye can
+  // leave alone.
+  'after:absolute after:inset-0 after:animate-sheen',
+  'after:bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--color-foreground)_7%,transparent),transparent)]',
+].join(' ')
+
 export function Skeleton({ className }: { readonly className?: string }) {
-  return <span aria-hidden="true" className={cn('skeleton', className)} />
+  return <span aria-hidden="true" className={cn(SKELETON, className)} />
 }
 
 /**
@@ -181,10 +190,13 @@ export function Working({ children, className }: WorkingProps) {
     <span className={cn('inline-flex items-baseline', className)}>
       {stripEllipsis(children)}
 
+      {/* The stagger is written out rather than left to `nth-child`, which is
+          what a class could do and a utility cannot. Three dots keeping the same
+          time is a full stop that flashes, not an ellipsis that travels. */}
       <span aria-hidden="true" className="inline-flex">
-        <span className="working-dot">.</span>
-        <span className="working-dot">.</span>
-        <span className="working-dot">.</span>
+        <span className="animate-working">.</span>
+        <span className="animate-working [animation-delay:0.16s]">.</span>
+        <span className="animate-working [animation-delay:0.32s]">.</span>
       </span>
     </span>
   )
