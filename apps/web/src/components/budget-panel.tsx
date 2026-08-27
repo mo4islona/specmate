@@ -1,6 +1,6 @@
 import { type BudgetKey, spendAgainstBudget } from '@specmate/core'
 import type { TaskDetail } from '../lib/api-client.ts'
-import { cx, MicroLabel } from '../ui/index.ts'
+import { cn, MicroLabel } from '../ui/index.ts'
 import { signalDot, signalText } from './tone.ts'
 
 type Budgets = TaskDetail['task']['budgets']
@@ -75,7 +75,7 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
                   as an underline, which is what a spend row must not look like. */}
               <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-border/70">
                 <div
-                  className={cx('h-full rounded-full', near ? signalDot('asking') : 'bg-foreground/25')}
+                  className={cn('h-full rounded-full', near ? signalDot('asking') : 'bg-foreground/25')}
                   style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
                 />
               </div>

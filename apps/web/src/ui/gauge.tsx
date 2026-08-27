@@ -1,4 +1,4 @@
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 interface MeterProps {
   readonly done: number
@@ -17,7 +17,7 @@ export function Meter({ done, total, label, className }: MeterProps) {
 
   return (
     <div
-      className={cx('meter', className)}
+      className={cn('meter', className)}
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}
@@ -61,7 +61,7 @@ export function StatBar({ additions, deletions, className }: StatBarProps) {
 
   return (
     <span
-      className={cx('stat-bar', className)}
+      className={cn('stat-bar', className)}
       aria-hidden="true"
       title={`+${additions} −${deletions}`}
     >
@@ -70,7 +70,7 @@ export function StatBar({ additions, deletions, className }: StatBarProps) {
           // Fixed-length bar; a block's position is its identity.
           // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
           key={index}
-          className={cx(
+          className={cn(
             'stat-block',
             index < added && 'stat-block-add',
             index >= added && index < added + removed && 'stat-block-remove',

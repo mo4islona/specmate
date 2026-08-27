@@ -1,5 +1,5 @@
 import type { ComponentPropsWithRef } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 interface ChipProps extends ComponentPropsWithRef<'button'> {
   /** One of a set, chosen. */
@@ -19,7 +19,7 @@ export function Chip({ pressed, expanded, className, children, ...rest }: ChipPr
       type="button"
       aria-pressed={pressed}
       aria-expanded={expanded}
-      className={cx('chip', className)}
+      className={cn('chip', className)}
       {...rest}
     >
       {children}

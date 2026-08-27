@@ -20,10 +20,10 @@
  * Everything here is on `/kit`, in every theme, in every state.
  */
 export { Badge, type BadgeTone } from './badge.tsx'
-export { Button, ButtonLink, type ButtonVariant, buttonClass, IconButton } from './button.tsx'
+export { Button, ButtonLink, type ButtonVariant, buttonVariants, IconButton } from './button.tsx'
 export { Chip } from './chip.tsx'
 export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.tsx'
-export { cx } from './cx.ts'
+export { cn } from './cn.ts'
 export { Diff, type DiffView } from './diff.tsx'
 export { Drawer } from './drawer.tsx'
 export { Checkbox, Field, FieldLabel, Input, Select, Textarea } from './field.tsx'

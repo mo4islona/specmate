@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation } from 'wouter'
 import type { StreamConnectionState } from '../lib/event-stream.ts'
 import { useStreamStatus } from '../lib/stream-status.ts'
-import { ButtonLink, cx, Icon, NavRow } from '../ui/index.ts'
+import { ButtonLink, cn, Icon, NavRow } from '../ui/index.ts'
 import { SpecMateMark } from './mark.tsx'
 import { TaskNavigation } from './task-navigation.tsx'
 import { signalText, streamSignal } from './tone.ts'
@@ -35,9 +35,9 @@ function Lockup({ stream, compact = false }: LockupProps) {
 
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2.5">
-      <SpecMateMark stream={stream} className={cx('shrink-0', compact ? 'h-6 w-6' : 'h-7 w-7')} />
+      <SpecMateMark stream={stream} className={cn('shrink-0', compact ? 'h-6 w-6' : 'h-7 w-7')} />
       <span
-        className={cx(
+        className={cn(
           'font-mono font-semibold tracking-[0.02em] text-foreground',
           compact ? 'text-sm' : 'text-base',
         )}
@@ -47,7 +47,7 @@ function Lockup({ stream, compact = false }: LockupProps) {
 
       {trouble && (
         <span
-          className={cx('min-w-0 truncate font-mono text-[0.62rem]', trouble.tone)}
+          className={cn('min-w-0 truncate font-mono text-[0.62rem]', trouble.tone)}
           role="status"
           title={`event stream ${stream}`}
         >

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useNow } from '../hooks/use-now.ts'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { formatDuration, stageDuration } from '../lib/task-thread.ts'
-import { cx, HoverHint, MicroLabel } from '../ui/index.ts'
+import { cn, HoverHint, MicroLabel } from '../ui/index.ts'
 import { NodeHint } from './node-hint.tsx'
 import { NODE_MARK, nodeMarkClass, nodeName, signalText } from './tone.ts'
 
@@ -46,7 +46,7 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
             <li key={node.key}>
               <HoverHint hint={<NodeHint node={node} now={now} />}>
                 {node.state === 'pending' ? (
-                  <span className={cx(box, 'cursor-default')}>{row}</span>
+                  <span className={cn(box, 'cursor-default')}>{row}</span>
                 ) : (
                   <button
                     type="button"
@@ -55,7 +55,7 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
                     // Selection is where the owner is, not how the node is
                     // going: a green wash under a failed node claimed a state
                     // the ✕ beside it contradicts.
-                    className={cx(
+                    className={cn(
                       box,
                       selectedKey === node.key ? 'bg-foreground/[0.09]' : 'hover:bg-foreground/[0.05]',
                     )}
@@ -84,7 +84,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
     <span className="block text-[0.79rem]">
       <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
         <span
-          className={cx(
+          className={cn(
             'text-center font-mono text-[0.7rem] leading-none',
             nodeMarkClass(node.state),
           )}
@@ -94,7 +94,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
           <span className="sr-only">{mark.label}</span>
         </span>
 
-        <span className={cx('min-w-0 truncate', nodeName(node.state))}>{node.label}</span>
+        <span className={cn('min-w-0 truncate', nodeName(node.state))}>{node.label}</span>
 
         <NodeFact node={node} now={now} />
       </span>
@@ -113,7 +113,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
  * said that. A node whose only fact would be its own state says nothing.
  */
 function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
-  const classes = cx(
+  const classes = cn(
     'shrink-0 text-right font-mono text-[0.61rem]',
     node.state === 'stopped' ? signalText('stopped') : 'text-muted-foreground',
   )

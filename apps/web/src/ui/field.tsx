@@ -1,5 +1,5 @@
 import { type ComponentPropsWithRef, createContext, type ReactNode, useContext, useId } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { Icon } from './icon.tsx'
 import { ErrorNote, Note } from './note.tsx'
 
@@ -34,7 +34,7 @@ interface FieldProps {
  */
 export function FieldLabel({ className, children, ...rest }: ComponentPropsWithRef<'p'>) {
   return (
-    <p className={cx('field-label', className)} {...rest}>
+    <p className={cn('field-label', className)} {...rest}>
       {children}
     </p>
   )
@@ -89,7 +89,7 @@ function useControl(
 
   return {
     id: id ?? field?.id,
-    className: cx('control', fullWidth && 'w-full', mono && 'font-mono', className),
+    className: cn('control', fullWidth && 'w-full', mono && 'font-mono', className),
     'aria-invalid': field?.invalid ? true : undefined,
     'aria-describedby': field?.describedBy,
   }
@@ -124,7 +124,7 @@ export function Checkbox({
 }: ComponentPropsWithRef<'input'> & { readonly label: ReactNode }) {
   return (
     <label
-      className={cx(
+      className={cn(
         'flex cursor-pointer items-center gap-1.5 text-muted-foreground text-xs',
         // The word goes quiet with the box. A live label beside a dead tick
         // reads as a checkbox you may still click.
@@ -163,7 +163,7 @@ export function Select({
   const control = useControl(mono, fullWidth, id, undefined)
 
   return (
-    <span className={cx('relative', fullWidth ? 'block' : 'inline-block', className)}>
+    <span className={cn('relative', fullWidth ? 'block' : 'inline-block', className)}>
       <select {...control} {...rest}>
         {children}
       </select>

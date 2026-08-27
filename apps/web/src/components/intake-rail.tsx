@@ -20,7 +20,7 @@ import { repoLabel, repoWebUrl } from '../lib/repo-link.ts'
 import {
   Badge,
   Chip,
-  cx,
+  cn,
   Icon,
   MicroLabel,
   Note,
@@ -180,7 +180,7 @@ function SlotLines({ widths }: { widths: readonly string[] }) {
   return (
     <div className="space-y-1.5">
       {widths.map((width) => (
-        <Skeleton key={width} className={cx('h-3', width)} />
+        <Skeleton key={width} className={cn('h-3', width)} />
       ))}
     </div>
   )

@@ -8,7 +8,7 @@ import type {
   LiveActivity,
   TurnEntry,
 } from '../lib/task-thread.ts'
-import { cx, TextButton } from '../ui/index.ts'
+import { cn, TextButton } from '../ui/index.ts'
 import { ActivityEditBlock } from './activity-edit.tsx'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { signalText } from './tone.ts'
@@ -92,7 +92,7 @@ function LiveLine({ live }: { live: LiveActivity }) {
       aria-live="polite"
       className="flex items-baseline gap-2 py-[0.12rem] font-mono text-[0.72rem] leading-5"
     >
-      <span className={cx('dot-live shrink-0 leading-none', signalText('live'))} aria-hidden="true">
+      <span className={cn('dot-live shrink-0 leading-none', signalText('live'))} aria-hidden="true">
         +
       </span>
 
@@ -136,7 +136,7 @@ const RunLine = memo(function RunLine({
 
       <p className="flex items-baseline gap-2">
         <span
-          className={cx(
+          className={cn(
             'shrink-0 leading-none',
             entry.live ? `dot-live ${signalText('live')}` : BULLET_TONE[entry.tone],
           )}
@@ -152,7 +152,7 @@ const RunLine = memo(function RunLine({
           </span>
         ) : (
           <span
-            className={cx(
+            className={cn(
               'min-w-0 break-words',
               entry.tone === 'trouble' ? signalText('stopped') : 'text-foreground',
             )}
@@ -219,7 +219,7 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
   return (
     <li className="flex py-2" data-feed-kind={entry.author} title={formatTimestamp(entry.at)}>
       <div
-        className={cx(
+        className={cn(
           'flex min-w-0 max-w-[42rem] flex-col gap-1',
           mine ? 'ml-auto items-end' : 'mr-auto items-start',
         )}
@@ -235,7 +235,7 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
             {/* Your own side needs no name; a node's name is the only identity
                 the machine has, so it keeps one. */}
             {entry.author !== 'owner' && (
-              <span className={cx('uppercase tracking-[0.06em]', AUTHOR_TONE[entry.author])}>
+              <span className={cn('uppercase tracking-[0.06em]', AUTHOR_TONE[entry.author])}>
                 {entry.label}
               </span>
             )}
@@ -256,10 +256,10 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
         {entry.body && (
           <div
             data-balloon={balloon ? '' : undefined}
-            className={cx('min-w-0', balloon && 'rounded-[1.25rem] bg-popover px-4 py-2.5')}
+            className={cn('min-w-0', balloon && 'rounded-[1.25rem] bg-popover px-4 py-2.5')}
           >
             <div
-              className={cx(
+              className={cn(
                 'artifact-document text-[0.85rem]',
                 clamped && 'line-clamp-2 text-muted-foreground',
               )}

@@ -1,5 +1,5 @@
 import type { ComponentPropsWithRef, HTMLAttributes, ReactNode } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 /**
  * The colour a small label wears. A role, never a hue — and a short list, because
@@ -33,7 +33,7 @@ const NOTE_SIZE = {
 /** Anything the interface says in its quiet voice: a description, an absence, a wait. */
 export function Note({ size = 'sm', className, children, ...rest }: NoteProps) {
   return (
-    <p className={cx('text-muted-foreground', NOTE_SIZE[size], className)} {...rest}>
+    <p className={cn('text-muted-foreground', NOTE_SIZE[size], className)} {...rest}>
       {children}
     </p>
   )
@@ -53,7 +53,7 @@ export function MicroLabel({
   ...rest
 }: MicroLabelProps) {
   return (
-    <Tag className={cx('micro-label', TONE[tone], className)} {...rest}>
+    <Tag className={cn('micro-label', TONE[tone], className)} {...rest}>
       {children}
     </Tag>
   )
@@ -62,7 +62,7 @@ export function MicroLabel({
 /** What went wrong, under the thing it went wrong in. */
 export function ErrorNote({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cx('field-error', className)} {...rest}>
+    <p className={cn('field-error', className)} {...rest}>
       {children}
     </p>
   )
@@ -77,7 +77,7 @@ export function TextButton({ className, children, ...rest }: ComponentPropsWithR
   return (
     <button
       type="button"
-      className={cx(
+      className={cn(
         'font-mono text-[0.62rem] text-muted-foreground hover:text-foreground hover:underline',
         className,
       )}
@@ -106,7 +106,7 @@ export function Dot({ className, live = false, halo = false }: DotProps) {
   return (
     <span
       aria-hidden="true"
-      className={cx(
+      className={cn(
         'h-1.5 w-1.5 shrink-0 rounded-full',
         live && 'dot-live',
         halo && 'dot-halo',
@@ -134,7 +134,7 @@ const EMPTY_HEIGHT = {
 export function EmptyState({ height = 'sm', mono = false, className, children }: EmptyStateProps) {
   return (
     <div
-      className={cx(
+      className={cn(
         'grid place-items-center p-6 text-center text-sm text-muted-foreground',
         EMPTY_HEIGHT[height],
         mono && 'font-mono',

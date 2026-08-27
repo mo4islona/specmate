@@ -12,7 +12,7 @@ import {
   Settings,
   X,
 } from 'lucide-react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 /**
  * Every icon this app draws, and the only file that names lucide.
@@ -82,7 +82,7 @@ export function Icon({ name, size = 'sm', label, className }: IconProps) {
       size={SIZES[size]}
       strokeWidth={STROKE}
       absoluteStrokeWidth
-      className={cx('shrink-0', className)}
+      className={cn('shrink-0', className)}
       aria-hidden={label ? undefined : true}
       aria-label={label}
       role={label ? 'img' : undefined}

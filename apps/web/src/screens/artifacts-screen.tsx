@@ -4,7 +4,7 @@ import { ListDetailPanel } from '../components/list-detail-panel.tsx'
 import { type ArtifactSummary, getArtifact, listArtifacts } from '../lib/api-client.ts'
 import { formatTimestamp } from '../lib/format.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { cx, ErrorState, Icon, LoadingState, MicroLabel, NavRow, Note } from '../ui/index.ts'
+import { cn, ErrorState, Icon, LoadingState, MicroLabel, NavRow, Note } from '../ui/index.ts'
 
 interface ArtifactsScreenProps {
   taskId: string
@@ -74,7 +74,7 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                           <Icon name="file" className={open ? 'text-foreground' : 'text-muted-foreground'} />
                           <span className="min-w-0 flex-1">
                             <span
-                              className={cx(
+                              className={cn(
                                 'block truncate font-mono text-[0.74rem]',
                                 open ? 'text-foreground' : 'text-muted-foreground',
                               )}

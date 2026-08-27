@@ -11,7 +11,8 @@ import { queryKeys } from '../lib/query-keys.ts'
 import { repoLabel } from '../lib/repo-link.ts'
 import {
   Button,
-  buttonClass,
+  buttonVariants,
+  cn,
   Console,
   ConsoleField,
   ErrorNote,
@@ -241,7 +242,9 @@ export function NewTaskScreen() {
           </Console>
 
           <details className="group">
-            <summary className={`${buttonClass('ghost')} w-fit cursor-pointer list-none`}>
+            <summary
+              className={cn(buttonVariants({ variant: 'ghost' }), 'w-fit cursor-pointer list-none')}
+            >
               <span className="transition-transform group-open:rotate-90" aria-hidden="true">
                 ›
               </span>
