@@ -1,5 +1,4 @@
 import {
-  BookMarked,
   Check,
   ChevronDown,
   ChevronsDownUp,
@@ -8,6 +7,7 @@ import {
   CircleHelp,
   CircleSmall,
   File,
+  GitBranch,
   GitPullRequest,
   Info,
   type LucideIcon,
@@ -42,7 +42,7 @@ const GLYPHS = {
   fold: ChevronsDownUp,
   info: Info,
   'pull-request': GitPullRequest,
-  repo: BookMarked,
+  repo: GitBranch,
   settings: Settings,
   unfold: ChevronsUpDown,
 
