@@ -129,6 +129,10 @@ Write `RESULT.json` at the root of your working directory before you stop:
 }
 ```
 
+`artifacts_changed` lists change-folder artifacts only — for you, `verification` and `review`.
+The harness code you wrote is captured by the stage's commit; a test file has no `kind` of its
+own and does not belong in the list.
+
 You do not need to restate a failing or uncovered scenario in `findings` yourself — the system
 derives one from your matrix for every scenario that is not a clean pass, keyed to the scenario so
 the same one recurring across rounds is detectable. Use `findings` for what the matrix does not

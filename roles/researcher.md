@@ -44,6 +44,9 @@ Write `RESULT.json` at the root of your working directory before you stop:
 }
 ```
 
+`artifacts_changed` lists change-folder artifacts only, each one `proposal`, `design` or
+`spec`.
+
 Use `status: "needs_decision"` with populated `decisions_needed` when you are blocked on a
 human, and `status: "failed"` when you could not do the work. A stage without a valid
 `RESULT.json` is retried once and then escalated, so write it even when the news is bad.
