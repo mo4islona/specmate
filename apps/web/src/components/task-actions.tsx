@@ -1,3 +1,4 @@
+import { isTerminal } from '@specmate/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { useLocation } from 'wouter'
@@ -29,10 +30,23 @@ interface TaskActionsProps {
 type TasksCache = Awaited<ReturnType<typeof listTasks>>
 type AttentionCache = Awaited<ReturnType<typeof listAttention>>
 
+/**
+ * A word, not the task's title: a title runs to a full sentence, and copying one
+ * out is a transcription exercise rather than the moment of thought the typing is
+ * there to buy. Which task is going is the dialog's heading; this is only the
+ * deliberate hand.
+ */
+const CONFIRMATION = 'delete'
+
+function confirms(typed: string): boolean {
+  return typed.trim().toLowerCase() === CONFIRMATION
+}
+
 /** The one task-row action rare enough to stay behind the overflow trigger. */
 export function TaskActions({ task, current }: TaskActionsProps) {
   const [, navigate] = useLocation()
   const queryClient = useQueryClient()
+  const live = !isTerminal(task.status)
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmation, setConfirmation] = useState('')
@@ -62,7 +76,7 @@ export function TaskActions({ task, current }: TaskActionsProps) {
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    if (confirmation !== task.title || deletion.isPending) return
+    if (!confirms(confirmation) || deletion.isPending) return
 
     deletion.mutate()
   }
@@ -99,14 +113,16 @@ export function TaskActions({ task, current }: TaskActionsProps) {
           <MicroLabel tone="destructive">Permanent deletion</MicroLabel>
           <h3 className="mt-2 break-words text-sm font-semibold">Delete {task.title}?</h3>
           <Note size="xs" className="mt-2 leading-5">
-            This removes the task, thread, documents, decisions, and run history from SpecMate.
-            Repository commits, branches, and pull requests are not changed.
+            {live ? 'This cancels the run, then removes' : 'This removes'} the task, thread,
+            documents, decisions, and run history from SpecMate. Repository commits, branches, and
+            pull requests are not changed.
           </Note>
 
-          <Field label={`Type “${task.title}” to confirm`} className="mt-4">
+          <Field label={`Type “${CONFIRMATION}” to confirm`} className="mt-4">
             <Input
               autoFocus
               autoComplete="off"
+              autoCapitalize="none"
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
             />
@@ -121,7 +137,7 @@ export function TaskActions({ task, current }: TaskActionsProps) {
             <Button
               type="submit"
               variant="destructive"
-              disabled={confirmation !== task.title}
+              disabled={!confirms(confirmation)}
               pending={deletion.isPending}
               pendingLabel="Deleting…"
             >

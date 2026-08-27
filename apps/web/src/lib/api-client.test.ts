@@ -37,23 +37,15 @@ describe('task deletion', () => {
     expect(request.mock.calls[0]?.[1]?.method).toBe('DELETE')
   })
 
-  test('keeps the structured rejection from a task that is not deletable', async () => {
+  test('keeps the structured rejection from a task that moved under the request', async () => {
+    const detail = 'task task-1 left implement while implement → cancelled was in flight'
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        Response.json(
-          { code: 'conflict', detail: 'only archived or cancelled tasks can be deleted' },
-          { status: 409 },
-        ),
-      ),
+      vi.fn(async () => Response.json({ code: 'conflict', detail }, { status: 409 })),
     )
 
     await expect(deleteTask('task-1')).rejects.toEqual(
-      expect.objectContaining({
-        status: 409,
-        code: 'conflict',
-        message: 'only archived or cancelled tasks can be deleted',
-      }),
+      expect.objectContaining({ status: 409, code: 'conflict', message: detail }),
     )
   })
 })

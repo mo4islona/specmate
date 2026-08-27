@@ -1,3 +1,4 @@
+import { isTerminal } from '@specmate/core'
 import {
   artifacts,
   getDefaultRepository,
@@ -7,12 +8,12 @@ import {
   tasks,
 } from '@specmate/db'
 import { createTask, taskSpend } from '@specmate/orchestrator/store'
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { validator } from 'hono/validator'
 import { ApiError } from '../errors.ts'
 import { deriveTitle, resolveRepository } from '../intake.ts'
-import type { RouteContext } from './context.ts'
+import { OWNER_ACTOR, type RouteContext } from './context.ts'
 import { knownRepositories } from './known-repositories.ts'
 import { CreateTask, FileDiffQuery } from './schemas.ts'
 import { serializeStage } from './serialize.ts'
@@ -30,7 +31,7 @@ function slugify(title: string): string {
 
 /** A task: creating one, reading one, and the artifacts and diffs hanging off it. */
 export function taskRoutes(ctx: RouteContext) {
-  const { db, workspace, requireTask, performDiffOperation } = ctx
+  const { db, gates, workspace, requireTask, performDiffOperation, performGateAction } = ctx
 
   return new Hono()
     .get('/tasks', async (c) => {
@@ -77,20 +78,17 @@ export function taskRoutes(ctx: RouteContext) {
 
     .delete('/tasks/:id', async (c) => {
       const task = await requireTask(c.req.param('id'))
-      if (task.status !== 'archived' && task.status !== 'cancelled') {
-        throw new ApiError('conflict', 'only archived or cancelled tasks can be deleted', {
-          status: 409,
-        })
+
+      // A live task is stopped before its record goes. Cancel takes the pinned
+      // graph's interrupt edge, dismisses what the task left open and frees the
+      // tasks blocked on it; deleting the row underneath a run would leave the
+      // orchestrator writing into a task that is no longer there.
+      if (!isTerminal(task.status)) {
+        await performGateAction(() => gates.cancel(task.id, OWNER_ACTOR))
       }
 
       await workspace.release(task.id)
-      const [deleted] = await db
-        .delete(tasks)
-        .where(and(eq(tasks.id, task.id), inArray(tasks.status, ['archived', 'cancelled'])))
-        .returning({ id: tasks.id })
-      if (!deleted) {
-        throw new ApiError('conflict', 'task is no longer eligible for deletion', { status: 409 })
-      }
+      await db.delete(tasks).where(eq(tasks.id, task.id))
 
       return c.body(null, 204)
     })

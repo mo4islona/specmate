@@ -191,36 +191,38 @@ restore one rather than accepting text that reaches nobody.
 
 ### Requirement: REQ-1800 — Permanent deletion is available without becoming furniture
 
-The task list SHALL make permanent deletion available only from an archived or cancelled task's
-overflow menu. The destructive action MUST NOT appear in the task header, its navigation, its
-thread, or as a standing button in the task row. The overflow control SHALL remain reachable by
-keyboard and on a touch screen; a pointer interface MAY reveal it only while the row is hovered,
-focused, or current. `Delete task permanently…` SHALL be the menu's last item and SHALL be
-separated from non-destructive actions. An active or failed task MUST NOT offer permanent
-deletion, because the former is still running and the latter remains restartable.
+The task list SHALL make permanent deletion available from every task row's overflow menu,
+whatever the task's state. The destructive action MUST NOT appear in the task header, its
+navigation, its thread, or as a standing button in the task row. The overflow control SHALL remain
+reachable by keyboard and on a touch screen; a pointer interface MAY reveal it only while the row
+is hovered, focused, or current. `Delete task permanently…` SHALL be the menu's last item and SHALL
+be separated from non-destructive actions.
 
 Selecting permanent deletion SHALL open a confirmation that names the task, states that the task
 and its subordinate SpecMate records will be removed, and states that repository commits,
-branches, and pull requests are not rewritten. The destructive confirmation SHALL remain
-unavailable until the owner enters the task's title exactly. While deletion is in flight the
-confirmation SHALL state that it is working and prevent a second request; a failure SHALL leave
-the task and the confirmation in place with the reason. Success SHALL remove the row from the
-task list, and deleting the task currently open SHALL return the owner to the inbox rather than
-leave a route to a record that no longer exists.
+branches, and pull requests are not rewritten. For a task that has not reached a terminal state the
+confirmation SHALL also say that its run is cancelled first, so the owner is not told only half of
+what the action does. The destructive confirmation SHALL remain unavailable until the owner types
+the confirmation word the dialog names; the word MUST NOT be derived from the task, whose titles
+run to a sentence, and surrounding space and letter case MUST NOT decide the outcome. While
+deletion is in flight the confirmation SHALL state that it is working and prevent a second
+request; a failure SHALL leave the task and the confirmation in place with the reason. Success
+SHALL remove the row from the task list, and deleting the task currently open SHALL return the
+owner to the inbox rather than leave a route to a record that no longer exists.
 
-#### Scenario: AC-1805 — Deletion is behind the terminal task's overflow menu
+#### Scenario: AC-1805 — Deletion is behind the row's overflow menu
 
-- **WHEN** the owner opens an archived or cancelled task row's overflow menu
+- **WHEN** the owner opens a task row's overflow menu
 - **THEN** `Delete task permanently…` SHALL appear as its last separated action, while no permanent-delete control appears in the task header or thread
 
-#### Scenario: AC-1806 — A recoverable task cannot be deleted
+#### Scenario: AC-1806 — A live task says its run is cancelled first
 
-- **WHEN** a task is active or failed
-- **THEN** its task-row menu SHALL NOT offer permanent deletion
+- **WHEN** the owner opens permanent deletion on a task that has not reached a terminal state
+- **THEN** the confirmation SHALL say the run is cancelled before the task is removed
 
-#### Scenario: AC-1807 — The title guards the irreversible action
+#### Scenario: AC-1807 — The confirmation word guards the irreversible action
 
-- **WHEN** the owner opens the permanent-delete confirmation and has not entered the task's title exactly
+- **WHEN** the owner opens the permanent-delete confirmation and has not yet typed the word it names
 - **THEN** the destructive confirmation SHALL remain unavailable and no delete request SHALL be made
 
 #### Scenario: AC-1808 — Deleting the task being read leaves a valid screen

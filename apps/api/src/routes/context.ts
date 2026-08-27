@@ -66,6 +66,7 @@ export type GateOperations = Pick<
   | 'restartInterruptedStage'
   | 'answer'
   | 'dismiss'
+  | 'cancel'
 >
 
 export type WorkspaceDiffOperations = Pick<WorkspaceService, 'diffFiles' | 'diffFile' | 'release'>

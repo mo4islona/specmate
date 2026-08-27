@@ -116,25 +116,37 @@ state sentence.
 **Permanent deletion belongs to the task row, not the task.** The task header is shared by every
 surface and exists to say what the task is, while the console exists to act on the work. Neither
 is the place for removing the record itself. The task index is where the record is found and
-where it disappears, so an archived or cancelled row owns an overflow control with the delete
-action last and separated. On pointer devices the control can stay quiet until hover, focus, or
+where it disappears, so every row owns an overflow control with the delete action last and
+separated. On pointer devices the control can stay quiet until hover, focus, or
 selection; keyboard and touch users still get an explicit reachable trigger. The trigger is a
 sibling of the row's navigation link rather than a control nested inside a link, so opening the
 menu never also navigates to the task.
 
-**The irreversible verb has two locks.** State is the first: only archived and cancelled tasks
-qualify. A failed task remains restartable and must be cancelled before deletion, so the delete
-endpoint cannot race a recovery that still has meaning. Exact-title confirmation is the second:
-the dialog names what SpecMate removes, names the repository history it leaves alone, and does
-not enable its destructive verb until the title matches. Deleting the task currently open returns
-to the inbox before invalidating the task reads, so no deleted detail is left as the current
-screen.
+**State is not a lock; a typed word is.** Gating deletion on a stopped task withheld it from
+exactly the tasks worth deleting — one that went wrong at the first node, one parked on a question
+nobody means to answer — and the owner's workaround was to cancel by hand and come back. So the
+endpoint does that step itself: a task that is not terminal is cancelled first, which is where the
+run stops, open questions are dismissed and dependents are freed. What remains as the lock is the
+confirmation: the dialog names what SpecMate removes, names the repository history it leaves
+alone, and does not enable its destructive verb until `delete` is typed. The word is deliberately
+not the task's title. A title here is a sentence — *Stop the Y-axis column from masking pie and
+heatmap charts* — and copying one of those across is a transcription exercise, which buys care
+about spelling rather than care about the decision; long enough and the owner reaches for the
+clipboard, which buys nothing at all. Which task is going is the dialog's heading, where reading
+it costs nothing. Deleting the task currently open returns to the inbox before invalidating the
+task reads, so no deleted detail is left as the current screen.
 
-**Release precedes deletion.** Archived and cancelled workspaces should already be released, and
-release is idempotent under REQ-710; repeating it at the delete boundary closes the gap left by an
-earlier cleanup failure. The database row is removed only after that succeeds, at which point
-REQ-310 supplies the existing cascade. This keeps filesystem cleanup from needing a task record
-that has already gone and keeps the change schema-free.
+**Cancel, then release, then delete.** Cancelling is what makes release legal — REQ-710 refuses to
+tear down the working tree of a task that is still walking — and release is idempotent there, so
+repeating it at the delete boundary also closes the gap left by an earlier cleanup failure. The
+database row is removed only after that succeeds, at which point REQ-310 supplies the existing
+cascade. This keeps filesystem cleanup from needing a task record that has already gone and keeps
+the change schema-free.
+
+Cancelling through the engine rather than writing `cancelled` into the row is what makes the order
+safe: the transition is taken under the task's advisory lock and compare-and-swaps on the observed
+status, so a stage finishing at the same moment loses the race and cannot resurrect the task
+between the cancel and the delete.
 
 **What the first pass built is kept.** `task-thread.ts` keeps the event vocabulary and the
 placement rules but stops grouping into chapters; `task-pipeline.ts` keeps `buildPipelineNodes`
@@ -164,9 +176,14 @@ unchanged — AC-954 and AC-955 are already satisfied and stay satisfied.
 - **The overflow control is intentionally quiet and therefore easier to miss.** Mitigated by
   keeping it keyboard- and touch-reachable and by using the task row, the place an owner already
   scans when managing old work. Permanent deletion benefits from a little discovery cost.
-- **Workspace release can succeed while the later database deletion fails.** The surviving task
-  is already archived or cancelled, so it needs no working tree and remains safe to retry; the
-  reverse order could strand a working tree with no task identity and is worse.
+- **Workspace release can succeed while the later database deletion fails.** The surviving task is
+  terminal by then, so it needs no working tree and remains safe to retry; the reverse order could
+  strand a working tree with no task identity and is worse.
+- **Deleting a task mid-stage discards the record its execution is still writing to.** The attempt
+  in flight finds its task gone and its writes fail. Accepted: the same is true of any record an
+  owner deletes while something holds it, the cascade leaves nothing half-removed, and the
+  alternative — waiting for the attempt to end before honouring the delete — makes the one action
+  that is supposed to clear a stuck task wait on the thing that is stuck.
 
 ## Migration Plan
 
