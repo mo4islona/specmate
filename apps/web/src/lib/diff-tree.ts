@@ -42,13 +42,31 @@ export function fileName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
+const ELIDED = '…/'
+
 /**
  * Long paths lose their front, not their back. Truncated the usual way, every
  * change folder in the suite reads `openspec/changes/files-review-surf…` — the
  * same twenty characters, with the part that tells them apart cut off.
+ *
+ * What goes is whole segments. Cut by character, `openspec/changes/from-a-b`
+ * came back as `…om-a-b`, which is not a path anyone can look up: the front of
+ * a name is as load-bearing as its back. The last segment therefore stays whole
+ * even when it is the thing that overruns, and the row's own `truncate` clips
+ * whatever is still too wide.
  */
 export function shortDirectory(directory: string, budget = 34): string {
   if (directory.length <= budget) return directory
 
-  return `…${directory.slice(directory.length - budget + 1)}`
+  const segments = directory.split('/')
+  let kept = directory
+
+  while (segments.length > 1 && ELIDED.length + kept.length > budget) {
+    segments.shift()
+    kept = segments.join('/')
+  }
+
+  // Nothing was dropped, so nothing is elided: a leading `…/` on a whole path
+  // claims there are directories above it that the reader cannot see.
+  return kept === directory ? directory : `${ELIDED}${kept}`
 }
