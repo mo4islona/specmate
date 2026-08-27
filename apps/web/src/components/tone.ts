@@ -3,7 +3,7 @@ import type { StreamConnectionState } from '../lib/event-stream.ts'
 import type { ConsoleTone } from '../lib/task-console.ts'
 import type { NodeState } from '../lib/task-pipeline.ts'
 import type { StateTone } from '../lib/task-state.ts'
-import type { BadgeTone } from '../ui/index.ts'
+import type { BadgeTone, IconName } from '../ui/index.ts'
 
 /**
  * Every colour the app lights outside its own kit, in one place.
@@ -127,16 +127,16 @@ export function nodeDot(state: NodeState): string {
  * beside a coloured dot were the dot's own meaning spelled again, in the column
  * meant for what the node actually cost.
  */
-export const NODE_MARK: Record<NodeState, { glyph: string; label: string }> = {
-  done: { glyph: '✓', label: 'done' },
-  running: { glyph: '●', label: 'running' },
-  awaiting: { glyph: '?', label: 'waiting on you' },
-  stopped: { glyph: '✕', label: 'stopped' },
-  skipped: { glyph: '–', label: 'skipped' },
-  pending: { glyph: '○', label: 'not started' },
+export const NODE_MARK: Record<NodeState, { icon: IconName; label: string }> = {
+  done: { icon: 'check', label: 'done' },
+  running: { icon: 'running', label: 'running' },
+  awaiting: { icon: 'waiting', label: 'waiting on you' },
+  stopped: { icon: 'close', label: 'stopped' },
+  skipped: { icon: 'skipped', label: 'skipped' },
+  pending: { icon: 'pending', label: 'not started' },
 }
 
-/** The glyph's own classes — `settled` reads as grey here, not as a green tick. */
+/** The mark's own classes — `settled` reads as grey here, not as a green tick. */
 export function nodeMarkClass(state: NodeState): string {
   const signal = NODE_SIGNAL[state]
   const live = state === 'running' ? 'animate-breath ' : ''

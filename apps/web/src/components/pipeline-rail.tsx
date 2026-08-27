@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useNow } from '../hooks/use-now.ts'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { formatDuration, stageDuration } from '../lib/task-thread.ts'
-import { cn, HoverHint, MicroLabel } from '../ui/index.ts'
+import { cn, HoverHint, Icon, MicroLabel } from '../ui/index.ts'
 import { NodeHint } from './node-hint.tsx'
 import { NODE_MARK, nodeMarkClass, nodeName, signalText } from './tone.ts'
 
@@ -54,7 +54,7 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
                     aria-pressed={selectedKey === node.key}
                     // Selection is where the owner is, not how the node is
                     // going: a green wash under a failed node claimed a state
-                    // the ✕ beside it contradicts.
+                    // the mark beside it contradicts.
                     className={cn(
                       box,
                       selectedKey === node.key
@@ -85,14 +85,13 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
   return (
     <span className="block text-[0.79rem]">
       <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
+        {/* Boxed rather than set: a mark on the baseline grid drifts with the
+            face around it, and these sit in a 0.85rem column beside a name. */}
         <span
-          className={cn(
-            'text-center font-mono text-[0.7rem] leading-none',
-            nodeMarkClass(node.state),
-          )}
+          className={cn('flex h-[0.79rem] items-center justify-center', nodeMarkClass(node.state))}
           title={mark.label}
         >
-          {mark.glyph}
+          <Icon name={mark.icon} size="xs" />
           <span className="sr-only">{mark.label}</span>
         </span>
 
@@ -121,7 +120,7 @@ function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
   )
 
   if (node.state === 'stopped') {
-    // `failed 3 times` and `cleanup failed` are news; a bare `stopped` is the ✕ again.
+    // `failed 3 times` and `cleanup failed` are news; a bare `stopped` is the mark again.
     const reason = node.reason === 'stopped' ? null : node.reason
 
     return <span className={classes}>{reason}</span>

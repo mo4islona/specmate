@@ -6,48 +6,59 @@ import { cn } from './cn.ts'
 import { Dot } from './note.tsx'
 
 /**
- * Five weights and nothing else — the verb that acts, the same verb when the
- * task is waiting on this click, the one that undoes, the alternative, and the
- * quiet one. `ghost-destructive` is the quiet one in the colour of the thing it
- * undoes; it is a modifier on `ghost` rather than a sixth weight.
+ * shadcn's button, kept as close to the upstream table as this app's palette
+ * allows. Two variants are ours because shadcn has no word for them: `warning`,
+ * the colour this app uses for "your turn", and `ghost-destructive`, the quiet
+ * verb in the colour of the thing it undoes.
  *
- * A weight carries its own metrics rather than taking a `size` beside it, which
- * is a departure from shadcn: `ghost` is shorter and lighter than the four solid
- * ones, and always has been. Splitting the two apart would be an improvement to
- * make deliberately, on its own, looking at the twenty-odd rows a ghost button
- * sits in — not as a side effect of changing what it is written in.
+ * Two other departures, both deliberate:
+ *
+ * Upstream's `destructive` writes `text-white`. Here it names the role, so the
+ * word on a red button is whatever the theme says reads on one — four of the
+ * nine palettes would otherwise put white on a red that is nearly as light.
+ *
+ * Upstream also sizes every icon inside a button to `size-4`. `Icon` sets its
+ * size as an attribute rather than a class, so that rule would catch all of them
+ * and flatten a scale of five to one. It is the only line of the base left out.
  */
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-[0.4rem] rounded-lg font-mono transition-[background-color,border-color,color] duration-[120ms] ease-[ease] disabled:cursor-not-allowed disabled:opacity-[0.38]',
+  [
+    'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap',
+    'rounded-md text-sm font-medium transition-all',
+    'disabled:pointer-events-none disabled:opacity-50',
+    'outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+    'aria-invalid:border-destructive aria-invalid:ring-destructive/20',
+  ].join(' '),
   {
     variants: {
       variant: {
-        primary:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-primary text-primary-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-primary)_84%,var(--color-hover-tint))]',
-        // A state waiting on the owner wears the colour the rest of the screen
-        // uses for "your turn" — never the red of the thing that went wrong.
-        warning:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-warning text-warning-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-warning)_84%,var(--color-hover-tint))]',
+        primary: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
+        warning: 'bg-warning text-warning-foreground shadow-xs hover:bg-warning/90',
         destructive:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-destructive text-destructive-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_84%,var(--color-hover-tint))]',
-        secondary:
-          'min-h-[2.4rem] border px-[0.95rem] py-2 text-xs/[1.25] font-bold border-[color-mix(in_srgb,var(--color-border-strong)_70%,transparent)] bg-secondary text-secondary-foreground not-disabled:hover:border-border-strong not-disabled:hover:bg-[color-mix(in_srgb,var(--color-foreground)_9%,transparent)]',
-        // No frame until you point at it: a hover border on every quiet control
-        // is what made a row of them read as a toolbar.
-        ghost:
-          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem]/[1.25] text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground',
-        'ghost-destructive':
-          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem]/[1.25] text-destructive not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_14%,transparent)] not-disabled:hover:text-destructive',
+          'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20',
+        outline: 'border border-input bg-background shadow-xs hover:bg-accent',
+        secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
+        ghost: 'hover:bg-accent hover:text-accent-foreground',
+        'ghost-destructive': 'text-destructive hover:bg-destructive/10 hover:text-destructive',
+        link: 'text-primary underline-offset-4 hover:underline',
+      },
+      size: {
+        default: 'h-9 px-4 py-2 has-[>svg]:px-3',
+        sm: 'h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5',
+        lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
+        icon: 'size-9',
       },
     },
-    defaultVariants: { variant: 'secondary' },
+    defaultVariants: { variant: 'secondary', size: 'default' },
   },
 )
 
 export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
+export type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>['size']>
 
 interface ButtonProps extends ComponentPropsWithRef<'button'> {
   readonly variant?: ButtonVariant
+  readonly size?: ButtonSize
   /**
    * The click is in flight. The button goes disabled and says so, which is the
    * `isPending ? 'Saving…' : 'Save'` every call site used to write out.
@@ -60,15 +71,14 @@ interface ButtonProps extends ComponentPropsWithRef<'button'> {
 
 /**
  * Waiting on the server is not the same as unavailable, and a verb in flight was
- * wearing the second one's 38% — which is where the breathing mark beside its
- * label went. Written as the same `disabled:` pair rather than an `aria-busy:`
- * one so `cn` can settle them: two utilities under different variants both
- * apply, and which of those wins is Tailwind's emission order rather than ours.
+ * wearing the second one's fade — which is where the breathing mark beside its
+ * label went. Written as the same `disabled:` utility so `cn` settles the pair.
  */
-const PENDING = 'disabled:cursor-progress disabled:opacity-[0.68]'
+const PENDING = 'disabled:opacity-70'
 
 export function Button({
   variant = 'secondary',
+  size = 'default',
   pending = false,
   pendingLabel,
   disabled = false,
@@ -84,10 +94,10 @@ export function Button({
   return (
     <Tag
       type={type}
-      className={cn(buttonVariants({ variant }), pending && PENDING, className)}
+      className={cn(buttonVariants({ variant, size }), pending && PENDING, className)}
       disabled={disabled || pending}
-      // What tells a verb waiting on the server from a verb you cannot use: it
-      // is what lifts the 38% back off, and it is the honest word for the state.
+      // What tells a verb waiting on the server from a verb you cannot use, and
+      // it is the honest word for the state.
       aria-busy={pending || undefined}
       {...rest}
     >
@@ -103,6 +113,8 @@ export function Button({
 interface IconButtonProps extends ComponentPropsWithRef<'button'> {
   /** The word the glyph stands for. It is the button's whole accessible name. */
   readonly label: string
+  readonly variant?: ButtonVariant
+  readonly size?: ButtonSize
 }
 
 /**
@@ -110,37 +122,34 @@ interface IconButtonProps extends ComponentPropsWithRef<'button'> {
  * act on: a row of words under every edit in a step was more of the record than
  * the record. The label is never optional — a glyph nobody can name is a guess.
  *
- * It carries its own ground, because the thing under it is usually code and an
- * unbacked glyph on code is neither.
+ * It is `Button` at the square size; what it adds is that the name is required.
  */
 export function IconButton({
   label,
+  variant = 'ghost',
+  size = 'icon',
   className,
   children,
-  type = 'button',
   ...rest
 }: IconButtonProps) {
   return (
-    <button
-      type={type}
+    <Button
+      variant={variant}
+      size={size}
       aria-label={label}
       title={label}
-      className={cn(
-        'inline-flex h-[1.55rem] w-[1.55rem] items-center justify-center rounded-[0.45rem] border-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease]',
-        'bg-[color-mix(in_srgb,var(--color-popover)_90%,transparent)] not-disabled:hover:bg-popover not-disabled:hover:text-foreground',
-        'disabled:cursor-not-allowed disabled:opacity-[0.38]',
-        className,
-      )}
+      className={className}
       {...rest}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
 interface ButtonLinkProps {
   readonly href: string
   readonly variant?: ButtonVariant
+  readonly size?: ButtonSize
   readonly className?: string
   readonly children: ReactNode
   readonly 'aria-current'?: 'page'
@@ -151,12 +160,13 @@ interface ButtonLinkProps {
 export function ButtonLink({
   href,
   variant = 'secondary',
+  size = 'default',
   className,
   children,
   ...rest
 }: ButtonLinkProps) {
   return (
-    <Link href={href} className={cn(buttonVariants({ variant }), className)} {...rest}>
+    <Link href={href} className={cn(buttonVariants({ variant, size }), className)} {...rest}>
       {children}
     </Link>
   )
