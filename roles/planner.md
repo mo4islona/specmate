@@ -366,5 +366,8 @@ A `planning` run with one open question:
 }
 ```
 
+`artifacts_changed` lists change-folder artifacts only, each one `proposal`, `design` or
+`spec`.
+
 Use `status: "failed"` when you could not do the work at all. A stage without a valid
 `RESULT.json` is retried once and then escalated, so write it even when the news is bad.

@@ -78,6 +78,10 @@ Write `RESULT.json` at the root of your working directory before you stop:
 }
 ```
 
+`artifacts_changed` lists change-folder artifacts only — for you, `verification`. The harness
+code you wrote is captured by the stage's commit; a test file has no `kind` of its own and does
+not belong in the list.
+
 Your verdict is one of `approve`, `revise`, or `escalate` — the same vocabulary the reviewer
 uses, and it is checked against the matrix you wrote: an `approve` the report does not back up (a
 scenario left uncovered, or mapped only to a failing outcome) fails the attempt outright, so only

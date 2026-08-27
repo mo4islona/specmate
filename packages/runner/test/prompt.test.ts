@@ -1,7 +1,12 @@
 import { afterAll, describe, expect, it, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { BRIEF_SECTIONS, parseStageResult } from '@specmate/core'
+import { basename, join } from 'node:path'
+import {
+  BRIEF_SECTIONS,
+  PIPELINE_PROFILE_CATALOG,
+  parseStageResult,
+  ROLE_CONTRACTS,
+} from '@specmate/core'
 import { assemblePrompt, RolePromptMissingError } from '../src/prompt.ts'
 import {
   cleanupTempDirs,
@@ -15,6 +20,17 @@ import {
 afterAll(cleanupTempDirs)
 
 const LEDGER = '## Task\n\n- Title: a task\n'
+
+/** docs/plan.md §16.3: catalogued on purpose, scheduled by nothing, prompt not written yet. */
+const UNWRITTEN_ROLES = new Set<string>(['retro'])
+
+function readRolePrompt(promptFile: string) {
+  return readFile(join(ROLES_DIR, basename(promptFile)), 'utf8').catch(() => null)
+}
+
+function writtenContracts() {
+  return Object.values(ROLE_CONTRACTS).filter((contract) => !UNWRITTEN_ROLES.has(contract.role))
+}
 
 async function setup(slug: string) {
   const harness = await makeHarness(slug)
@@ -123,15 +139,60 @@ describe('prompt assembly', () => {
     }
   })
 
-  test('every example RESULT.json in the planner prompt parses as a valid StageResult', async () => {
-    const body = await readFile(join(ROLES_DIR, 'planner.md'), 'utf8')
-    const examples = [...body.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => match[1] ?? '')
+  it('every role contract points at a prompt file that exists', async () => {
+    const missing: string[] = []
 
-    expect(examples.length).toBeGreaterThan(0)
-    for (const example of examples) {
-      const parsed = parseStageResult(example)
-      expect(parsed.ok).toBe(true)
+    for (const contract of Object.values(ROLE_CONTRACTS)) {
+      if (UNWRITTEN_ROLES.has(contract.role)) continue
+
+      const found = await readRolePrompt(contract.promptFile).then(Boolean)
+      if (!found) missing.push(`${contract.role} → ${contract.promptFile}`)
     }
+
+    expect(missing).toEqual([])
+  })
+
+  it('no pipeline can dispatch a role whose prompt is unwritten', () => {
+    const dispatchable = new Set<string>(
+      Object.values(PIPELINE_PROFILE_CATALOG)
+        .flatMap((profiles) => Object.values(profiles))
+        .flatMap((pipeline) => pipeline.nodes)
+        .flatMap((node) => (node.kind === 'stage' ? [node.role] : [])),
+    )
+
+    expect([...UNWRITTEN_ROLES].filter((role) => dispatchable.has(role))).toEqual([])
+  })
+
+  it('every example RESULT.json in every role prompt parses as a valid StageResult', async () => {
+    for (const contract of writtenContracts()) {
+      const body = await readRolePrompt(contract.promptFile)
+      // The answerer also fences a conversation result, which is a different schema.
+      const examples = [...(body ?? '').matchAll(/```json\n([\s\S]*?)\n```/g)]
+        .map((match) => match[1] ?? '')
+        .filter((example) => example.includes('"schema_version"'))
+
+      expect(examples.length).toBeGreaterThan(0)
+      for (const example of examples) {
+        expect(parseStageResult(example).ok).toBe(true)
+      }
+    }
+  })
+
+  // The failure this guards: a role told to list what it changed, holding a kind
+  // its prompt never named, invents one and loses the whole result to the enum.
+  it('every role prompt names each artifact kind its contract lets it write', async () => {
+    const unnamed: string[] = []
+
+    for (const contract of writtenContracts()) {
+      const body = (await readRolePrompt(contract.promptFile)) ?? ''
+
+      for (const kind of contract.writes) {
+        const named = body.includes(`\`${kind}\``) || body.includes(`"${kind}"`)
+        if (!named) unnamed.push(`${contract.role} never names ${kind}`)
+      }
+    }
+
+    expect(unnamed).toEqual([])
   })
 
   test('fails by name when the role has no prompt file', async () => {
