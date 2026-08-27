@@ -121,5 +121,7 @@ function WholeEditNote({
 
   const note = said()
 
-  return note === null ? null : <p className="mt-1 ml-4 text-[0.68rem] text-muted-foreground">{note}</p>
+  return note === null ? null : (
+    <p className="mt-1 ml-4 text-[0.68rem] text-muted-foreground">{note}</p>
+  )
 }

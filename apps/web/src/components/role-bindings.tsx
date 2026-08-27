@@ -78,7 +78,9 @@ export function RoleBindings({ children }: RoleBindingsProps) {
                 className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5 sm:flex-nowrap"
               >
                 <dt className="min-w-0 flex-1 sm:basis-52">
-                  <span className="block truncate text-[0.85rem] text-foreground">{roleLabel(role)}</span>
+                  <span className="block truncate text-[0.85rem] text-foreground">
+                    {roleLabel(role)}
+                  </span>
                   <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-muted-foreground">
                     {places.get(role)?.join(' · ') ??
                       (role === 'answerer' ? 'Your questions' : 'No node runs it')}

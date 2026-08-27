@@ -90,7 +90,10 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                   selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
                 )}
               >
-                <Icon name="file" className={selected ? 'text-foreground' : 'text-muted-foreground'} />
+                <Icon
+                  name="file"
+                  className={selected ? 'text-foreground' : 'text-muted-foreground'}
+                />
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-foreground">
                   {fileName(document.path)}
                 </span>
@@ -130,7 +133,9 @@ function DocumentReader({
   return (
     <div data-document-open="" className="mt-3 rounded-xl bg-popover/45 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="min-w-0 truncate font-mono text-[0.62rem] text-muted-foreground">{document.path}</p>
+        <p className="min-w-0 truncate font-mono text-[0.62rem] text-muted-foreground">
+          {document.path}
+        </p>
 
         <QuietLink href={`/tasks/${taskId}/docs/${document.id}`} className="shrink-0">
           open on Docs ↗

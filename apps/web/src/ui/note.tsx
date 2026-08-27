@@ -44,6 +44,8 @@ interface MicroLabelProps extends HTMLAttributes<HTMLElement> {
   readonly tone?: Tone
 }
 
+const MICRO = 'font-mono text-[0.68rem] font-semibold uppercase leading-tight tracking-[0.16em]'
+
 /** The eyebrow over a heading, and the word that names a group in a rail. */
 export function MicroLabel({
   as: Tag = 'p',
@@ -53,7 +55,7 @@ export function MicroLabel({
   ...rest
 }: MicroLabelProps) {
   return (
-    <Tag className={cn('micro-label', TONE[tone], className)} {...rest}>
+    <Tag className={cn(MICRO, TONE[tone], className)} {...rest}>
       {children}
     </Tag>
   )
@@ -62,7 +64,10 @@ export function MicroLabel({
 /** What went wrong, under the thing it went wrong in. */
 export function ErrorNote({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn('field-error', className)} {...rest}>
+    <p
+      className={cn('mt-[0.45rem] text-[0.78rem] leading-[1.4] text-destructive', className)}
+      {...rest}
+    >
       {children}
     </p>
   )
@@ -101,15 +106,29 @@ interface DotProps {
   readonly halo?: boolean
 }
 
+/**
+ * A mark six pixels across cannot hold a corner of the eye from the far side of
+ * a rail, so the one that is a question spreads its own colour behind it.
+ * `inherit` is what keeps that honest: the halo is the fill it came from, so a
+ * mark that failed casts red rather than amber. It needs no z-index — it paints
+ * over the dot, and 30% of a colour over 100% of it is it.
+ */
+const HALO =
+  "relative before:absolute before:-inset-[0.2rem] before:rounded-[inherit] before:bg-inherit before:opacity-30 before:content-['']"
+
 /** A state as a mark rather than a word. One size, everywhere it appears. */
 export function Dot({ className, live = false, halo = false }: DotProps) {
   return (
     <span
       aria-hidden="true"
+      // The halo is a pseudo-element now rather than a class of its own, and a
+      // pseudo-element is not something a test can ask the document for. This
+      // is the hook, and it says what the mark *is* rather than how it is drawn.
+      data-halo={halo || undefined}
       className={cn(
         'h-1.5 w-1.5 shrink-0 rounded-full',
         live && 'dot-live',
-        halo && 'dot-halo',
+        halo && HALO,
         className,
       )}
     />

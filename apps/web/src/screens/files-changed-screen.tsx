@@ -218,7 +218,7 @@ function FilesReview({ taskId, tip, files }: FilesReviewProps) {
           flush
           className="flex min-w-0 flex-col self-start overflow-hidden lg:sticky lg:top-0 lg:max-h-screen"
         >
-          <div className="rail-inset border-b border-border">
+          <div className="p-[var(--rail-gutter)] border-b border-border">
             <Input
               type="search"
               value={filter}
@@ -228,7 +228,7 @@ function FilesReview({ taskId, tip, files }: FilesReviewProps) {
             />
           </div>
 
-          <div className="scroll-thin rail-inset min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <div className="scroll-thin p-[var(--rail-gutter)] min-h-0 min-w-0 flex-1 overflow-y-auto">
             {shown.length === 0 && <Note size="xs">No file's path matches that.</Note>}
 
             <nav aria-label="Changed files" className="min-w-0">

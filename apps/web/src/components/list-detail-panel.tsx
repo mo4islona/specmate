@@ -35,7 +35,11 @@ export function ListDetailPanel({
     // tall as the viewport and no taller. Left to overflow, a long document was
     // simply cut off at the panel's own `overflow-hidden` with no way down.
     <div className="grid min-h-0 min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:h-full">
-      <Panel as="aside" flush className="scroll-thin rail-inset min-w-0 xl:overflow-y-auto">
+      <Panel
+        as="aside"
+        flush
+        className="scroll-thin p-[var(--rail-gutter)] min-w-0 xl:overflow-y-auto"
+      >
         {sidebar}
       </Panel>
 

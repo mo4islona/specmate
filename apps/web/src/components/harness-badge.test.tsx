@@ -43,10 +43,12 @@ describe('harness badge', () => {
     expect.soft(waived).not.toContain('harness gap')
     expect.soft(open).toContain('harness gap')
 
+    // The tone is the role the badge sets on itself, so this reads what it
+    // actually spends rather than which class it happens to be drawn with.
     for (const rendered of [waived, open]) {
-      expect.soft(rendered).toContain('badge-muted')
-      expect.soft(rendered).not.toContain('badge-warning')
-      expect.soft(rendered).not.toContain('badge-failed')
+      expect.soft(rendered).toContain('--badge-tone:var(--color-muted-foreground)')
+      expect.soft(rendered).not.toContain('--color-warning')
+      expect.soft(rendered).not.toContain('--color-status-failed')
     }
   })
 })

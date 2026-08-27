@@ -450,7 +450,9 @@ function ReferenceRow({ reference, read, pending }: ReferenceRowProps) {
         <p className="flex flex-wrap items-center gap-1">
           <Badge tone={STATE_TONE[read.detail.state]}>{read.detail.state}</Badge>
           {read.detail.author && (
-            <span className="font-mono text-[0.62rem] text-muted-foreground">{read.detail.author}</span>
+            <span className="font-mono text-[0.62rem] text-muted-foreground">
+              {read.detail.author}
+            </span>
           )}
           {read.detail.labels.slice(0, 3).map((label) => (
             <Badge key={label} tone="muted">
@@ -523,7 +525,9 @@ function HoldingsSections({ detail, loading }: HoldingsSectionsProps) {
         label="Remembers"
         aside={
           detail.memory.total > 0 ? (
-            <span className="font-mono text-[0.62rem] text-muted-foreground">{detail.memory.total}</span>
+            <span className="font-mono text-[0.62rem] text-muted-foreground">
+              {detail.memory.total}
+            </span>
           ) : null
         }
       >
