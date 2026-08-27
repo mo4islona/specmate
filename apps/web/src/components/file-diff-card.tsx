@@ -8,6 +8,7 @@ import {
   Diff,
   type DiffView,
   ErrorState,
+  Icon,
   LoadingState,
   Note,
   Subpanel,
@@ -90,12 +91,11 @@ export function FileDiffCard({
           aria-label={`${open ? 'Collapse' : 'Expand'} ${file.path}`}
           className="-mx-2 flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
         >
-          <span
-            aria-hidden="true"
-            className={cn('text-[0.7rem] transition-transform', open && 'rotate-90')}
-          >
-            ▶
-          </span>
+          <Icon
+            name="chevron-right"
+            size="xs"
+            className={cn('transition-transform', open && 'rotate-90')}
+          />
           <span className="min-w-0 truncate font-mono text-foreground text-xs">{file.path}</span>
         </button>
 

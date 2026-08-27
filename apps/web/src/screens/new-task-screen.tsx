@@ -18,6 +18,7 @@ import {
   ErrorNote,
   Field,
   FieldLabel,
+  Icon,
   Input,
   Note,
   PageHeader,
@@ -245,9 +246,11 @@ export function NewTaskScreen() {
             <summary
               className={cn(buttonVariants({ variant: 'ghost' }), 'w-fit cursor-pointer list-none')}
             >
-              <span className="transition-transform group-open:rotate-90" aria-hidden="true">
-                ›
-              </span>
+              <Icon
+                name="chevron-right"
+                size="xs"
+                className="transition-transform group-open:rotate-90"
+              />
               Advanced
             </summary>
 

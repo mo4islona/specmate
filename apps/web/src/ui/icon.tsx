@@ -1,6 +1,8 @@
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   Circle,
@@ -14,6 +16,7 @@ import {
   Maximize2,
   Minus,
   Settings,
+  Square,
   X,
 } from 'lucide-react'
 import { cn } from './cn.ts'
@@ -36,6 +39,8 @@ import { cn } from './cn.ts'
 const GLYPHS = {
   check: Check,
   'chevron-down': ChevronDown,
+  'chevron-left': ChevronLeft,
+  'chevron-right': ChevronRight,
   close: X,
   expand: Maximize2,
   file: File,
@@ -44,6 +49,7 @@ const GLYPHS = {
   'pull-request': GitPullRequest,
   repo: GitBranch,
   settings: Settings,
+  stop: Square,
   unfold: ChevronsUpDown,
 
   // The six a pipeline node wears. They were typed characters until now — a `✓`
