@@ -4,7 +4,7 @@ import { type DiffFileSummary, getFileDiff, getWholeFileDiff } from '../lib/api-
 import { queryKeys } from '../lib/query-keys.ts'
 import {
   Checkbox,
-  cx,
+  cn,
   Diff,
   type DiffView,
   ErrorState,
@@ -78,7 +78,7 @@ export function FileDiffCard({
     // and "which file?" is the only question that tells them apart.
     <Subpanel as="section" aria-label={file.path} className="min-w-0" id={cardId(file.path)}>
       <header
-        className={cx(
+        className={cn(
           'flex min-w-0 flex-wrap items-center justify-between gap-3',
           open && 'border-border/60 border-b pb-2.5',
         )}
@@ -92,7 +92,7 @@ export function FileDiffCard({
         >
           <span
             aria-hidden="true"
-            className={cx('text-[0.7rem] transition-transform', open && 'rotate-90')}
+            className={cn('text-[0.7rem] transition-transform', open && 'rotate-90')}
           >
             ▶
           </span>

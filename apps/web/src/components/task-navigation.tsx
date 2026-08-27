@@ -4,7 +4,7 @@ import { useLocation } from 'wouter'
 import { listAttention, listTasks, type TaskSummary } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { cx, Dot, MicroLabel, NavRow, Note, SkeletonRows, Waiting } from '../ui/index.ts'
+import { cn, Dot, MicroLabel, NavRow, Note, SkeletonRows, Waiting } from '../ui/index.ts'
 import { signalText, statusTone, toneDot } from './tone.ts'
 
 const GROUPS = ['Needs input', 'Active', 'Queued', 'Complete'] as const
@@ -48,7 +48,7 @@ export function TaskNavigation() {
     )
   }
   if (tasks.isError || attention.isError) {
-    return <p className={cx('py-4 text-sm', signalText('stopped'))}>Task index unavailable.</p>
+    return <p className={cn('py-4 text-sm', signalText('stopped'))}>Task index unavailable.</p>
   }
 
   return (

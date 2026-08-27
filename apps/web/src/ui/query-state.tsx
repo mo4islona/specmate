@@ -1,4 +1,4 @@
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { Skeleton, SkeletonRows, SkeletonText, Waiting, Working } from './loading.tsx'
 import { EmptyState, MicroLabel, Note } from './note.tsx'
 import { Panel } from './panel.tsx'
@@ -74,7 +74,7 @@ function WaitingShape({ shape }: { readonly shape: Exclude<WaitShape, 'sentence'
       <Panel as="div" flush>
         <div className="space-y-2 p-4 sm:p-6">
           {CODE_LINES.map((line) => (
-            <Skeleton key={line.id} className={cx('h-2.5', line.width)} />
+            <Skeleton key={line.id} className={cn('h-2.5', line.width)} />
           ))}
         </div>
       </Panel>

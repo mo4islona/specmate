@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* The enter and exit utilities shadcn's overlays are written in — `animate-in`,
+   `fade-in-0`, `zoom-in-95`. Tree-shaken like any other utility, so what is not
+   opened over the page costs nothing. */
+@import "tw-animate-css";
 @import "./theme/theme.css";
 
 /* The roles the app paints with. The values here are One Dark Pro's, the
@@ -165,9 +169,9 @@ body {
 }
 
 /* In `base`, and that matters: `font: inherit` on a bare `button` outside every
-   layer outranks `.button-primary` inside one, and resets the face and the size
-   the class had just set. Everything the app dresses an element in belongs in a
-   layer under the one that dresses it. */
+   layer outranks whatever dressed it inside one, and resets the face and the
+   size that had just been set. Everything the app dresses an element in belongs
+   in a layer under the one that dresses it. */
 @layer base {
   button,
   input,
@@ -467,130 +471,6 @@ body {
     color: var(--color-foreground);
   }
 
-  /* ── Buttons ───────────────────────────────────────────────────────────────
-     Five weights and nothing else: the verb that acts, the same verb when the
-     task is waiting on this click, the one that undoes, the alternative, and the
-     quiet one. All mono, all sentence case — uppercase on every control left the
-     screen with no way to tell a heading from a button. */
-  .button-primary,
-  .button-attention,
-  .button-danger,
-  .button-secondary {
-    display: inline-flex;
-    min-height: 2.4rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    border: 1px solid transparent;
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.95rem;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 700;
-    line-height: 1.25;
-    transition:
-      background-color 120ms ease,
-      border-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .button-primary {
-    background: var(--color-primary);
-    color: var(--color-primary-foreground);
-  }
-
-  .button-primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-primary) 84%, var(--color-hover-tint));
-  }
-
-  /* A state waiting on the owner wears the colour the rest of the screen uses
-     for "your turn" — never the red of the thing that went wrong. */
-  .button-attention {
-    background: var(--color-warning);
-    color: var(--color-warning-foreground);
-  }
-
-  .button-attention:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-warning) 84%, var(--color-hover-tint));
-  }
-
-  .button-danger {
-    background: var(--color-destructive);
-    color: var(--color-primary-foreground);
-  }
-
-  .button-danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-destructive) 84%, var(--color-hover-tint));
-  }
-
-  .button-secondary {
-    border-color: color-mix(in srgb, var(--color-border-strong) 70%, transparent);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: var(--color-foreground);
-  }
-
-  .button-secondary:hover:not(:disabled) {
-    border-color: var(--color-border-strong);
-    background: color-mix(in srgb, var(--color-foreground) 9%, transparent);
-  }
-
-  /* No frame until you point at it: a hover border on every quiet control is
-     what made a row of them read as a toolbar. */
-  .button-ghost {
-    display: inline-flex;
-    min-height: 1.95rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    border: 0;
-    border-radius: 0.5rem;
-    padding: 0.3rem 0.65rem;
-    color: var(--color-muted-foreground);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    line-height: 1.25;
-    transition:
-      background-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .button-ghost:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-foreground) 7%, transparent);
-    color: var(--color-foreground);
-  }
-
-  /* A verb with no room for its word, for the controls that sit *over* what they
-     act on rather than beside it. It carries its own ground, because the thing
-     under it is usually code and an unbacked glyph on code is neither. */
-  .button-icon {
-    display: inline-flex;
-    height: 1.55rem;
-    width: 1.55rem;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 0.45rem;
-    background: color-mix(in srgb, var(--color-popover) 90%, transparent);
-    color: var(--color-muted-foreground);
-    transition:
-      background-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .button-icon:hover:not(:disabled) {
-    background: var(--color-popover);
-    color: var(--color-foreground);
-  }
-
-  .button-ghost-danger {
-    color: var(--color-destructive);
-  }
-
-  .button-ghost-danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-destructive) 14%, transparent);
-    color: var(--color-destructive);
-  }
-
   /* Something to pick: an offered answer, a document on the step's shelf. */
   .chip {
     display: inline-flex;
@@ -630,27 +510,9 @@ body {
     font-weight: 600;
   }
 
-  .button-primary:disabled,
-  .button-attention:disabled,
-  .button-danger:disabled,
-  .button-secondary:disabled,
-  .button-ghost:disabled,
   .chip:disabled {
     cursor: not-allowed;
     opacity: 0.38;
-  }
-
-  /* Waiting on the server is not the same as unavailable, and a verb in flight
-     was wearing the second one's 38% — which is where the breathing mark beside
-     its label went. Below the disabled rule on purpose: same specificity, so
-     order is what decides, and a busy button is always also a disabled one. */
-  .button-primary[aria-busy="true"],
-  .button-attention[aria-busy="true"],
-  .button-danger[aria-busy="true"],
-  .button-secondary[aria-busy="true"],
-  .button-ghost[aria-busy="true"] {
-    cursor: progress;
-    opacity: 0.68;
   }
 
   /* A tone worn as a word rather than a control: a status, a size, a gap.

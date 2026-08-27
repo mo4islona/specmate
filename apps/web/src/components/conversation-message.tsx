@@ -1,6 +1,6 @@
 import type { ConversationMessage } from '../lib/api-client.ts'
 import { formatClock } from '../lib/format.ts'
-import { cx, Dot, MicroLabel } from '../ui/index.ts'
+import { cn, Dot, MicroLabel } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { signalDot, signalText } from './tone.ts'
 
@@ -42,7 +42,7 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
 
       {isPending && (
         <p
-          className={cx('mt-2 flex items-center gap-2 font-mono text-xs', signalText('asking'))}
+          className={cn('mt-2 flex items-center gap-2 font-mono text-xs', signalText('asking'))}
           role="status"
         >
           <Dot className={signalDot('asking')} live halo />
@@ -51,7 +51,7 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
       )}
 
       {message.status === 'failed' && (
-        <p className={cx('mt-2 text-sm', signalText('stopped'))}>
+        <p className={cn('mt-2 text-sm', signalText('stopped'))}>
           Response failed: {message.failureReason ?? 'no reason was recorded'}
         </p>
       )}

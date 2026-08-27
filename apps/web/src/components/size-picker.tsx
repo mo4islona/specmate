@@ -1,6 +1,6 @@
 import { PLAN_SIZES, type PlanSize } from '@specmate/core'
 import { useState } from 'react'
-import { Chip, cx, Icon, Popover } from '../ui/index.ts'
+import { Chip, cn, Icon, Popover } from '../ui/index.ts'
 
 /**
  * The size the owner declares up front, or `auto` — the absence of one, which
@@ -52,7 +52,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
           <Icon
             name="chevron-down"
             size="xs"
-            className={cx('text-muted-foreground transition-transform', open && 'rotate-180')}
+            className={cn('text-muted-foreground transition-transform', open && 'rotate-180')}
           />
         </Chip>
       }
@@ -74,7 +74,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
           >
             <span className="min-w-0 flex-1">
               <span
-                className={cx(
+                className={cn(
                   'block font-mono text-[0.78rem]',
                   chosen ? 'font-medium text-foreground' : 'text-foreground',
                 )}
@@ -86,7 +86,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
               </span>
             </span>
 
-            <Icon name="check" className={cx('mt-0.5 text-foreground', !chosen && 'invisible')} />
+            <Icon name="check" className={cn('mt-0.5 text-foreground', !chosen && 'invisible')} />
           </button>
         )
       })}

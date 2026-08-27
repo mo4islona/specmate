@@ -1,5 +1,5 @@
 import type { ComponentPropsWithRef, FormHTMLAttributes, HTMLAttributes } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 /**
  * The state the block is in, as the accent it wears. `plain` is a console with
@@ -26,7 +26,7 @@ interface ConsoleProps extends FormHTMLAttributes<HTMLFormElement> {
  */
 export function Console({ tone = 'plain', className, children, ...rest }: ConsoleProps) {
   return (
-    <form className={cx('console', TONE[tone], className)} {...rest}>
+    <form className={cn('console', TONE[tone], className)} {...rest}>
       {children}
     </form>
   )
@@ -34,7 +34,7 @@ export function Console({ tone = 'plain', className, children, ...rest }: Consol
 
 /** The field itself: no frame of its own, and as tall as what is in it. */
 export function ConsoleField({ className, ...rest }: ComponentPropsWithRef<'textarea'>) {
-  return <textarea className={cx('console-field', className)} {...rest} />
+  return <textarea className={cn('console-field', className)} {...rest} />
 }
 
 /**
@@ -43,7 +43,7 @@ export function ConsoleField({ className, ...rest }: ComponentPropsWithRef<'text
  */
 export function ConsoleDock({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cx('console-dock', className)} {...rest}>
+    <div className={cn('console-dock', className)} {...rest}>
       {children}
     </div>
   )

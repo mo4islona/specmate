@@ -42,7 +42,7 @@ import { consoleDestination, parkedStop } from '../lib/task-console.ts'
 import { stepDocuments } from '../lib/task-documents.ts'
 import { buildPipelineNodes, type PipelineNodeView } from '../lib/task-pipeline.ts'
 import { buildStepFeed, countGateRedirects, liveActivity, nodeLabel } from '../lib/task-thread.ts'
-import { Button, ConsoleDock, cx, ErrorState, LoadingState } from '../ui/index.ts'
+import { Button, ConsoleDock, cn, ErrorState, LoadingState } from '../ui/index.ts'
 
 interface TaskScreenProps {
   taskId: string
@@ -701,7 +701,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
                   key={action.id}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-foreground/[0.05] py-1.5 pl-3.5 pr-1.5"
                 >
-                  <span className={cx('font-mono text-[0.72rem]', signalText('asking'))}>
+                  <span className={cn('font-mono text-[0.72rem]', signalText('asking'))}>
                     {action.kind}
                   </span>
                   <span className="min-w-0 flex-1 break-words text-sm">

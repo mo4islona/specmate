@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'wouter'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { Subpanel } from './panel.tsx'
 
 interface ListRowProps {
@@ -16,7 +16,7 @@ interface ListRowProps {
 /** A settled fact with a way to undo it: a waiver, a convention, a binding. */
 export function ListRow({ primary, secondary, action, className }: ListRowProps) {
   return (
-    <Subpanel as="li" className={cx('flex flex-wrap items-start justify-between gap-3', className)}>
+    <Subpanel as="li" className={cn('flex flex-wrap items-start justify-between gap-3', className)}>
       <div className="min-w-0">
         {primary}
         {secondary}
@@ -33,7 +33,7 @@ export function ListRow({ primary, secondary, action, className }: ListRowProps)
  */
 export function FolderName({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cx('tree-folder', className)} {...rest}>
+    <p className={cn('tree-folder', className)} {...rest}>
       {children}
     </p>
   )
@@ -65,7 +65,7 @@ interface NavRowProps {
  * pair of counts.
  */
 export function NavRow({ href, active, onClick, title, className, children }: NavRowProps) {
-  const classes = cx(ROW_BASE, active ? ROW_ON : ROW_OFF, className)
+  const classes = cn(ROW_BASE, active ? ROW_ON : ROW_OFF, className)
 
   if (href !== undefined) {
     return (
@@ -86,7 +86,7 @@ export function NavRow({ href, active, onClick, title, className, children }: Na
       type="button"
       aria-pressed={active}
       title={title}
-      className={cx(classes, 'w-full text-left')}
+      className={cn(classes, 'w-full text-left')}
       onClick={onClick}
     >
       {children}

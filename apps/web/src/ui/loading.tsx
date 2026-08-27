@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { ListRow } from './rows.tsx'
 
 interface WaitingProps {
@@ -36,7 +36,7 @@ export function Waiting({ label, className, children }: WaitingProps) {
  * is being waited on, and that belongs to the pane, not to the slots.
  */
 export function Skeleton({ className }: { readonly className?: string }) {
-  return <span aria-hidden="true" className={cx('skeleton', className)} />
+  return <span aria-hidden="true" className={cn('skeleton', className)} />
 }
 
 /**
@@ -65,12 +65,12 @@ export function SkeletonText({ lines = 3, className }: SkeletonTextProps) {
   const drawn = TEXT_LINES.slice(0, lines)
 
   return (
-    <div className={cx('space-y-2.5', className)}>
+    <div className={cn('space-y-2.5', className)}>
       {drawn.map((line, index) => (
         <Skeleton
           key={line.id}
           // The last line of a paragraph stops early wherever the paragraph ends.
-          className={cx('h-3', index === drawn.length - 1 ? 'w-2/5' : line.width)}
+          className={cn('h-3', index === drawn.length - 1 ? 'w-2/5' : line.width)}
         />
       ))}
     </div>
@@ -103,14 +103,14 @@ interface SkeletonRowsProps {
  */
 export function SkeletonRows({ rows = 5, mark = false, className }: SkeletonRowsProps) {
   return (
-    <div className={cx('space-y-3.5', className)}>
+    <div className={cn('space-y-3.5', className)}>
       {ROW_LINES.slice(0, rows).map((row) => (
         <div key={row.id} className="flex gap-2.5">
           {mark && <Skeleton className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" />}
 
           <span className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className={cx('h-3', row.name)} />
-            <Skeleton className={cx('h-2', row.fact)} />
+            <Skeleton className={cn('h-3', row.name)} />
+            <Skeleton className={cn('h-2', row.fact)} />
           </span>
         </div>
       ))}
@@ -145,12 +145,12 @@ export function SkeletonFacts({
   readonly className?: string
 }) {
   return (
-    <ul className={cx('space-y-3', className)}>
+    <ul className={cn('space-y-3', className)}>
       {FACT_ROWS.slice(0, rows).map((row) => (
         <ListRow
           key={row.id}
-          primary={<Skeleton className={cx('h-3 max-w-full', row.name)} />}
-          secondary={<Skeleton className={cx('mt-2 h-2 max-w-full', row.fact)} />}
+          primary={<Skeleton className={cn('h-3 max-w-full', row.name)} />}
+          secondary={<Skeleton className={cn('mt-2 h-2 max-w-full', row.fact)} />}
           action={<Skeleton className="h-9 w-24 rounded-lg" />}
         />
       ))}
@@ -178,7 +178,7 @@ interface WorkingProps {
  */
 export function Working({ children, className }: WorkingProps) {
   return (
-    <span className={cx('inline-flex items-baseline', className)}>
+    <span className={cn('inline-flex items-baseline', className)}>
       {stripEllipsis(children)}
 
       <span aria-hidden="true" className="inline-flex">
