@@ -122,6 +122,21 @@ The thread also takes the shape of a transcript rather than a log table: `Edited
 a tool use, a sentence with a branch beneath it for what happened to the run, and no column of
 clocks — a step is read as a sequence, and the width that column took is the width the paths need.
 
+### Pass 6 — permanent deletion stays out of the thread
+
+An archived or cancelled task can be finished in the product and still remain in the task index
+forever. Permanent deletion is a rare administrative action, not part of reading or steering a
+task, so it does not gain a place in the task header or beside the console. The task row exposes
+an overflow menu; its last, separated action opens a confirmation that requires the task title
+before SpecMate removes the task and its subordinate records.
+
+- `operator-ui` gains REQ-1800: permanent deletion is reachable through a task row's overflow
+  menu without becoming a standing control on the task, and the confirmation states its scope.
+- `task-surface` gains REQ-1023: an archived or cancelled task can be deleted over REST after its
+  workspace is released; an active or failed task is rejected without mutation.
+- `persistence` REQ-310 already defines the subordinate records removed with a task, so this pass
+  needs no schema change.
+
 ## Capabilities
 
 ### New Capabilities
@@ -132,20 +147,25 @@ clocks — a step is read as a sequence, and the width that column took is the w
 
 - `operator-ui`: the thread, the tabs, the console and the rail's fourth state, as above.
   REQ-919 is redefined rather than superseded — it has not shipped, so no requirement enters the
-  living spec in a shape the same change then deletes.
-- `task-surface`: the feedback endpoint learns the one destination that reaches an agent.
+  living spec in a shape the same change then deletes. The task index also gains the concealed,
+  confirmed permanent-delete action in REQ-1800.
+- `task-surface`: the feedback endpoint learns the one destination that reaches an agent, and
+  REQ-1023 adds deletion of an archived or cancelled task.
 - `agent-contracts`: confirmed guidance survives an unaccepted run.
 
 ## Impact
 
 - `apps/web` — the task screen, its rail, its thread, its console, and the two screens that
   become tabs. Routes gain `/tasks/:id/files` and `/tasks/:id/docs`; `/tasks/:id/artifacts` and
-  `/tasks/:id/diff` stop being screens.
+  `/tasks/:id/diff` stop being screens. A task row gains a quiet overflow action and a typed-title
+  confirmation for permanent deletion.
 - `apps/api` — the feedback endpoint writes an intervention where there is a node to target, and
   emits an event either way so the text appears in the thread it was typed into. The task detail
-  endpoint carries the task's pull request, which the header links.
+  endpoint carries the task's pull request, which the header links. A delete endpoint releases
+  the workspace and removes an archived or cancelled task.
 - `apps/orchestrator` — a stage that ends any way but accepted releases the guidance it claimed.
-- No schema change: the target and the claim are columns that already exist.
+- No schema change: the target and the claim are columns that already exist, and task-owned rows
+  already cascade under persistence REQ-310.
 
 ## Non-goals
 
@@ -162,4 +182,7 @@ clocks — a step is read as a sequence, and the width that column took is the w
 - **No node-and-edge topology.** The rail lists the pinned pipeline and folds what has not run.
   Drawing the edges as a diagram was `dag-visualization`, which this change's second pass already
   hollowed out and which is now dropped.
-- No redesign of the inbox, the new-task form, or Settings.
+- **No deletion of repository history.** Permanent deletion removes the task and its subordinate
+  SpecMate records. It does not rewrite commits, branches, or pull requests held by the remote
+  repository, and the confirmation says so.
+- No redesign of the inbox, the new-task form, or Settings beyond the task row's overflow action.

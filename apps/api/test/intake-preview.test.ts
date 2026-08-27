@@ -13,6 +13,7 @@ const describeDb = url ? describe : describe.skip
 const workspaceStub: WorkspaceDiffOperations = {
   diffFiles: () => Promise.reject(new Error('these tests do not read task diffs')),
   diffFile: () => Promise.reject(new Error('these tests do not read task diffs')),
+  release: () => Promise.resolve(),
 }
 
 /** Never reaches GitHub: the read's degradation is the package's own test. */

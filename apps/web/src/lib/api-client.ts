@@ -79,6 +79,16 @@ async function readJson<T>(response: {
   return body as T
 }
 
+async function readEmpty(response: {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}): Promise<void> {
+  if (response.ok) return
+
+  await readJson<never>(response)
+}
+
 type TasksResponse = InferResponseType<typeof apiClient.api.v1.tasks.$get, 200>
 type AttentionResponse = InferResponseType<typeof apiClient.api.v1.attention.$get, 200>
 type TaskResponse = InferResponseType<(typeof apiClient.api.v1.tasks)[':id']['$get'], 200>
@@ -312,6 +322,12 @@ export async function createTask(input: CreateTaskInput): Promise<{ task: TaskSu
   const response = await apiClient.api.v1.tasks.$post({ json: input })
 
   return readJson<{ task: TaskSummary }>(response)
+}
+
+export async function deleteTask(taskId: string): Promise<void> {
+  const response = await apiClient.api.v1.tasks[':id'].$delete({ param: { id: taskId } })
+
+  await readEmpty(response)
 }
 
 export async function listEvents(taskId: string, signal?: AbortSignal): Promise<EventsResponse> {

@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from 'vitest'
-import { ownerFetch, ownerHeaders } from './api-client.ts'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { deleteTask, ownerFetch, ownerHeaders } from './api-client.ts'
 import { clearSecret, getSecret, setSecret } from './secret-store.ts'
 
-afterEach(() => clearSecret())
+afterEach(() => {
+  clearSecret()
+  vi.unstubAllGlobals()
+})
 
 describe('owner authentication', () => {
   test('attaches the stored secret as a bearer header', () => {
@@ -17,5 +20,40 @@ describe('owner authentication', () => {
     await ownerFetch('/api/v1/tasks', undefined, async () => new Response(null, { status: 401 }))
 
     expect(getSecret()).toBeNull()
+  })
+})
+
+describe('task deletion', () => {
+  test('sends one typed delete request and accepts an empty success response', async () => {
+    const request = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }),
+    )
+    vi.stubGlobal('fetch', request)
+
+    await deleteTask('task-1')
+
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0]?.[0].toString()).toContain('/api/v1/tasks/task-1')
+    expect(request.mock.calls[0]?.[1]?.method).toBe('DELETE')
+  })
+
+  test('keeps the structured rejection from a task that is not deletable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          { code: 'conflict', detail: 'only archived or cancelled tasks can be deleted' },
+          { status: 409 },
+        ),
+      ),
+    )
+
+    await expect(deleteTask('task-1')).rejects.toEqual(
+      expect.objectContaining({
+        status: 409,
+        code: 'conflict',
+        message: 'only archived or cancelled tasks can be deleted',
+      }),
+    )
   })
 })

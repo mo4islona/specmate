@@ -11,6 +11,7 @@ import {
   type TaskState,
 } from '@specmate/core'
 import {
+  artifacts,
   conversationActions,
   conversationMessages,
   conversations,
@@ -21,6 +22,7 @@ import {
   events,
   feedback,
   getModelDefaults,
+  iterations,
   pullRequests,
   runGraphs,
   stages,
@@ -69,6 +71,7 @@ function createEngine(db: Database): Engine {
 const workspaceStub: WorkspaceDiffOperations = {
   diffFiles: () => Promise.reject(new Error('API tests do not read task diffs here')),
   diffFile: () => Promise.reject(new Error('API tests do not read task diffs here')),
+  release: () => Promise.resolve(),
 }
 
 describeDb('api conversations', () => {
@@ -422,6 +425,184 @@ describeDb('api', () => {
     } finally {
       await db.$client.close()
     }
+  })
+
+  async function createDeletionTask(status: 'archived' | 'cancelled' | 'failed' | 'planning') {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        slug: `api-delete-${crypto.randomUUID().slice(0, 8)}`,
+        title: `Delete ${status} fixture`,
+        type: 'feature',
+        repoUrl: 'https://github.com/example/api-delete',
+        status,
+      })
+      .returning()
+    assert(task)
+    createdTaskIds.push(task.id)
+
+    return task
+  }
+
+  function appWithRelease(release: WorkspaceDiffOperations['release']) {
+    return createApp({
+      db,
+      gates: createGateEngine(db),
+      workspace: { ...workspaceStub, release },
+      config: loadConfig({
+        DATABASE_URL: url,
+        NODE_ENV: 'test',
+        SPECMATE_PASSWORD: 'test-password',
+        WORKSPACE_ROOT: 'workspaces',
+      }),
+    })
+  }
+
+  it('deletes an archived task and every subordinate record — AC-1081, AC-1084', async () => {
+    const task = await createDeletionTask('archived')
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({ taskId: task.id, dag: EMPTY_DAG })
+      .returning()
+    assert(graph)
+    const [stage] = await db
+      .insert(stages)
+      .values({
+        taskId: task.id,
+        graphId: graph.id,
+        nodeKey: 'planning',
+        role: 'planner',
+        provider: 'claude-code',
+        status: 'succeeded',
+      })
+      .returning()
+    assert(stage)
+    await db.insert(iterations).values({
+      taskId: task.id,
+      loop: 'spec',
+      round: 1,
+      reviewerVerdict: 'approve',
+    })
+    await db.insert(decisions).values({
+      taskId: task.id,
+      stageId: stage.id,
+      nodeKey: 'planning',
+      key: 'delete-fixture',
+      kind: 'question',
+      promptMd: 'Keep this?',
+    })
+    await db.insert(artifacts).values({
+      taskId: task.id,
+      path: 'openspec/changes/delete-fixture/proposal.md',
+      kind: 'proposal',
+    })
+    await db.insert(pullRequests).values({
+      taskId: task.id,
+      url: `https://github.com/example/api-delete/pull/${crypto.randomUUID()}`,
+    })
+    await db.insert(feedback).values({
+      taskId: task.id,
+      stageId: stage.id,
+      kind: 'comment',
+      textMd: 'Delete fixture feedback',
+    })
+    await db.insert(events).values({
+      taskId: task.id,
+      stageId: stage.id,
+      type: 'task.archived',
+      payload: {},
+    })
+    const [conversation] = await db.insert(conversations).values({ taskId: task.id }).returning()
+    assert(conversation)
+    const [message] = await db
+      .insert(conversationMessages)
+      .values({
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'assistant',
+        contentMd: 'Deletion fixture',
+        status: 'completed',
+        stageId: stage.id,
+        taskState: 'archived',
+      })
+      .returning()
+    assert(message)
+    await db.insert(conversationActions).values({
+      taskId: task.id,
+      conversationId: conversation.id,
+      messageId: message.id,
+      kind: 'instruct_next_run',
+      target: { taskId: task.id, nodeKey: 'planning' },
+      expectedVersion: { taskStatus: 'archived' },
+    })
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })
+
+    expect(response.status).toBe(204)
+    expect(await response.text()).toBe('')
+    const subordinateRows = await Promise.all([
+      db.select().from(runGraphs).where(eq(runGraphs.taskId, task.id)),
+      db.select().from(stages).where(eq(stages.taskId, task.id)),
+      db.select().from(iterations).where(eq(iterations.taskId, task.id)),
+      db.select().from(decisions).where(eq(decisions.taskId, task.id)),
+      db.select().from(artifacts).where(eq(artifacts.taskId, task.id)),
+      db.select().from(pullRequests).where(eq(pullRequests.taskId, task.id)),
+      db.select().from(feedback).where(eq(feedback.taskId, task.id)),
+      db.select().from(events).where(eq(events.taskId, task.id)),
+      db.select().from(conversations).where(eq(conversations.taskId, task.id)),
+      db.select().from(conversationMessages).where(eq(conversationMessages.id, message.id)),
+      db.select().from(conversationActions).where(eq(conversationActions.taskId, task.id)),
+    ])
+    expect(subordinateRows.every((rows) => rows.length === 0)).toBe(true)
+
+    const detail = await app.request(`/api/v1/tasks/${task.id}`, { headers: auth })
+    expect(detail.status).toBe(404)
+    const listed = await app.request('/api/v1/tasks', { headers: auth })
+    const body = (await listed.json()) as { tasks: { id: string }[] }
+    expect(body.tasks.some((row) => row.id === task.id)).toBe(false)
+  })
+
+  it('also deletes a cancelled task — AC-1081', async () => {
+    const task = await createDeletionTask('cancelled')
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })
+
+    expect(response.status).toBe(204)
+  })
+
+  it('rejects active and failed tasks before workspace release — AC-1082', async () => {
+    const guardedApp = appWithRelease(() => Promise.reject(new Error('release must not run')))
+    for (const status of ['planning', 'failed'] as const) {
+      const task = await createDeletionTask(status)
+      const response = await guardedApp.request(`/api/v1/tasks/${task.id}`, {
+        method: 'DELETE',
+        headers: auth,
+      })
+
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ code: 'conflict' })
+      expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(1)
+    }
+  })
+
+  it('keeps the task when workspace release fails — AC-1083', async () => {
+    const task = await createDeletionTask('archived')
+    const releaseFailureApp = appWithRelease(() => Promise.reject(new Error('release failed')))
+
+    const response = await releaseFailureApp.request(`/api/v1/tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ code: 'internal' })
+    expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(1)
   })
 
   it('launches on the request alone, deriving the name from it — AC-1001, AC-1056', async () => {

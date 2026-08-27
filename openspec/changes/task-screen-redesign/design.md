@@ -29,6 +29,8 @@ the text. That is why this change reaches past `apps/web`.
   an agent.
 - What the interface claims is what the system does, including the parts that are unflattering:
   text typed at a running stage is read on its *next* run.
+- Permanent deletion is discoverable when managing a finished task without becoming a standing
+  action while that task is being read.
 
 **Non-Goals:**
 - The GitHub-shaped diff, a Guide surface, a channel into a live agent, a topology diagram (see
@@ -36,6 +38,7 @@ the text. That is why this change reaches past `apps/web`.
 - No new read. The rail, the run log, the thread and the tab counts are all derived from what
   `task-surface` REQ-1002/AC-1004 already returns and from the event stream that already drives
   the timeline.
+- Deleting a task does not erase or rewrite repository history or a pull request on the remote.
 
 ## Decisions
 
@@ -110,6 +113,29 @@ waiting for the owner the state is amber while the stream is perfectly healthy, 
 not read as one claim. That is also why it sits at the far end of the row rather than beside the
 state sentence.
 
+**Permanent deletion belongs to the task row, not the task.** The task header is shared by every
+surface and exists to say what the task is, while the console exists to act on the work. Neither
+is the place for removing the record itself. The task index is where the record is found and
+where it disappears, so an archived or cancelled row owns an overflow control with the delete
+action last and separated. On pointer devices the control can stay quiet until hover, focus, or
+selection; keyboard and touch users still get an explicit reachable trigger. The trigger is a
+sibling of the row's navigation link rather than a control nested inside a link, so opening the
+menu never also navigates to the task.
+
+**The irreversible verb has two locks.** State is the first: only archived and cancelled tasks
+qualify. A failed task remains restartable and must be cancelled before deletion, so the delete
+endpoint cannot race a recovery that still has meaning. Exact-title confirmation is the second:
+the dialog names what SpecMate removes, names the repository history it leaves alone, and does
+not enable its destructive verb until the title matches. Deleting the task currently open returns
+to the inbox before invalidating the task reads, so no deleted detail is left as the current
+screen.
+
+**Release precedes deletion.** Archived and cancelled workspaces should already be released, and
+release is idempotent under REQ-710; repeating it at the delete boundary closes the gap left by an
+earlier cleanup failure. The database row is removed only after that succeeds, at which point
+REQ-310 supplies the existing cascade. This keeps filesystem cleanup from needing a task record
+that has already gone and keeps the change schema-free.
+
 **What the first pass built is kept.** `task-thread.ts` keeps the event vocabulary and the
 placement rules but stops grouping into chapters; `task-pipeline.ts` keeps `buildPipelineNodes`
 and the baseline-binding rule and gains the fourth state; `repo-link.ts` and `commit-ref.tsx` are
@@ -135,6 +161,12 @@ unchanged — AC-954 and AC-955 are already satisfied and stay satisfied.
 - **Deferring the diff redraw leaves the Files tab looking unlike its neighbours** — a
   list-detail panel inside a shell built for stacked cards. Accepted: the tab shell is what
   collapses the header and de-duplicates the rail, and it is worth having before the diff work.
+- **The overflow control is intentionally quiet and therefore easier to miss.** Mitigated by
+  keeping it keyboard- and touch-reachable and by using the task row, the place an owner already
+  scans when managing old work. Permanent deletion benefits from a little discovery cost.
+- **Workspace release can succeed while the later database deletion fails.** The surviving task
+  is already archived or cancelled, so it needs no working tree and remains safe to retry; the
+  reverse order could strand a working tree with no task identity and is worse.
 
 ## Migration Plan
 
@@ -143,4 +175,6 @@ None for data. `/tasks/:id/artifacts` and `/tasks/:id/diff` become redirects to
 REQ-901 requires a single artifact to stay addressable. The claim fix is an `UPDATE` on a column
 that already exists, applied to rows only as stages end, so nothing needs backfilling: an
 intervention stranded by a run that failed before this change is picked up by the next attempt at
-its node the first time that node ends a run unaccepted.
+its node the first time that node ends a run unaccepted. Permanent deletion needs no migration:
+REQ-310's foreign-key cascade is already present, and existing archived and cancelled tasks become
+eligible as soon as the endpoint and client action ship.

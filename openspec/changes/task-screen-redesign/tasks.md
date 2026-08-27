@@ -225,3 +225,29 @@ column with twenty-five lines of `Reading`, and folded seven of the ten pipeline
       and selecting the row already being read keeps the selection there instead of handing it to
       whichever node the task stands on — REQ-914, AC-988. Verify: pin an earlier step, click its
       row again; the selection stays on it.
+
+## 11. Permanent task deletion (REQ-1800, REQ-1023)
+
+- [x] 11.1 Add `DELETE /tasks/:id`: accept only archived and cancelled tasks, release the
+      workspace before deleting, return a structured conflict for active or failed tasks, and
+      leave the task intact when release fails — AC-1081, AC-1082, AC-1083. Verify:
+      `bun test apps/api/test/app.test.ts`.
+- [x] 11.2 Cover the existing task cascade through the endpoint: stages, run graphs, iterations,
+      decisions, artifacts, pull requests, feedback, events, conversations, messages and actions
+      disappear; the task leaves the list and detail returns not found — REQ-310, AC-1084.
+      Verify: `bun test apps/api/test/app.test.ts` and inspect that no schema migration was added
+      for this section.
+- [x] 11.3 Add the typed API client mutation and settle its task-list, attention, and task-detail
+      cache entries after success without issuing a second delete request. Verify:
+      `bun run --cwd apps/web test src/lib/api-client.test.ts`.
+- [x] 11.4 Reshape a task-navigation row into a navigation link with a sibling overflow trigger;
+      keep the trigger reachable by keyboard and touch, show permanent deletion only for archived
+      and cancelled rows, and place it last after a separator — AC-1805, AC-1806. Verify:
+      `bun run --cwd apps/web test src/components/task-navigation.test.tsx`.
+- [ ] 11.5 Add the confirmation: name the SpecMate data removed and the repository history kept,
+      require the exact task title, expose pending and failure states, remove the successful row,
+      and return to the inbox when the deleted task is open — AC-1807, AC-1808. Verify:
+      `bun run --cwd apps/web test src/components/task-navigation.test.tsx` and a 420px browser
+      check of the task index and confirmation.
+- [ ] 11.6 Run the change gate after implementation. Verify:
+      `bun scripts/lint-spec-ids.ts && bunx openspec validate task-screen-redesign --strict && bun run check && bun run typecheck && bun run test`.
