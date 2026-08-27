@@ -9,6 +9,17 @@ interface PanelProps extends HTMLAttributes<HTMLElement> {
   readonly flush?: boolean
 }
 
+/**
+ * A panel carries its own inset. Six call sites each choosing one is how a
+ * settings page ended up with four different left edges down one column.
+ *
+ * The inset is a variable rather than a number because it is also arithmetic:
+ * the task column's height is the viewport less the gutter it sits in, and a
+ * literal in each place is a literal that drifts.
+ */
+const PANEL =
+  'rounded-2xl border border-[color-mix(in_srgb,var(--color-border)_72%,transparent)] bg-[color-mix(in_srgb,var(--color-card)_94%,transparent)] p-[var(--panel-inset)]'
+
 /** The app's one surface. It carries its own inset, so no call site picks one. */
 export function Panel({
   as: Tag = 'section',
@@ -18,7 +29,7 @@ export function Panel({
   ...rest
 }: PanelProps) {
   return (
-    <Tag className={cn('panel', flush && 'panel-flush', className)} {...rest}>
+    <Tag className={cn(PANEL, flush && 'p-0', className)} {...rest}>
       {children}
     </Tag>
   )
@@ -33,7 +44,7 @@ interface PanelLinkProps {
 /** A panel that is somewhere to go — an inbox card, a summary that opens. */
 export function PanelLink({ href, className, children }: PanelLinkProps) {
   return (
-    <Link href={href} className={cn('panel', className)}>
+    <Link href={href} className={cn(PANEL, className)}>
       {children}
     </Link>
   )
@@ -43,10 +54,18 @@ interface SubpanelProps extends HTMLAttributes<HTMLElement> {
   readonly as?: 'div' | 'li' | 'section'
 }
 
+/**
+ * `bg-muted` is the wash a block one step in from a panel wears, and it is the
+ * same 3.5% of the text this rule was written with before shadcn had a name for
+ * it. Not `.block`: that is Tailwind's own display utility, and taking the name
+ * painted a background on every element in the app that asked to be one.
+ */
+const SUBPANEL = 'rounded-xl bg-muted p-[var(--block-inset)]'
+
 /** One step in from a panel — a waiver, a repository, a question. */
 export function Subpanel({ as: Tag = 'div', className, children, ...rest }: SubpanelProps) {
   return (
-    <Tag className={cn('subpanel', className)} {...rest}>
+    <Tag className={cn(SUBPANEL, className)} {...rest}>
       {children}
     </Tag>
   )

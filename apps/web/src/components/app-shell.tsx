@@ -73,7 +73,7 @@ export function AppShell({ children }: AppShellProps) {
           rows all start on it, and each row's own box reaches half a gutter past
           it on either side so that pointing at one has an edge to show. */}
       <aside className="hidden flex-col border-r border-border bg-card lg:sticky lg:top-0 lg:flex lg:h-screen">
-        <div className="rail-inset border-b border-border">
+        <div className="p-[var(--rail-gutter)] border-b border-border">
           <Lockup stream={stream} />
 
           <ButtonLink href="/tasks/new" className="mt-4 flex w-full justify-center">
@@ -81,11 +81,11 @@ export function AppShell({ children }: AppShellProps) {
           </ButtonLink>
         </div>
 
-        <div className="scroll-thin rail-inset flex-1 overflow-y-auto">
+        <div className="scroll-thin p-[var(--rail-gutter)] flex-1 overflow-y-auto">
           <TaskNavigation />
         </div>
 
-        <div className="rail-inset border-t border-border">
+        <div className="p-[var(--rail-gutter)] border-t border-border">
           <NavRow
             href="/settings"
             active={isSettings}
@@ -98,7 +98,7 @@ export function AppShell({ children }: AppShellProps) {
       </aside>
 
       <div className="min-w-0">
-        <header className="shell-main sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur lg:hidden">
+        <header className="p-[var(--shell-gutter)] sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <Lockup stream={stream} compact />
 
@@ -128,7 +128,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* `clip`, not `hidden`: an element with one axis hidden and the other
             visible has the visible one computed to `auto`, which quietly made
             this a vertical scroll container wrapping every screen. */}
-        <main className="shell-main mx-auto min-h-screen w-full max-w-[100rem] overflow-x-clip">
+        <main className="p-[var(--shell-gutter)] mx-auto min-h-screen w-full max-w-[100rem] overflow-x-clip">
           {children}
         </main>
       </div>

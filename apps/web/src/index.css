@@ -219,42 +219,6 @@ body {
    own. `subpanel bg-destructive/10` came out grey. Inside the layer, a utility
    written next to one of these means what it says. */
 @layer components {
-  .shell-main {
-    padding: var(--shell-gutter);
-  }
-
-  /* The task screen is a column that ends where the viewport does, so its
-     thread and its rail scroll inside it rather than the page scrolling under
-     them. */
-  @media (width >= 80rem) {
-    .shell-column {
-      height: calc(100vh - 2 * var(--shell-gutter));
-    }
-  }
-
-  /* A panel carries its own inset. Six call sites each choosing one is how a
-     settings page ended up with four different left edges down one column. */
-  .panel {
-    border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
-    border-radius: 1rem;
-    background: color-mix(in srgb, var(--color-card) 94%, transparent);
-    padding: var(--panel-inset);
-  }
-
-  /* For the panels whose contents run to the frame: a scrolling document, a list
-     whose rows are the full width. */
-  .panel-flush {
-    padding: 0;
-  }
-
-  /* Below `.panel-flush` deliberately. Both set `padding`, both are one class
-     deep, so whichever is written last in this file wins — and a rail set in a
-     panel says `panel panel-flush rail-inset`, meaning the rail's gutter. Above
-     it, the flush rule zeroed the inset and the list ran into its own border. */
-  .rail-inset {
-    padding: var(--rail-gutter);
-  }
-
   /* The slot a fact will land in. Sized by the call site; only the surface and
      the sheen belong here.
 
@@ -347,134 +311,6 @@ body {
   .rail-row {
     margin-inline: calc(var(--rail-gutter) / -2);
     padding-inline: calc(var(--rail-gutter) / 2);
-  }
-
-  /* One step in from a panel — a waiver, a repository, a question. Not `.block`:
-     that is Tailwind's own display utility, and taking the name painted a
-     background on every element in the app that asked to be a block. */
-  .subpanel {
-    border-radius: 0.75rem;
-    background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
-    padding: var(--block-inset);
-  }
-
-  .micro-label {
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    line-height: 1.25;
-    text-transform: uppercase;
-  }
-
-  .field-error {
-    margin-top: 0.45rem;
-    color: var(--color-destructive);
-    font-size: 0.78rem;
-    line-height: 1.4;
-  }
-
-  /* A way out of the state, not a verb of it: readable, and quieter than a
-     button. The rule under it is what says "somewhere to go" — a hue would have
-     said "look here", which a way out is not. */
-  .link-quiet {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
-    color: var(--color-muted-foreground);
-    font-family: var(--font-mono);
-    font-size: 0.62rem;
-  }
-
-  .link-quiet:hover {
-    border-bottom-color: var(--color-foreground);
-    color: var(--color-foreground);
-  }
-
-  /* Something to pick: an offered answer, a document on the step's shelf. */
-  .chip {
-    display: inline-flex;
-    min-height: 2rem;
-    align-items: center;
-    gap: 0.4rem;
-    border: 1px solid color-mix(in srgb, var(--color-border-strong) 55%, transparent);
-    border-radius: 0.625rem;
-    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
-    padding: 0.35rem 0.75rem;
-    color: var(--color-foreground);
-    font-family: var(--font-mono);
-    font-size: 0.73rem;
-    line-height: 1.35;
-    text-align: left;
-    transition:
-      border-color 120ms ease,
-      background-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .chip:hover:not(:disabled) {
-    border-color: var(--color-border-strong);
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-  }
-
-  /* Held open, and one of a set chosen: both are where the pointer has been, not
-     states of the work, so both press into the surface rather than colour it. */
-  .chip[aria-expanded="true"],
-  .chip[aria-pressed="true"] {
-    border-color: var(--color-border-strong);
-    background: color-mix(in srgb, var(--color-foreground) 11%, transparent);
-    color: var(--color-foreground);
-  }
-
-  .chip[aria-pressed="true"] {
-    font-weight: 600;
-  }
-
-  .chip:disabled {
-    cursor: not-allowed;
-    opacity: 0.38;
-  }
-
-  /* A tone worn as a word rather than a control: a status, a size, a gap.
-
-     The pill is cut into the page rather than laid over it. A wash of the tone
-     composited on the panel moves the background *toward* the word written on it,
-     which in a dark theme is the wrong direction — it is what left a stopped
-     badge at 3.3:1. Mixing the same tone into the ground keeps the pill darker
-     than the surface it sits on, and the word keeps its colour. */
-  .badge {
-    display: inline-flex;
-    max-width: 100%;
-    align-items: center;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--badge-tone) 8%, var(--color-background));
-    padding: 0.15rem 0.6rem;
-    color: var(--badge-tone);
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.45;
-  }
-
-  .badge-active {
-    --badge-tone: var(--color-status-active);
-  }
-
-  .badge-parked {
-    --badge-tone: var(--color-status-parked);
-  }
-
-  .badge-failed {
-    --badge-tone: var(--color-status-failed);
-  }
-
-  .badge-done {
-    --badge-tone: var(--color-status-done);
-  }
-
-  .badge-muted {
-    --badge-tone: var(--color-muted-foreground);
-  }
-
-  .badge-warning {
-    --badge-tone: var(--color-warning);
   }
 
   /* ── The console ───────────────────────────────────────────────────────────
@@ -630,24 +466,6 @@ body {
      and it said nothing the row's own mark could not. So the mark says it. */
   .dot-live {
     animation: dot-breath 1.8s ease-in-out infinite;
-  }
-
-  /* A mark six pixels across cannot hold a corner of the eye from the far side
-     of a rail, so the one that is a question spreads its own colour behind it.
-     `inherit` is what keeps that honest: the halo is the fill it came from, so
-     a mark that failed casts red rather than amber. It needs no z-index — it
-     paints over the dot, and 30% of a colour over 100% of it is it. */
-  .dot-halo {
-    position: relative;
-  }
-
-  .dot-halo::before {
-    content: "";
-    position: absolute;
-    inset: -0.2rem;
-    border-radius: inherit;
-    background-color: inherit;
-    opacity: 0.3;
   }
 
   /* ── The mark as the connection light ──────────────────────────────────────

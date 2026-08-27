@@ -155,10 +155,18 @@ export function Textarea({
 export function Checkbox({
   label,
   className,
+  id,
   ...rest
 }: ComponentPropsWithRef<typeof CheckboxPrimitive.Root> & { readonly label: ReactNode }) {
+  const generated = useId()
+  const boxId = id ?? generated
+
   return (
+    // Pointed at by id rather than by wrapping: Radix does render a real input
+    // inside, but it is behind a component, so nothing reading this file — a
+    // linter, or a person — can see that the label has anything to name.
     <label
+      htmlFor={boxId}
       className={cn(
         'flex cursor-pointer items-center gap-1.5 text-muted-foreground text-xs',
         // The word goes quiet with the box. A live label beside a dead tick
@@ -168,6 +176,7 @@ export function Checkbox({
       )}
     >
       <CheckboxPrimitive.Root
+        id={boxId}
         className={cn(
           'inline-flex size-4 shrink-0 items-center justify-center rounded-[0.3rem] border border-border-strong bg-secondary',
           'transition-[background-color,border-color] duration-[120ms] ease-[ease]',

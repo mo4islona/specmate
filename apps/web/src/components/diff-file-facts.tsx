@@ -48,7 +48,9 @@ export function StatCounts({
         <span className={file.additions > 0 ? 'text-success' : 'text-muted-foreground'}>
           +{file.additions}
         </span>{' '}
-        <span className={file.deletions > 0 ? 'text-destructive' : 'text-muted-foreground'}>−{file.deletions}</span>
+        <span className={file.deletions > 0 ? 'text-destructive' : 'text-muted-foreground'}>
+          −{file.deletions}
+        </span>
       </span>
       {bar && <StatBar additions={file.additions} deletions={file.deletions} />}
     </span>

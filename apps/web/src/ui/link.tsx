@@ -15,7 +15,15 @@ interface QuietLinkProps {
  */
 export function QuietLink({ href, className, children }: QuietLinkProps) {
   return (
-    <Link href={href} className={cn('link-quiet', className)}>
+    <Link
+      href={href}
+      className={cn(
+        'border-b border-[color-mix(in_srgb,var(--color-border-strong)_70%,transparent)]',
+        'font-mono text-[0.62rem] text-muted-foreground',
+        'hover:border-b-foreground hover:text-foreground',
+        className,
+      )}
+    >
       {children}
     </Link>
   )

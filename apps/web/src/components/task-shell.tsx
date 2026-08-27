@@ -79,7 +79,7 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
   const ref = surfaceRef(active, task.baseBranch)
 
   return (
-    <div className="shell-column flex min-w-0 flex-col gap-3">
+    <div className="xl:h-[calc(100vh-2*var(--shell-gutter))] flex min-w-0 flex-col gap-3">
       <div className="shrink-0">
         <TaskHeader
           title={task.title}

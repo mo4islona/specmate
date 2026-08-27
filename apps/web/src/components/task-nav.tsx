@@ -62,7 +62,9 @@ function SurfaceLink({ entry, active }: { entry: SurfaceEntry; active: boolean }
       )}
     >
       <span>{entry.label}</span>
-      {entry.count !== null && <span className="text-[0.66rem] text-muted-foreground">{entry.count}</span>}
+      {entry.count !== null && (
+        <span className="text-[0.66rem] text-muted-foreground">{entry.count}</span>
+      )}
     </Link>
   )
 }
