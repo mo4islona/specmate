@@ -62,6 +62,73 @@
 
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+
+  /* ── The four motions ──────────────────────────────────────────────────────
+     Named here so the part that uses one writes `animate-breath` beside its own
+     classes rather than reaching for a class the app defined. The reduced-motion
+     rule at the foot of this file cuts all of them.
+
+     A live marker breathes instead of blinking: the eye finds it without being
+     pulled to it. It is the app's only "something is happening" device, and it
+     carries both things worth the eye — what is moving, and what is waiting on
+     you. There was a second, a 1px amber ring drawn on every row of a group at
+     once; a rail of five parked tasks strobed in it, and it said nothing the
+     row's own mark could not. */
+  --animate-breath: dot-breath 1.8s ease-in-out infinite;
+
+  /* The ellipsis every wait was already written with, keeping time. Same ramp as
+     the mark's chevrons — one gesture for "reaching", at two scales — so a pane
+     that is waiting cannot be mistaken for one that gave up mid-sentence. */
+  --animate-working: working-step 1.4s ease-in-out infinite;
+
+  /* Settling, not entering: two pixels and no scale, because this runs beside a
+     field somebody is typing into and anything larger reads as the page moving. */
+  --animate-reveal: reveal-settle 180ms ease-out;
+
+  /* A slot sweeps rather than breathes, and the difference is the whole point.
+     The breath means "this is alive"; a slot is the opposite of alive, it is an
+     absence, and what it has to say is "this is filling in". Off the trailing
+     edge for a third of the cycle: a sweep with no rest in it is a stripe going
+     round and round, which is furniture rather than news. */
+  --animate-sheen: skeleton-sheen 1.7s ease-in-out infinite;
+
+  @keyframes dot-breath {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  @keyframes working-step {
+    0%,
+    70%,
+    100% {
+      opacity: 0.25;
+    }
+    25% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes reveal-settle {
+    from {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+  }
+
+  @keyframes skeleton-sheen {
+    0% {
+      transform: translateX(-100%);
+    }
+    65%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
 }
 
 /* ── The colour budget ──────────────────────────────────────────────────────
@@ -219,100 +286,6 @@ body {
    own. `subpanel bg-destructive/10` came out grey. Inside the layer, a utility
    written next to one of these means what it says. */
 @layer components {
-  /* The slot a fact will land in. Sized by the call site; only the surface and
-     the sheen belong here.
-
-     It sweeps rather than breathes, and the difference is the whole point. The
-     breath belongs to the app's live marks and means "this is alive"; a slot is
-     the opposite of alive, it is an absence, and what it has to say is "this is
-     filling in". A sheen travelling the way the line will be read says that,
-     at a contrast the eye can leave alone. */
-  .skeleton {
-    position: relative;
-    display: block;
-    overflow: hidden;
-    border-radius: 0.375rem;
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  }
-
-  .skeleton::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--color-foreground) 7%, transparent),
-      transparent
-    );
-    animation: skeleton-sheen 1.7s ease-in-out infinite;
-  }
-
-  /* Off the trailing edge for a third of the cycle. A sweep with no rest in it
-     is a stripe going round and round, which is furniture rather than news. */
-  @keyframes skeleton-sheen {
-    0% {
-      transform: translateX(-100%);
-    }
-    65%,
-    100% {
-      transform: translateX(100%);
-    }
-  }
-
-  /* The ellipsis every wait in this app was already written with, keeping time.
-     Same ramp as the mark's chevrons — one gesture for "reaching", at two
-     scales — so a pane that is waiting cannot be mistaken for one that gave up
-     halfway through a sentence. */
-  .working-dot {
-    animation: working-step 1.4s ease-in-out infinite;
-  }
-
-  .working-dot:nth-child(2) {
-    animation-delay: 0.16s;
-  }
-
-  .working-dot:nth-child(3) {
-    animation-delay: 0.32s;
-  }
-
-  @keyframes working-step {
-    0%,
-    70%,
-    100% {
-      opacity: 0.25;
-    }
-    25% {
-      opacity: 1;
-    }
-  }
-
-  /* Settling, not entering: two pixels and no scale, because this runs beside a
-     field somebody is typing into and anything larger reads as the page moving. */
-  .reveal {
-    animation: reveal-settle 180ms ease-out;
-  }
-
-  @keyframes reveal-settle {
-    from {
-      opacity: 0;
-      transform: translateY(2px);
-    }
-  }
-
-  /* Still true, just not the newest answer. */
-  .reveal-stale {
-    opacity: 0.5;
-    transition: opacity 140ms ease-out;
-  }
-
-  /* A row reaches past the gutter, so its hover box has edges to show; its text
-     starts on the gutter, so every line down the column begins on one edge. */
-  .rail-row {
-    margin-inline: calc(var(--rail-gutter) / -2);
-    padding-inline: calc(var(--rail-gutter) / 2);
-  }
-
   /* ── The console ───────────────────────────────────────────────────────────
      Where the owner speaks. It wears the material and the corner of the balloon
      their words become in the thread, so sending reads as one thing moving
@@ -429,60 +402,35 @@ body {
      The children, not the box: a scroll container that ignores pointer events
      also stops answering the wheel, and the gesture dies halfway down. */
   [data-thread][data-scrolling] > * {
-    pointer-events: none;
-  }
-
-  /* Live markers breathe instead of blinking: the eye finds them without being
-     pulled to them. It is the app's only "something is happening" device, and it
-     carries both things worth the eye — what is moving, and what is waiting on
-     you. There was a second device, a 1px amber ring around the whole row, drawn
-     on every row of a group at once; a rail of five parked tasks strobed in it,
-     and it said nothing the row's own mark could not. So the mark says it. */
-  .dot-live {
-    animation: dot-breath 1.8s ease-in-out infinite;
-  }
-
-  /* ── The mark as the connection light ──────────────────────────────────────
+    /* ── The mark as the connection light ──────────────────────────────────────
      The three chevrons stepping out of the spec's brackets already ramp from
      faint to solid, which is the shape of a signal. So the mark carries the state
      of the event stream: reaching, and reached. It is the only place in the app
      that says so, which is why the word travels with it rather than sitting in
      the corner of whatever screen happens to be open. */
-  .mark-reach path {
-    animation: mark-reach 1.5s ease-in-out infinite;
-  }
-
-  .mark-reach path:nth-child(2) {
-    animation-delay: 0.18s;
-  }
-
-  .mark-reach path:nth-child(3) {
-    animation-delay: 0.36s;
-  }
-
-  @keyframes mark-reach {
-    0%,
-    70%,
-    100% {
-      opacity: 0.16;
+    .mark-reach path {
+      animation: mark-reach 1.5s ease-in-out infinite;
     }
-    22% {
-      opacity: 1;
-    }
-  }
 
-  @keyframes dot-breath {
-    0%,
-    100% {
-      opacity: 1;
+    .mark-reach path:nth-child(2) {
+      animation-delay: 0.18s;
     }
-    50% {
-      opacity: 0.3;
-    }
-  }
 
-  .artifact-document {
-    color: var(--color-foreground);
+    .mark-reach path:nth-child(3) {
+      animation-delay: 0.36s;
+    }
+
+    @keyframes mark-reach {
+      0%,
+      70%,
+      100% {
+        opacity: 0.16;
+      }
+      22% {
+        opacity: 1;
+      }
+    }
+
     font-size: 0.95rem;
     line-height: 1.75;
   }
@@ -785,55 +733,6 @@ body {
     display: flex;
     gap: 0.75rem;
     color: color-mix(in srgb, var(--color-muted-foreground) 85%, transparent);
-  }
-
-  /* How far a pass has got. The fraction beside it is the exact answer; this is
-     the one you read without counting. */
-  .meter {
-    width: 100%;
-    height: 0.3rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-foreground) 9%, transparent);
-    overflow: hidden;
-  }
-
-  .meter-fill {
-    height: 100%;
-    border-radius: inherit;
-    background: var(--color-success);
-    transition: width 180ms ease-out;
-  }
-
-  /* Five blocks for a file's weight, so a stack of them compares at a glance —
-     the numbers say how much, these say how much relative to everything else. */
-  .stat-bar {
-    display: inline-flex;
-    gap: 2px;
-  }
-
-  .stat-block {
-    width: 0.3rem;
-    height: 0.3rem;
-    border-radius: 1.5px;
-    background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
-  }
-
-  .stat-block-add {
-    background: var(--color-success);
-  }
-
-  .stat-block-remove {
-    background: var(--color-destructive);
-  }
-
-  /* A folder is a heading over the files beneath it and quieter than the two
-     groups it sits inside; drawn at the same weight, the tree read as a flat
-     column of shouts with no hierarchy in it at all. */
-  .tree-folder {
-    color: color-mix(in srgb, var(--color-muted-foreground) 80%, transparent);
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.4;
   }
 } /* @layer components */
 

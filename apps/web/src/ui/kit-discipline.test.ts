@@ -13,7 +13,7 @@ const CSS = readFileSync(join(SRC, 'index.css'), 'utf8')
  * assembles. The diff face was the other one until it grew a variant and a
  * second caller, which is what made it a part: it is `Diff` now.
  */
-const LAYOUT_CLASSES = new Set(['scroll-thin', 'dot-live', 'mark-reach', 'artifact-document'])
+const LAYOUT_CLASSES = new Set(['scroll-thin', 'mark-reach', 'artifact-document'])
 
 /** Utility prefixes whose value is a colour, and so must resolve to a theme role. */
 const COLOUR_PREFIXES = new Set([

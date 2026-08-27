@@ -19,7 +19,11 @@ interface RevealProps {
 export function Reveal({ refreshing = false, className, children }: RevealProps) {
   return (
     <div
-      className={cn('reveal', refreshing && 'reveal-stale', className)}
+      className={cn(
+        'animate-reveal',
+        refreshing && 'opacity-50 transition-opacity duration-[140ms] ease-out',
+        className,
+      )}
       aria-busy={refreshing || undefined}
     >
       {children}

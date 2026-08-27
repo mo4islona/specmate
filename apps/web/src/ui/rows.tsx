@@ -27,19 +27,23 @@ export function ListRow({ primary, secondary, action, className }: ListRowProps)
   )
 }
 
+const FOLDER =
+  'font-mono text-[0.68rem] leading-[1.4] text-[color-mix(in_srgb,var(--color-muted-foreground)_80%,transparent)]'
+
 /**
  * A folder in a tree of files. Quieter than the group headings it sits under —
  * drawn at their weight, a tree reads as a flat column with no hierarchy in it.
  */
 export function FolderName({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn('tree-folder', className)} {...rest}>
+    <p className={cn(FOLDER, className)} {...rest}>
       {children}
     </p>
   )
 }
 
-const ROW_BASE = 'rail-row rounded-lg py-2 transition-colors'
+const ROW_BASE =
+  'mx-[calc(var(--rail-gutter)/-2)] rounded-lg px-[calc(var(--rail-gutter)/2)] py-2 transition-colors'
 // Where you are, not how the thing is going. A tinted wash under a row claimed a
 // state the row's own dot was busy contradicting.
 const ROW_ON = 'bg-foreground/[0.09] text-foreground'
