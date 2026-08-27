@@ -6,12 +6,15 @@ const SRC = join(import.meta.dirname, '..')
 const CSS = readFileSync(join(SRC, 'index.css'), 'utf8')
 
 /**
- * The classes that lay an element out rather than dress one. Everything else in
- * the components layer is a part, and a part comes from the kit. These are the
- * page's gutter, a rail's inset, a scroll pane's thin bar, the two animations,
- * and the markdown face — a stylesheet for content rather than a part anyone
- * assembles. The diff face was the other one until it grew a variant and a
- * second caller, which is what made it a part: it is `Diff` now.
+ * The three classes anyone may write. Everything else left in the components
+ * layer belongs to a part, and a part comes from the kit.
+ *
+ * These are not parts: a scroll pane's thin bar, which is a scrollbar and so a
+ * pseudo-element; the mark's reaching animation, which runs on the paths inside
+ * an SVG; and the markdown face, which is a stylesheet for content that arrives
+ * as HTML rather than a part anyone assembles. The list used to be twice this
+ * long — the page's gutter, a rail's inset and three animations have since
+ * become utilities, which is what a layout class should have been.
  */
 const LAYOUT_CLASSES = new Set(['scroll-thin', 'mark-reach', 'artifact-document'])
 
@@ -209,11 +212,16 @@ function relative(path: string): string {
 
 describe('kit discipline', () => {
   /**
-   * The line the kit is worth anything for. A `panel` or a `button-primary`
-   * written at a call site is a part assembled by hand, and a part assembled by
-   * hand is a part that drifts: five settings sections wrote their own heading
-   * rhythm, three popovers picked three widths, and one form asked for a
-   * `.input` that does not exist and so rendered as bare browser chrome.
+   * The line the kit is worth anything for. A `diff-line-add` written at a call
+   * site is a part assembled by hand, and a part assembled by hand is a part
+   * that drifts: five settings sections wrote their own heading rhythm, three
+   * popovers picked three widths, and one form asked for a `.input` that does
+   * not exist and so rendered as bare browser chrome.
+   *
+   * The rule covers less than it did, and that is the point: most parts are
+   * variant tables now, so there is no class left for a call site to reach for.
+   * What it still guards is the handful in `index.css` that a utility cannot
+   * express — the diff's rows, the syntax hues, the markdown face.
    */
   it('the app writes no kit class of its own', () => {
     const parts = new Set([...definedClasses()].filter((name) => !LAYOUT_CLASSES.has(name)))
@@ -311,6 +319,25 @@ describe('kit discipline', () => {
     ).map(relative)
 
     expect(importers, 'ask ui/icon.tsx for the mark, or add it to its map').toEqual(['ui/icon.tsx'])
+  })
+
+  /**
+   * The same rule for the engine under the parts. A screen asks the kit for a
+   * `Select` or a `Drawer`; it does not reach past it for the primitive those
+   * are built from.
+   *
+   * It is worth holding for the reason the icon rule is. A `Select` opened
+   * straight from Radix at a call site is a control the theme switcher never
+   * sees, the workbench never renders and the `''`-means-nothing translation
+   * never reaches — three things this kit does that the primitive does not know
+   * about. And a library kept behind one directory can be replaced there.
+   */
+  it('only the kit imports a primitive', () => {
+    const importers = OUTSIDE_THE_KIT.filter((path) =>
+      /from ['"]@radix-ui\//.test(readFileSync(path, 'utf8')),
+    ).map(relative)
+
+    expect(importers, 'ask src/ui for the part, or add one there').toEqual([])
   })
 
   /**
