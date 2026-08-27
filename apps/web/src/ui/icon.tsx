@@ -85,6 +85,16 @@ export const ICON_SIZES = Object.keys(SIZES) as readonly IconSize[]
  */
 const STROKE = 1.5
 
+/**
+ * The corrections a nominal size cannot make. Lucide draws most marks inside a
+ * 16-unit square of its 24-unit frame; `Circle` fills 20 of it, so at the same
+ * size it reads a fifth larger than the tick standing next to it in the rail.
+ * Scaling it back is what makes a column of marks look like one set.
+ */
+const OPTICAL: Partial<Record<IconName, string>> = {
+  pending: 'scale-[0.82]',
+}
+
 interface IconProps {
   readonly name: IconName
   readonly size?: IconSize
@@ -101,7 +111,7 @@ export function Icon({ name, size = 'sm', label, className }: IconProps) {
       size={SIZES[size]}
       strokeWidth={STROKE}
       absoluteStrokeWidth
-      className={cn('shrink-0', className)}
+      className={cn('shrink-0', OPTICAL[name], className)}
       aria-hidden={label ? undefined : true}
       aria-label={label}
       role={label ? 'img' : undefined}

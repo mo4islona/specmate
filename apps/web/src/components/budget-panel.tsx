@@ -42,11 +42,19 @@ function budgetRows(budgets: Budgets, spend: Spend): BudgetRow[] {
  * per row. The sentence is now the `≈` the number wears: incomplete cost still
  * reads as incomplete (REQ-1505), it just no longer takes four lines to say so.
  */
-export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend }) {
+export function BudgetPanel({
+  budgets,
+  spend,
+  className,
+}: {
+  budgets: Budgets
+  spend: Spend
+  className?: string
+}) {
   const rows = budgetRows(budgets, spend)
 
   return (
-    <section aria-label="Budget">
+    <section aria-label="Budget" className={className}>
       <MicroLabel as="h2">Spend</MicroLabel>
 
       <dl className="mt-2.5 space-y-2">
