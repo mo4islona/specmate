@@ -148,7 +148,12 @@ const RunLine = memo(function RunLine({
         />
 
         {call ? (
-          <span className="min-w-0 break-all">
+          // One line, whatever the call was. A shell command runs to several
+          // hundred characters and, wrapped in full, took six lines of the
+          // record and buried the twenty entries around it — a log stops being
+          // scannable the moment one of its lines can be a paragraph. The whole
+          // of it is on the tooltip.
+          <span className="min-w-0 truncate" title={`${entry.action}(${entry.target})`}>
             <span className="text-foreground">{entry.action}</span>
             <span className="text-muted-foreground">({entry.target})</span>
           </span>
