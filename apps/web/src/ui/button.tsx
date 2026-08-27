@@ -18,26 +18,26 @@ import { Dot } from './note.tsx'
  * sits in — not as a side effect of changing what it is written in.
  */
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-[0.4rem] rounded-lg font-mono leading-tight transition-[background-color,border-color,color] duration-[120ms] ease-[ease] disabled:cursor-not-allowed disabled:opacity-[0.38]',
+  'inline-flex items-center justify-center gap-[0.4rem] rounded-lg font-mono transition-[background-color,border-color,color] duration-[120ms] ease-[ease] disabled:cursor-not-allowed disabled:opacity-[0.38]',
   {
     variants: {
       variant: {
         primary:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-primary text-primary-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-primary)_84%,var(--color-hover-tint))]',
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-primary text-primary-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-primary)_84%,var(--color-hover-tint))]',
         // A state waiting on the owner wears the colour the rest of the screen
         // uses for "your turn" — never the red of the thing that went wrong.
         warning:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-warning text-warning-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-warning)_84%,var(--color-hover-tint))]',
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-warning text-warning-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-warning)_84%,var(--color-hover-tint))]',
         destructive:
-          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-destructive text-destructive-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_84%,var(--color-hover-tint))]',
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs/[1.25] font-bold bg-destructive text-destructive-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_84%,var(--color-hover-tint))]',
         secondary:
-          'min-h-[2.4rem] border px-[0.95rem] py-2 text-xs font-bold border-[color-mix(in_srgb,var(--color-border-strong)_70%,transparent)] bg-secondary text-secondary-foreground not-disabled:hover:border-border-strong not-disabled:hover:bg-[color-mix(in_srgb,var(--color-foreground)_9%,transparent)]',
+          'min-h-[2.4rem] border px-[0.95rem] py-2 text-xs/[1.25] font-bold border-[color-mix(in_srgb,var(--color-border-strong)_70%,transparent)] bg-secondary text-secondary-foreground not-disabled:hover:border-border-strong not-disabled:hover:bg-[color-mix(in_srgb,var(--color-foreground)_9%,transparent)]',
         // No frame until you point at it: a hover border on every quiet control
         // is what made a row of them read as a toolbar.
         ghost:
-          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem] text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground',
+          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem]/[1.25] text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground',
         'ghost-destructive':
-          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem] text-destructive not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_14%,transparent)] not-disabled:hover:text-destructive',
+          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem]/[1.25] text-destructive not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_14%,transparent)] not-disabled:hover:text-destructive',
       },
     },
     defaultVariants: { variant: 'secondary' },

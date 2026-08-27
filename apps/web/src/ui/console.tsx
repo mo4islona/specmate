@@ -52,7 +52,7 @@ export function Console({ tone = 'plain', className, children, ...rest }: Consol
 
 const FIELD = [
   'block w-full min-h-[2.4rem] max-h-[38vh] overflow-y-auto',
-  'border-0 bg-transparent p-0 text-[0.9rem] leading-[1.65] text-foreground',
+  'border-0 bg-transparent p-0 text-[0.9rem]/[1.65] text-foreground',
   'placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground',
   // Its height is what is in it. A fixed box with a drag handle in the corner is
   // furniture, and nobody drags it.

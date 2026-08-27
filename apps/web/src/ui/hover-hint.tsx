@@ -46,7 +46,7 @@ export function HoverHint({ hint, delayMs = 550, children }: HoverHintProps) {
             side="left"
             sideOffset={10}
             collisionPadding={8}
-            className="z-50 w-[300px] rounded-xl border border-border-strong bg-popover p-3 text-[0.72rem] leading-5 text-foreground shadow-[var(--shadow-popover)] data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0"
+            className="z-50 w-[300px] rounded-xl border border-border-strong bg-popover p-3 text-[0.72rem]/5 text-foreground shadow-[var(--shadow-popover)] data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0"
           >
             {hint}
           </TooltipPrimitive.Content>
