@@ -48,7 +48,7 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
           {/* Against a budget, a cache read and a fresh input token are not the
               same money — the total alone hides which kind was spent. */}
           {split.length > 1 && (
-            <span className="mt-0.5 block text-muted">
+            <span className="mt-0.5 block text-muted-foreground">
               {split.map((part) => `${part.label} ${formatTokens(part.value)}`).join(' · ')}
             </span>
           )}
@@ -61,7 +61,7 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
   return (
     <span className="block">
       <span className="flex items-baseline justify-between gap-3">
-        <span className="min-w-0 text-[0.8rem] font-medium text-text">{node.label}</span>
+        <span className="min-w-0 text-[0.8rem] font-medium text-foreground">{node.label}</span>
         <span className={`shrink-0 font-mono text-[0.62rem] ${nodeName(node.state)}`}>
           {NODE_MARK[node.state].label}
         </span>
@@ -78,14 +78,14 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
         </span>
       )}
 
-      {help && <span className="mt-2 block text-muted">{help}</span>}
+      {help && <span className="mt-2 block text-muted-foreground">{help}</span>}
 
       {facts.length > 0 && (
         <span className="mt-2.5 grid grid-cols-[3.2rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-border pt-2.5 font-mono text-[0.65rem] leading-[1.55]">
           {facts.map((fact) => (
             <span key={fact.key} className="contents">
-              <span className="text-muted">{fact.key}</span>
-              <span className="min-w-0 break-words text-text">{fact.value}</span>
+              <span className="text-muted-foreground">{fact.key}</span>
+              <span className="min-w-0 break-words text-foreground">{fact.value}</span>
             </span>
           ))}
         </span>

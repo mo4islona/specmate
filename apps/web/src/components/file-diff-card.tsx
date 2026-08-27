@@ -88,7 +88,7 @@ export function FileDiffCard({
           onClick={onToggle}
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${file.path}`}
-          className="-mx-2 flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left text-muted transition-colors hover:bg-text/[0.07] hover:text-text"
+          className="-mx-2 flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
         >
           <span
             aria-hidden="true"
@@ -96,7 +96,7 @@ export function FileDiffCard({
           >
             ▶
           </span>
-          <span className="min-w-0 truncate font-mono text-text text-xs">{file.path}</span>
+          <span className="min-w-0 truncate font-mono text-foreground text-xs">{file.path}</span>
         </button>
 
         <div className="flex shrink-0 items-center gap-4">
@@ -135,7 +135,7 @@ export function FileDiffCard({
                 />
 
                 {clamped && (
-                  <p className="mt-2 text-muted text-xs">
+                  <p className="mt-2 text-muted-foreground text-xs">
                     Clamped to the first {CLAMP_LINES} of {lines.length} lines.{' '}
                     <TextButton onClick={() => setShowWhole(true)}>Draw the rest</TextButton>
                   </p>

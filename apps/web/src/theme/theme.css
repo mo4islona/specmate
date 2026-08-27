@@ -1,8 +1,16 @@
 /* ── Themes ─────────────────────────────────────────────────────────────────
    Every colour and typeface the app can wear lives here and nowhere else. A
-   component names a role — accent, attention, danger, info, success, the four
-   greys, mono and sans — and this file decides what that role looks like under
-   the theme the owner picked.
+   component names a role — primary, warning, destructive, info, success, the
+   four greys, mono and sans — and this file decides what that role looks like
+   under the theme the owner picked.
+
+   The names are shadcn's, so a component copied from it reads correctly here
+   without a translation table. What shadcn has no word for is declared beside
+   them: `warning` and its foreground, `info` and `success`, the five syntax
+   hues, the bright border, and the direction a hover moves. The rest of its
+   vocabulary — `secondary`, `muted`, `accent`, `input`, `ring` — is a wash or
+   an alias of what is here and is computed once in `index.css`, so a theme
+   declares a colour only where it actually differs.
 
    Themes are seeded from the `@wick-charts/react` presets, so the telemetry
    canvas and the page around it come from one source; each theme's typefaces
@@ -26,18 +34,18 @@
 [data-theme="one-dark-pro"] {
   color-scheme: dark;
 
-  --color-ground: #282c34;
-  --color-surface: #2e323a;
-  --color-elevated: #31353e;
+  --color-background: #282c34;
+  --color-card: #2e323a;
+  --color-popover: #31353e;
   --color-border: #41454e;
-  --color-border-bright: #535861;
+  --color-border-strong: #535861;
 
-  --color-text: #c3cad5;
-  --color-muted: #a9b1bb;
+  --color-foreground: #c3cad5;
+  --color-muted-foreground: #a9b1bb;
 
-  --color-accent: #79bbf1;
-  --color-attention: #e5c07b;
-  --color-danger: #e5828a;
+  --color-primary: #79bbf1;
+  --color-warning: #e5c07b;
+  --color-destructive: #e5828a;
   --color-info: #6fc1cb;
   --color-success: #99c47a;
 
@@ -47,8 +55,8 @@
   --color-syntax-number: #d19a66;
   --color-syntax-name: #61afef;
 
-  --color-on-accent: #1e2127;
-  --color-on-attention: #1e2127;
+  --color-primary-foreground: #1e2127;
+  --color-warning-foreground: #1e2127;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -59,18 +67,18 @@
 [data-theme="night-owl"] {
   color-scheme: dark;
 
-  --color-ground: #011627;
-  --color-surface: #0a1e2f;
-  --color-elevated: #102435;
+  --color-background: #011627;
+  --color-card: #0a1e2f;
+  --color-popover: #102435;
   --color-border: #233646;
-  --color-border-bright: #3d4e5e;
+  --color-border-strong: #3d4e5e;
 
-  --color-text: #d6deeb;
-  --color-muted: #879aaa;
+  --color-foreground: #d6deeb;
+  --color-muted-foreground: #879aaa;
 
-  --color-accent: #82aaff;
-  --color-attention: #ecc48d;
-  --color-danger: #f17580;
+  --color-primary: #82aaff;
+  --color-warning: #ecc48d;
+  --color-destructive: #f17580;
   --color-info: #7fdbca;
   --color-success: #addb67;
 
@@ -80,8 +88,8 @@
   --color-syntax-number: #f78c6c;
   --color-syntax-name: #82aaff;
 
-  --color-on-accent: #01111d;
-  --color-on-attention: #01111d;
+  --color-primary-foreground: #01111d;
+  --color-warning-foreground: #01111d;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -92,18 +100,18 @@
 [data-theme="dracula"] {
   color-scheme: dark;
 
-  --color-ground: #282a36;
-  --color-surface: #30323e;
-  --color-elevated: #373843;
+  --color-background: #282a36;
+  --color-card: #30323e;
+  --color-popover: #373843;
   --color-border: #494b54;
-  --color-border-bright: #62646b;
+  --color-border-strong: #62646b;
 
-  --color-text: #f8f8f2;
-  --color-muted: #a8b0ce;
+  --color-foreground: #f8f8f2;
+  --color-muted-foreground: #a8b0ce;
 
-  --color-accent: #c7a3fa;
-  --color-attention: #ffb86c;
-  --color-danger: #ff808a;
+  --color-primary: #c7a3fa;
+  --color-warning: #ffb86c;
+  --color-destructive: #ff808a;
   --color-info: #8be9fd;
   --color-success: #50fa7b;
 
@@ -113,8 +121,8 @@
   --color-syntax-number: #bd93f9;
   --color-syntax-name: #50fa7b;
 
-  --color-on-accent: #1e2029;
-  --color-on-attention: #1e2029;
+  --color-primary-foreground: #1e2029;
+  --color-warning-foreground: #1e2029;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -125,18 +133,18 @@
 [data-theme="catppuccin"] {
   color-scheme: dark;
 
-  --color-ground: #1e1e2e;
-  --color-surface: #252536;
-  --color-elevated: #2a2b3c;
+  --color-background: #1e1e2e;
+  --color-card: #252536;
+  --color-popover: #2a2b3c;
   --color-border: #3a3b4e;
-  --color-border-bright: #4f5265;
+  --color-border-strong: #4f5265;
 
-  --color-text: #cdd6f4;
-  --color-muted: #9da1b7;
+  --color-foreground: #cdd6f4;
+  --color-muted-foreground: #9da1b7;
 
-  --color-accent: #89b4fa;
-  --color-attention: #f9e2af;
-  --color-danger: #f38ca9;
+  --color-primary: #89b4fa;
+  --color-warning: #f9e2af;
+  --color-destructive: #f38ca9;
   --color-info: #94e2d5;
   --color-success: #a6e3a1;
 
@@ -146,8 +154,8 @@
   --color-syntax-number: #fab387;
   --color-syntax-name: #89b4fa;
 
-  --color-on-accent: #171723;
-  --color-on-attention: #171723;
+  --color-primary-foreground: #171723;
+  --color-warning-foreground: #171723;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -158,18 +166,18 @@
 [data-theme="gruvbox"] {
   color-scheme: dark;
 
-  --color-ground: #282828;
-  --color-surface: #302f2e;
-  --color-elevated: #32312f;
+  --color-background: #282828;
+  --color-card: #302f2e;
+  --color-popover: #32312f;
   --color-border: #47453e;
-  --color-border-bright: #5f5a4f;
+  --color-border-strong: #5f5a4f;
 
-  --color-text: #ebdbb2;
-  --color-muted: #b7aa99;
+  --color-foreground: #ebdbb2;
+  --color-muted-foreground: #b7aa99;
 
-  --color-accent: #99b5ab;
-  --color-attention: #fabd2f;
-  --color-danger: #fc6a59;
+  --color-primary: #99b5ab;
+  --color-warning: #fabd2f;
+  --color-destructive: #fc6a59;
   --color-info: #8ec07c;
   --color-success: #b8bb26;
 
@@ -179,8 +187,8 @@
   --color-syntax-number: #d3869b;
   --color-syntax-name: #8ec07c;
 
-  --color-on-accent: #1e1e1e;
-  --color-on-attention: #1e1e1e;
+  --color-primary-foreground: #1e1e1e;
+  --color-warning-foreground: #1e1e1e;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -191,18 +199,18 @@
 [data-theme="ayu-mirage"] {
   color-scheme: dark;
 
-  --color-ground: #1f2430;
-  --color-surface: #262b36;
-  --color-elevated: #2b303b;
+  --color-background: #1f2430;
+  --color-card: #262b36;
+  --color-popover: #2b303b;
   --color-border: #3b3f48;
-  --color-border-bright: #4f535a;
+  --color-border-strong: #4f535a;
 
-  --color-text: #cbccc6;
-  --color-muted: #a6abb1;
+  --color-foreground: #cbccc6;
+  --color-muted-foreground: #a6abb1;
 
-  --color-accent: #73d0ff;
-  --color-attention: #ffd580;
-  --color-danger: #f48d96;
+  --color-primary: #73d0ff;
+  --color-warning: #ffd580;
+  --color-destructive: #f48d96;
   --color-info: #95e6cb;
   --color-success: #bae67e;
 
@@ -212,8 +220,8 @@
   --color-syntax-number: #ffcc66;
   --color-syntax-name: #73d0ff;
 
-  --color-on-accent: #171b24;
-  --color-on-attention: #171b24;
+  --color-primary-foreground: #171b24;
+  --color-warning-foreground: #171b24;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -230,18 +238,18 @@
 [data-theme="matrix"] {
   color-scheme: dark;
 
-  --color-ground: #000000;
-  --color-surface: #0d120e;
-  --color-elevated: #161f18;
+  --color-background: #000000;
+  --color-card: #0d120e;
+  --color-popover: #161f18;
   --color-border: #243328;
-  --color-border-bright: #3e5744;
+  --color-border-strong: #3e5744;
 
-  --color-text: #b6ffc8;
-  --color-muted: #56a068;
+  --color-foreground: #b6ffc8;
+  --color-muted-foreground: #56a068;
 
-  --color-accent: #00ff41;
-  --color-attention: #ffb000;
-  --color-danger: #ff5d5d;
+  --color-primary: #00ff41;
+  --color-warning: #ffb000;
+  --color-destructive: #ff5d5d;
   --color-info: #5cffb1;
   --color-success: #00e639;
 
@@ -251,8 +259,8 @@
   --color-syntax-number: #8affa8;
   --color-syntax-name: #00e639;
 
-  --color-on-accent: #000000;
-  --color-on-attention: #000000;
+  --color-primary-foreground: #000000;
+  --color-warning-foreground: #000000;
   --color-hover-tint: #ffffff;
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.5);
 
@@ -263,18 +271,18 @@
 [data-theme="github-light"] {
   color-scheme: light;
 
-  --color-ground: #f2f4f6;
-  --color-surface: #f8f9fa;
-  --color-elevated: #fbfcfc;
+  --color-background: #f2f4f6;
+  --color-card: #f8f9fa;
+  --color-popover: #fbfcfc;
   --color-border: #d9dbdd;
-  --color-border-bright: #bfc2c5;
+  --color-border-strong: #bfc2c5;
 
-  --color-text: #1f2328;
-  --color-muted: #5b626c;
+  --color-foreground: #1f2328;
+  --color-muted-foreground: #5b626c;
 
-  --color-accent: #085fc4;
-  --color-attention: #845900;
-  --color-danger: #bc1f2a;
+  --color-primary: #085fc4;
+  --color-warning: #845900;
+  --color-destructive: #bc1f2a;
   --color-info: #176c72;
   --color-success: #177131;
 
@@ -284,8 +292,8 @@
   --color-syntax-number: #0550ae;
   --color-syntax-name: #8250df;
 
-  --color-on-accent: #ffffff;
-  --color-on-attention: #ffffff;
+  --color-primary-foreground: #ffffff;
+  --color-warning-foreground: #ffffff;
   --color-hover-tint: #000000;
   --shadow-popover: 0 12px 32px #1f232829;
 
@@ -296,18 +304,18 @@
 [data-theme="solarized-light"] {
   color-scheme: light;
 
-  --color-ground: #f3ecd8;
-  --color-surface: #f8f5ea;
-  --color-elevated: #fbf9f3;
+  --color-background: #f3ecd8;
+  --color-card: #f8f5ea;
+  --color-popover: #fbf9f3;
   --color-border: #ddd9c8;
-  --color-border-bright: #c8c6b8;
+  --color-border-strong: #c8c6b8;
 
-  --color-text: #3f4f52;
-  --color-muted: #53646b;
+  --color-foreground: #3f4f52;
+  --color-muted-foreground: #53646b;
 
-  --color-accent: #1c6499;
-  --color-attention: #795c00;
-  --color-danger: #b42926;
+  --color-primary: #1c6499;
+  --color-warning: #795c00;
+  --color-destructive: #b42926;
   --color-info: #1c6b64;
   --color-success: #596600;
 
@@ -317,8 +325,8 @@
   --color-syntax-number: #c42b75;
   --color-syntax-name: #1f70a9;
 
-  --color-on-accent: #ffffff;
-  --color-on-attention: #ffffff;
+  --color-primary-foreground: #ffffff;
+  --color-warning-foreground: #ffffff;
   --color-hover-tint: #000000;
   --shadow-popover: 0 12px 32px #3f4f5229;
 

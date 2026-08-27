@@ -49,8 +49,8 @@ function useMissionControlChartTheme(): ChartTheme | null {
       setTheme(
         createTheme({
           name: 'SpecMate mission control',
-          background: token('--color-surface'),
-          chartGradient: [token('--color-elevated'), token('--color-surface')],
+          background: token('--color-card'),
+          chartGradient: [token('--color-popover'), token('--color-card')],
           typography: {
             fontFamily: token('--font-mono'),
             fontSize: 11,
@@ -62,24 +62,24 @@ function useMissionControlChartTheme(): ChartTheme | null {
           line: {
             color: token('--color-info'),
             areaTopColor: token('--color-info'),
-            areaBottomColor: token('--color-surface'),
+            areaBottomColor: token('--color-card'),
           },
           seriesColors: [
-            token('--color-accent'),
-            token('--color-attention'),
+            token('--color-primary'),
+            token('--color-warning'),
             token('--color-info'),
             token('--color-success'),
           ],
           crosshair: {
-            color: token('--color-accent'),
-            labelBackground: token('--color-elevated'),
-            labelTextColor: token('--color-text'),
+            color: token('--color-primary'),
+            labelBackground: token('--color-popover'),
+            labelTextColor: token('--color-foreground'),
           },
-          axis: { textColor: token('--color-muted') },
+          axis: { textColor: token('--color-muted-foreground') },
           tooltip: {
-            background: token('--color-elevated'),
-            textColor: token('--color-text'),
-            borderColor: token('--color-border-bright'),
+            background: token('--color-popover'),
+            textColor: token('--color-foreground'),
+            borderColor: token('--color-border-strong'),
           },
           fontUrl: null,
         }).theme,
@@ -216,7 +216,7 @@ export function TelemetryChart({
     <section className="border-t border-border/60 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <MicroLabel>Budget trace by attempt</MicroLabel>
-        <p className="font-mono text-xs text-muted">
+        <p className="font-mono text-xs text-muted-foreground">
           ${recordedCost.toFixed(4)} recorded
           {absentCostCount > 0 ? ` · ${absentCostCount} cost absent` : ''}
         </p>
@@ -225,8 +225,8 @@ export function TelemetryChart({
       {recorded.length === 0 ? (
         <div className="grid min-h-56 place-items-center text-center">
           <div>
-            <p className="font-mono text-3xl text-muted">∅</p>
-            <p className="mt-3 text-sm text-muted">No telemetry has been recorded.</p>
+            <p className="font-mono text-3xl text-muted-foreground">∅</p>
+            <p className="mt-3 text-sm text-muted-foreground">No telemetry has been recorded.</p>
           </div>
         </div>
       ) : (
@@ -276,7 +276,7 @@ export function TelemetryChart({
                 />
               </ChartContainer>
             ) : (
-              <div className="grid h-72 place-items-center rounded-xl bg-text/[0.035] text-sm text-muted">
+              <div className="grid h-72 place-items-center rounded-xl bg-foreground/[0.035] text-sm text-muted-foreground">
                 Telemetry metadata exists, but no token or duration values were recorded.
               </div>
             )}
@@ -290,18 +290,18 @@ export function TelemetryChart({
                 : null
 
               return (
-                <li key={attempt.id} className="rounded-xl bg-ground/45 p-3">
-                  <p className="truncate text-text">{attempt.label}</p>
-                  <p className="mt-1 text-muted">
+                <li key={attempt.id} className="rounded-xl bg-background/45 p-3">
+                  <p className="truncate text-foreground">{attempt.label}</p>
+                  <p className="mt-1 text-muted-foreground">
                     {totalTokens === null
                       ? 'tokens absent'
                       : `${totalTokens.toLocaleString()} tokens`}{' '}
                     · {duration === null ? 'duration absent' : `${duration.toFixed(1)}s`}
                   </p>
-                  <p className="mt-1 text-muted">
+                  <p className="mt-1 text-muted-foreground">
                     {attempt.costUsd === null ? 'cost absent' : `$${attempt.costUsd.toFixed(4)}`}
                   </p>
-                  <p className="mt-1 truncate text-muted">{attempt.model ?? attempt.provider}</p>
+                  <p className="mt-1 truncate text-muted-foreground">{attempt.model ?? attempt.provider}</p>
                 </li>
               )
             })}
@@ -312,7 +312,7 @@ export function TelemetryChart({
       {absent.length > 0 && (
         <div className="mt-5 border-t border-border/60 pt-4">
           <MicroLabel>No telemetry</MicroLabel>
-          <p className="mt-2 font-mono text-xs leading-6 text-muted">
+          <p className="mt-2 font-mono text-xs leading-6 text-muted-foreground">
             {absent.map((stage) => `${stage.nodeKey}#${stage.attempt}`).join(' · ')}
           </p>
         </div>

@@ -5,8 +5,10 @@
 Three layers, and a change belongs to exactly one of them:
 
 - `apps/web/src/theme/theme.css` — every colour and typeface, one block per theme. A component
-  names a role (`accent`, `attention`, `danger`, `info`, `success`, the four greys, mono, sans);
-  the theme decides what it looks like.
+  names a role (`primary`, `warning`, `destructive`, `info`, `success`, the four greys, mono,
+  sans); the theme decides what it looks like. The names are shadcn's; the roles shadcn has no
+  word for are declared beside them, and the ones that are a wash of the page (`secondary`,
+  `muted`, `accent`) are computed once in `index.css` rather than nine times here.
 - `apps/web/src/index.css` — the parts those roles dress, in Tailwind's `components` layer.
 - `apps/web/src/ui` — the React kit: a name and a typed set of choices per part. **Nothing outside
   `src/ui` writes one of those classes.** `Button`, not `className="button-primary"`.

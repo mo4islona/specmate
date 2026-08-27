@@ -62,7 +62,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
   // A bar rather than a rule: the line under it was the thread's ceiling, and a
   // surface says the same thing without drawing anything.
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-elevated/55 py-2 pl-4 pr-2">
+    <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-popover/55 py-2 pl-4 pr-2">
       <h2 className="flex min-w-0 items-center gap-2">
         <Dot
           className={current ? signalDot('settled') : nodeDot(node.state)}
@@ -82,7 +82,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
         <p
           className={cx(
             'min-w-0 font-mono text-[0.66rem]',
-            notice.tone === 'danger' ? signalText('stopped') : 'text-muted',
+            notice.tone === 'danger' ? signalText('stopped') : 'text-muted-foreground',
           )}
           role="status"
         >
@@ -90,10 +90,10 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
         </p>
       )}
 
-      <p className="ml-auto flex min-w-0 items-center gap-x-2 font-mono text-[0.66rem] text-muted">
+      <p className="ml-auto flex min-w-0 items-center gap-x-2 font-mono text-[0.66rem] text-muted-foreground">
         {facts.map((fact, index) => (
           <span key={fact}>
-            {index > 0 && <span className="pr-2 text-border-bright">·</span>}
+            {index > 0 && <span className="pr-2 text-border-strong">·</span>}
             {fact}
           </span>
         ))}

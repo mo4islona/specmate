@@ -155,13 +155,14 @@ function classLists(source: string): string[] {
  * the top of `index.css`.
  */
 const SIGNAL_ROLES = new Set([
-  'accent',
-  'attention',
-  'danger',
+  'primary',
+  'warning',
+  'destructive',
   'info',
   'success',
-  'on-accent',
-  'on-attention',
+  'primary-foreground',
+  'warning-foreground',
+  'destructive-foreground',
   'status-active',
   'status-parked',
   'status-failed',
@@ -187,7 +188,7 @@ function bareUtility(token: string): string {
   return (token.split(':').at(-1) ?? token).replace(/^!/, '')
 }
 
-/** `bg-accent/[0.09]`, `text-danger`, `border-accent/40` — the role, or null. */
+/** `bg-primary/[0.09]`, `text-destructive`, `border-primary/40` — the role, or null. */
 function roleOf(token: string): string | null {
   const [prefix, ...rest] = bareUtility(token).split('-')
   if (!prefix || !COLOUR_PREFIXES.has(prefix)) return null
@@ -264,9 +265,12 @@ describe('kit discipline', () => {
    * `done` was a green ✓ in the pipeline rail, a grey dot over the step it
    * headed and a cyan pill in the task index; `info` meant a link, a path, a
    * sha, a model name, a merged pull request, a selected document *and* an
-   * archived task; `accent` meant the brand, a running step, the active tab and
+   * archived task; the brand meant itself, a running step, the active tab and
    * every `code` span in a proposal. Seven hues on one screen, none of them
    * signal — which is what the owner saw and called a traffic light.
+   *
+   * `accent` is deliberately absent from the set below: under shadcn's names it
+   * is the wash a quiet control takes under the pointer, and carries no signal.
    */
   it('only the tone module lights a signal role', () => {
     const offences: string[] = []

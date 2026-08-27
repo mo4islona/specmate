@@ -140,7 +140,7 @@ export function TaskComposer({
         </div>
       ) : (
         destination.head && (
-          <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] leading-5 text-muted">
+          <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] leading-5 text-muted-foreground">
             <Mark tone={destination.tone} />
             <span className="min-w-0">
               {destination.head.to && (
@@ -242,7 +242,7 @@ function Pager({
   const steps = Array.from({ length: total }, (_value, position) => position)
 
   return (
-    <div className="flex items-center gap-1 font-mono text-[0.7rem] text-muted">
+    <div className="flex items-center gap-1 font-mono text-[0.7rem] text-muted-foreground">
       <button
         type="button"
         aria-label="Previous question"
@@ -262,8 +262,8 @@ function Pager({
           className={cx(
             'grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors',
             step === index
-              ? 'bg-text/15 font-semibold text-text'
-              : 'text-muted hover:bg-text/8 hover:text-text',
+              ? 'bg-foreground/15 font-semibold text-foreground'
+              : 'text-muted-foreground hover:bg-foreground/8 hover:text-foreground',
           )}
           onClick={() => onPage(step)}
         >

@@ -43,8 +43,8 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
           </Button>
         }
       >
-        <p className="text-[0.78rem] leading-6 text-muted">
-          Stopping <span className="text-text">{runLabel(nodeKey, attempt)}</span> may still incur
+        <p className="text-[0.78rem] leading-6 text-muted-foreground">
+          Stopping <span className="text-foreground">{runLabel(nodeKey, attempt)}</span> may still incur
           provider cost. Every uncommitted change from this attempt is discarded; accepted commits
           stay.
         </p>

@@ -12,18 +12,18 @@ function ThemeSwatch({ id }: { id: ThemeId }) {
   return (
     <span
       data-theme={id}
-      className="block rounded-lg border border-border bg-ground p-3 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+      className="block rounded-lg border border-border bg-background p-3 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary"
     >
       <span className="flex items-center gap-1.5">
-        <span className="block h-2 w-2 rounded-full bg-accent" />
-        <span className="block h-2 w-2 rounded-full bg-attention" />
-        <span className="block h-2 w-2 rounded-full bg-danger" />
+        <span className="block h-2 w-2 rounded-full bg-primary" />
+        <span className="block h-2 w-2 rounded-full bg-warning" />
+        <span className="block h-2 w-2 rounded-full bg-destructive" />
         <span className="ml-auto block h-2 w-2 rounded-full bg-success" />
       </span>
 
-      <span className="mt-3 block rounded-md border border-border bg-surface p-2.5">
-        <span className="block h-1.5 w-2/3 rounded-full bg-text/70" />
-        <span className="mt-2 block h-1.5 w-2/5 rounded-full bg-muted/70" />
+      <span className="mt-3 block rounded-md border border-border bg-card p-2.5">
+        <span className="block h-1.5 w-2/3 rounded-full bg-foreground/70" />
+        <span className="mt-2 block h-1.5 w-2/5 rounded-full bg-muted-foreground/70" />
       </span>
     </span>
   )
@@ -49,7 +49,7 @@ export function ThemeSection() {
               key={theme.id}
               className={cx(
                 'cursor-pointer rounded-xl border p-1.5 transition-colors',
-                chosen ? 'border-text' : 'border-border hover:border-border-bright',
+                chosen ? 'border-foreground' : 'border-border hover:border-border-strong',
               )}
             >
               <input
@@ -67,12 +67,12 @@ export function ThemeSection() {
                 <span
                   className={cx(
                     'font-mono text-[0.75rem]',
-                    chosen ? 'font-medium text-text' : 'text-text',
+                    chosen ? 'font-medium text-foreground' : 'text-foreground',
                   )}
                 >
                   {theme.label}
                 </span>
-                <span className="font-mono text-[0.62rem] text-muted">
+                <span className="font-mono text-[0.62rem] text-muted-foreground">
                   {theme.dark ? 'dark' : 'light'}
                 </span>
               </span>

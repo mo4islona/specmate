@@ -113,7 +113,7 @@ export function HoverHint({ hint, delayMs = 550, children }: HoverHintProps) {
             ref={bubble}
             role="tooltip"
             style={{ top: placement.top, left: placement.left, width: WIDTH }}
-            className="popover pointer-events-none fixed z-50 block p-3 text-[0.72rem] leading-5 text-text"
+            className="popover pointer-events-none fixed z-50 block p-3 text-[0.72rem] leading-5 text-foreground"
           >
             {hint}
           </span>,

@@ -38,7 +38,7 @@ export function InlineLink({ href, className, children }: InlineLinkProps) {
     <Link
       href={href}
       className={cx(
-        'underline decoration-border-bright underline-offset-4 hover:decoration-current',
+        'underline decoration-border-strong underline-offset-4 hover:decoration-current',
         className,
       )}
     >

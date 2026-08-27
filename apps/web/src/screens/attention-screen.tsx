@@ -45,8 +45,8 @@ export function AttentionScreen() {
         title="Human signal queue"
         description="Gates, failures, and stalled work that need an owner decision now."
         aside={
-          <p className="font-mono text-sm text-muted">
-            <span className="text-2xl text-text">{attention.data.items.length}</span> open
+          <p className="font-mono text-sm text-muted-foreground">
+            <span className="text-2xl text-foreground">{attention.data.items.length}</span> open
           </p>
         }
       />
@@ -54,7 +54,7 @@ export function AttentionScreen() {
       {attention.data.items.length === 0 ? (
         <Panel className="grid min-h-72 place-items-center text-center">
           <div>
-            <Icon name="check" size="xl" className="mx-auto text-muted" />
+            <Icon name="check" size="xl" className="mx-auto text-muted-foreground" />
             <h2 className="mt-5 text-xl font-semibold">Nothing needs the owner</h2>
             <Note className="mt-2">All tracked work is moving or complete.</Note>
           </div>
@@ -65,7 +65,7 @@ export function AttentionScreen() {
             <li key={item.id}>
               <PanelLink
                 href={`/tasks/${item.task.id}`}
-                className="group block h-full transition-colors hover:border-border-bright hover:bg-elevated"
+                className="group block h-full transition-colors hover:border-border-strong hover:bg-popover"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
@@ -78,7 +78,7 @@ export function AttentionScreen() {
                     </div>
                     <h2 className="mt-2 truncate text-lg font-semibold">{item.task.title}</h2>
                   </div>
-                  <span className="shrink-0 font-mono text-xs text-muted">
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
                     {formatAge(item.since)} ago
                   </span>
                 </div>
@@ -87,7 +87,7 @@ export function AttentionScreen() {
 
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <StatusChip status={item.task.status} />
-                  <span className="font-mono text-xs text-muted">Open task →</span>
+                  <span className="font-mono text-xs text-muted-foreground">Open task →</span>
                 </div>
               </PanelLink>
             </li>

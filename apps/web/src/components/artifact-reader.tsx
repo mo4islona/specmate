@@ -24,16 +24,16 @@ export function ArtifactReader({ taskId, artifactId, onClose }: ArtifactReaderPr
 
   return (
     <Panel flush className="flex min-h-0 flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center gap-3 bg-elevated/55 px-3.5 py-2">
+      <header className="flex shrink-0 items-center gap-3 bg-popover/55 px-3.5 py-2">
         {artifact.data ? (
-          <p className="min-w-0 flex-1 truncate font-mono text-[0.7rem] text-muted">
+          <p className="min-w-0 flex-1 truncate font-mono text-[0.7rem] text-muted-foreground">
             {artifact.data.artifact.path}
           </p>
         ) : (
           <Skeleton className="h-2.5 w-48 max-w-full flex-1" />
         )}
         {artifact.data && (
-          <span className="hidden shrink-0 font-mono text-[0.6rem] text-muted sm:inline">
+          <span className="hidden shrink-0 font-mono text-[0.6rem] text-muted-foreground sm:inline">
             {formatTimestamp(artifact.data.artifact.updatedAt)}
           </span>
         )}
