@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Git, RESULT_FILE, SCRATCH_DIR, type StageRef } from '../src/index.ts'
+import { Git, mirrorKey, RESULT_FILE, SCRATCH_DIR, type StageRef } from '../src/index.ts'
 import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
 
 const STAGE: StageRef = {
@@ -20,7 +20,12 @@ async function setup(slug: string) {
     'src/app.ts': 'export const a = 1\n',
   })
   const { manager } = await makeManager()
-  const workspace = await manager.provision({ slug, repoUrl: origin.url, baseBranch: 'main' })
+  const workspace = await manager.provision({
+    slug,
+    repoUrl: origin.url,
+    mirrorKey: mirrorKey(origin.url),
+    baseBranch: 'main',
+  })
   const git = new Git(manager.config)
   await writeFiles(workspace.path, {
     [`openspec/changes/${slug}/proposal.md`]: '# committed\n',

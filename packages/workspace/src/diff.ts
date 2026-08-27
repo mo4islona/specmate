@@ -2,7 +2,7 @@ import type { WorkspaceConfig } from './config.ts'
 import type { Git } from './git.ts'
 import { withMirrorLock } from './lock.ts'
 import { ensureMirror, resolveBaseCommit } from './mirror.ts'
-import { mirrorPath, taskBranch } from './paths.ts'
+import { type MirrorKey, mirrorPath, taskBranch } from './paths.ts'
 
 export class TaskBranchMissingError extends Error {
   constructor(
@@ -74,7 +74,12 @@ const STATUS_LETTERS: Record<string, DiffFileStatus> = {
 export async function resolveTaskDiffRange(
   git: Git,
   config: WorkspaceConfig,
-  task: { readonly repoUrl: string; readonly baseBranch: string | null; readonly slug: string },
+  task: {
+    readonly repoUrl: string
+    readonly mirrorKey: MirrorKey
+    readonly baseBranch: string | null
+    readonly slug: string
+  },
 ): Promise<TaskDiffRange> {
   const branch = taskBranch(task.slug)
   // No pinned base means the task was never provisioned, so its own branch does
@@ -82,13 +87,14 @@ export async function resolveTaskDiffRange(
   if (task.baseBranch === null) throw new TaskBranchMissingError(task.repoUrl, branch)
 
   const baseBranch = task.baseBranch
-  const mirror = mirrorPath(config, task.repoUrl)
+  const repository = { repoUrl: task.repoUrl, mirrorKey: task.mirrorKey }
+  const mirror = mirrorPath(config, repository.mirrorKey)
 
   return withMirrorLock(
     mirror,
     { heartbeatMs: config.lockHeartbeatMs, staleMs: config.lockStaleMs, waitMs: config.lockWaitMs },
     async () => {
-      await ensureMirror(git, config, task.repoUrl)
+      await ensureMirror(git, config, repository)
       const [tip, baseTip] = await Promise.all([
         git.tryInMirror(mirror, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]),
         resolveBaseCommit(git, mirror, task.repoUrl, baseBranch),

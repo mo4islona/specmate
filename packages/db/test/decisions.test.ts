@@ -1,8 +1,30 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { normalizeRemote } from '@specmate/core'
 import { eq } from 'drizzle-orm'
-import { conversations, createDb, type Database, decisions, tasks } from '../src/index.ts'
+import {
+  conversations,
+  createDb,
+  type Database,
+  decisions,
+  findOrCreateRepository,
+  tasks,
+} from '../src/index.ts'
+
+/**
+ * Every task needs a repository record now (REQ-316). The mirror key is the
+ * workspace layer's to mint and this package must not depend on it, so these
+ * tests use a stable stand-in — nothing here reads a path.
+ */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, {
+    repoUrl,
+    mirrorKey: `test-${normalizeRemote(repoUrl).replaceAll(/[^a-z0-9]+/g, '-')}`,
+  })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -20,6 +42,7 @@ describeDb('decision persistence', () => {
         title: 'Decision fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/decision-fixture'),
       })
       .returning()
     assert(task)
@@ -89,6 +112,7 @@ describeDb('decision persistence', () => {
         title: 'Decision conversation fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-conversation',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/decision-conversation'),
       })
       .returning()
     assert(task)

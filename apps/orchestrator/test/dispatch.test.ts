@@ -10,6 +10,7 @@ import type {
   StageRequest,
 } from '@specmate/runner'
 import type { ConversationWorkspace, Workspace } from '@specmate/workspace'
+import { mirrorKey } from '@specmate/workspace'
 import { createConversationDispatcher, createStageDispatcher } from '../src/dispatch.ts'
 import type { ConversationDispatch, StageDispatch } from '../src/engine.ts'
 
@@ -29,6 +30,7 @@ const ENVIRONMENT = { image: 'ghcr.io/specmate/runner@sha256:abc', toolchains: [
 const WORKSPACE = {
   slug: 'a-task',
   repoUrl: 'https://github.com/owner/repo',
+  mirrorKey: mirrorKey('https://github.com/owner/repo'),
   branch: 'specmate/a-task',
   baseBranch: 'release-4',
   path: '/workspaces/tasks/a-task',

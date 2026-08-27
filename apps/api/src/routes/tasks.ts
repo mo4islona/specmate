@@ -41,7 +41,7 @@ export function taskRoutes(ctx: RouteContext) {
     .post('/tasks', validator('json', validateJson(CreateTask)), async (c) => {
       const { title, description, type, repoUrl, baseBranch, planSize, modelBindings } =
         c.req.valid('json')
-      const [known, defaultRepoUrl] = await Promise.all([
+      const [known, defaultRepository] = await Promise.all([
         knownRepositories(db),
         getDefaultRepository(db),
       ])
@@ -49,7 +49,7 @@ export function taskRoutes(ctx: RouteContext) {
         repoUrl,
         request: description,
         known: known.map((row) => row.repoUrl),
-        defaultRepoUrl,
+        defaultRepoUrl: defaultRepository?.repoUrl ?? null,
       })
       if (!resolution.resolved) {
         throw new ApiError('validation', 'the target repository could not be determined', {

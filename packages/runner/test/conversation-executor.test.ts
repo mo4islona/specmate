@@ -106,7 +106,7 @@ describe('conversation execution', () => {
     expect(seen.prompt).toContain('Instruction: required.')
     await harness.manager.releaseConversation(
       harness.workspace.slug,
-      harness.workspace.repoUrl,
+      harness.workspace.mirrorKey,
       workspace.key,
     )
   })
@@ -131,7 +131,7 @@ describe('conversation execution', () => {
     })
     await harness.manager.releaseConversation(
       harness.workspace.slug,
-      harness.workspace.repoUrl,
+      harness.workspace.mirrorKey,
       workspace.key,
     )
   })
@@ -166,7 +166,7 @@ describe('conversation execution', () => {
     })
     await harness.manager.releaseConversation(
       harness.workspace.slug,
-      harness.workspace.repoUrl,
+      harness.workspace.mirrorKey,
       workspace.key,
     )
   })
@@ -183,7 +183,7 @@ describe('conversation execution', () => {
       expect(execution).toMatchObject({ status: 'failed', failure: 'malformed_message' })
       await harness.manager.releaseConversation(
         harness.workspace.slug,
-        harness.workspace.repoUrl,
+        harness.workspace.mirrorKey,
         workspace.key,
       )
     },
@@ -207,7 +207,7 @@ describe('conversation execution', () => {
     ).toBe('')
     await harness.manager.releaseConversation(
       harness.workspace.slug,
-      harness.workspace.repoUrl,
+      harness.workspace.mirrorKey,
       workspace.key,
     )
   })

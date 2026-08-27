@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { stat } from 'node:fs/promises'
-import { Git, type StageRef } from '../src/index.ts'
+import { Git, mirrorKey, type StageRef } from '../src/index.ts'
 import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
 
 const STAGE: StageRef = {
@@ -15,7 +15,12 @@ afterAll(cleanupTempDirs)
 async function setup(slug: string) {
   const origin = await makeOrigin()
   const { manager } = await makeManager()
-  const workspace = await manager.provision({ slug, repoUrl: origin.url, baseBranch: 'main' })
+  const workspace = await manager.provision({
+    slug,
+    repoUrl: origin.url,
+    mirrorKey: mirrorKey(origin.url),
+    baseBranch: 'main',
+  })
   const git = new Git(manager.config)
   const count = async () => {
     const log = await git.run(['rev-list', '--count', 'HEAD'], { cwd: workspace.path })
@@ -80,7 +85,7 @@ describe('release', () => {
     await writeFiles(workspace.path, { 'openspec/changes/done/summary.md': '# shipped\n' })
     const outcome = await manager.commitStage(workspace, STAGE)
 
-    await manager.release(workspace.slug, workspace.repoUrl)
+    await manager.release(workspace.slug, workspace.mirrorKey)
 
     expect(await stat(workspace.path).catch(() => null)).toBeNull()
     const branch = await git.inMirror(workspace.mirrorPath, ['rev-parse', 'task/done'])
@@ -90,8 +95,8 @@ describe('release', () => {
   test('is a no-op the second time', async () => {
     const { manager, workspace } = await setup('twice')
 
-    await manager.release(workspace.slug, workspace.repoUrl)
-    await manager.release(workspace.slug, workspace.repoUrl)
+    await manager.release(workspace.slug, workspace.mirrorKey)
+    await manager.release(workspace.slug, workspace.mirrorKey)
 
     expect(await stat(workspace.path).catch(() => null)).toBeNull()
   })

@@ -3,6 +3,7 @@ import { Engine } from '@specmate/orchestrator/engine'
 import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { createApp } from './app.ts'
 import { loadConfig } from './config.ts'
+import { SOCKET_IDLE_TIMEOUT_S } from './routes/context.ts'
 
 const config = loadConfig()
 const db = createDb(config.DATABASE_URL)
@@ -33,6 +34,7 @@ const app = createApp({ db, config, gates, workspace: workspaceService })
 const server = Bun.serve({
   port: config.API_PORT,
   fetch: app.fetch,
+  idleTimeout: SOCKET_IDLE_TIMEOUT_S,
   development: config.NODE_ENV === 'development',
 })
 

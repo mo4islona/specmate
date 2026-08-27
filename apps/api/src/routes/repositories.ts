@@ -1,12 +1,12 @@
 import { expectedSuitePath, OPENSPEC_SUITE_PATH, resolveSpecConvention } from '@specmate/core'
-import { coverageWaivers, getDefaultRepository, getSpecConvention, tasks } from '@specmate/db'
+import { coverageWaivers, getRepositoryByMirrorKey, getSpecConvention, tasks } from '@specmate/db'
 import { revokeCoverageWaiverInForce } from '@specmate/orchestrator/store'
 import {
   githubRepository,
   listStore,
   type MemoryEntry,
   memoryPath,
-  mirrorKey,
+  recordedMirrorKey,
   type WorkspaceConfig,
 } from '@specmate/workspace'
 import { and, desc, eq, isNull } from 'drizzle-orm'
@@ -37,9 +37,11 @@ function writtenAtMs(entry: MemoryEntry): number {
  */
 async function memoryExcerpt(
   workspaceConfig: WorkspaceConfig,
-  repoUrl: string,
+  mirrorKey: string,
 ): Promise<{ total: number; entries: MemoryEntry[] }> {
-  const entries = await listStore(memoryPath(workspaceConfig, repoUrl)).catch(() => [])
+  const entries = await listStore(memoryPath(workspaceConfig, recordedMirrorKey(mirrorKey))).catch(
+    () => [],
+  )
   const newestFirst = entries.toSorted((a, b) => writtenAtMs(b) - writtenAtMs(a))
 
   return { total: entries.length, entries: newestFirst.slice(0, MEMORY_EXCERPT) }
@@ -56,12 +58,11 @@ export function repositoryRoutes(ctx: RouteContext) {
   return (
     new Hono()
       .get('/repositories', async (c) => {
-        const [repoRows, defaultRepoUrl, waiverRows] = await Promise.all([
+        const [rows, waiverRows] = await Promise.all([
           knownRepositories(db),
-          getDefaultRepository(db),
           db
             .select({
-              repoUrl: coverageWaivers.repoUrl,
+              repositoryId: coverageWaivers.repositoryId,
               originTaskId: coverageWaivers.originTaskId,
               originTitle: tasks.title,
               acceptedAt: coverageWaivers.createdAt,
@@ -70,23 +71,17 @@ export function repositoryRoutes(ctx: RouteContext) {
             .leftJoin(tasks, eq(coverageWaivers.originTaskId, tasks.id))
             .where(isNull(coverageWaivers.revokedAt)),
         ])
-        const waiverFor = new Map(waiverRows.map((row) => [row.repoUrl, row]))
-        // A default nothing has run against yet still belongs on the list — it is
-        // what the next launch resolves to (REQ-1017).
-        const rows =
-          defaultRepoUrl && !repoRows.some((row) => row.repoUrl === defaultRepoUrl)
-            ? [...repoRows, { repoUrl: defaultRepoUrl, taskCount: 0, lastUsedAt: null }]
-            : repoRows
+        const waiverFor = new Map(waiverRows.map((row) => [row.repositoryId, row]))
 
         const repositories = rows.map((row) => {
-          const waiver = waiverFor.get(row.repoUrl)
+          const waiver = waiverFor.get(row.id)
 
           return {
-            id: mirrorKey(row.repoUrl),
+            id: row.mirrorKey,
             repoUrl: row.repoUrl,
             taskCount: row.taskCount,
             lastUsedAt: row.lastUsedAt,
-            isDefault: row.repoUrl === defaultRepoUrl,
+            isDefault: row.isDefault,
             coverageWaiver: waiver
               ? {
                   originTaskId: waiver.originTaskId,
@@ -103,14 +98,8 @@ export function repositoryRoutes(ctx: RouteContext) {
       /** REQ-1015: the owner's way to take an acceptance back. Idempotent per repository, not per record. */
       .delete('/repositories/:id/coverage-waiver', async (c) => {
         const id = c.req.param('id')
-        // One row per waived repository, so the whole set is a handful; the id is
-        // a digest, which no query can invert.
-        const inForce = await db
-          .select({ repoUrl: coverageWaivers.repoUrl })
-          .from(coverageWaivers)
-          .where(isNull(coverageWaivers.revokedAt))
-        const match = inForce.find((row) => mirrorKey(row.repoUrl) === id)
-        const revoked = match ? await revokeCoverageWaiverInForce(db, match.repoUrl) : null
+        const repository = await getRepositoryByMirrorKey(db, id)
+        const revoked = repository ? await revokeCoverageWaiverInForce(db, repository.id) : null
         if (!revoked) {
           throw new ApiError('not_found', 'that repository has no coverage waiver in force', {
             status: 404,
@@ -184,20 +173,13 @@ export function repositoryRoutes(ctx: RouteContext) {
 
       .get('/repositories/:id', async (c) => {
         const id = c.req.param('id')
-        const [repoRows, defaultRepoUrl] = await Promise.all([
-          knownRepositories(db),
-          getDefaultRepository(db),
-        ])
-        const known = repoRows.find((row) => mirrorKey(row.repoUrl) === id)
-        const repoUrl =
-          known?.repoUrl ??
-          (defaultRepoUrl && mirrorKey(defaultRepoUrl) === id ? defaultRepoUrl : null)
-        if (!repoUrl) {
+        const repository = await getRepositoryByMirrorKey(db, id)
+        if (!repository) {
           throw new ApiError('not_found', 'no repository has that id', { status: 404 })
         }
 
-        const [specConvention, waiver, recentTasks, memory] = await Promise.all([
-          getSpecConvention(db, repoUrl),
+        const [known, waiver, recentTasks, memory] = await Promise.all([
+          knownRepositories(db).then((rows) => rows.find((row) => row.id === repository.id)),
           db
             .select({
               originTaskId: coverageWaivers.originTaskId,
@@ -206,7 +188,12 @@ export function repositoryRoutes(ctx: RouteContext) {
             })
             .from(coverageWaivers)
             .leftJoin(tasks, eq(coverageWaivers.originTaskId, tasks.id))
-            .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
+            .where(
+              and(
+                eq(coverageWaivers.repositoryId, repository.id),
+                isNull(coverageWaivers.revokedAt),
+              ),
+            )
             .limit(1),
           db
             .select({
@@ -219,29 +206,32 @@ export function repositoryRoutes(ctx: RouteContext) {
               createdAt: tasks.createdAt,
             })
             .from(tasks)
-            .where(eq(tasks.repoUrl, repoUrl))
+            .where(eq(tasks.repositoryId, repository.id))
             .orderBy(desc(tasks.createdAt))
             .limit(RECENT_TASKS),
-          memoryExcerpt(workspaceConfig, repoUrl),
+          memoryExcerpt(workspaceConfig, repository.mirrorKey),
         ])
 
         return c.json({
           repository: {
             id,
-            repoUrl,
+            repoUrl: repository.repoUrl,
             taskCount: known?.taskCount ?? 0,
             lastUsedAt: known?.lastUsedAt ?? null,
-            isDefault: repoUrl === defaultRepoUrl,
+            isDefault: repository.isDefault,
             // Null until provisioning resolved the repository's default (REQ-703);
             // the last task that ran is the best answer anyone has here.
-            baseBranch: recentTasks.find((task) => task.baseBranch)?.baseBranch ?? null,
+            baseBranch:
+              repository.defaultBranch ??
+              recentTasks.find((task) => task.baseBranch)?.baseBranch ??
+              null,
           },
           // What the owner set, and what a real checkout actually resolved on the
           // last task that ran (REQ-1702). The second is ground truth and the
           // first is only an instruction, so a screen showing one without the
           // other would be guessing at the more interesting half.
           specConvention: {
-            setting: specConvention ?? null,
+            setting: repository.specConvention ?? null,
             resolved: recentTasks.find((task) => task.specConvention)?.specConvention ?? null,
           },
           coverageWaiver: waiver[0] ?? null,

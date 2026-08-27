@@ -717,6 +717,42 @@ describeDb('harness-coverage', () => {
       expect(inherited?.answerMd).toContain(first.task.title)
     })
 
+    test('a task spelling the remote differently inherits the same acceptance — AC-350', async () => {
+      const run = crypto.randomUUID().slice(0, 8)
+      const https = `https://github.com/example/spelled-${run}`
+      const first = await planned(https, MISSING)
+      const [decision] = await openDecisions(first.task.id)
+      assert(decision)
+      await first.engine.answer({
+        taskId: first.task.id,
+        decisionId: decision.id,
+        actor: 'evgeny',
+        optionId: 'proceed',
+      })
+
+      // The same repository, spelled the other way. It is one record now, so the
+      // acceptance in force is the same one — and a second cannot be opened
+      // beside it.
+      const second = await planned(`git@github.com:example/spelled-${run}.git`, MISSING)
+
+      expect(second.task.harnessStatus).toBe('waived')
+      expect(await openDecisions(second.task.id)).toEqual([])
+
+      // Counted by the record rather than by the spelling: keying on the string
+      // is exactly what let one repository hold two acceptances open.
+      expect(second.task.repositoryId).toBe(first.task.repositoryId)
+      const held = await db
+        .select()
+        .from(coverageWaivers)
+        .where(
+          and(
+            eq(coverageWaivers.repositoryId, second.task.repositoryId),
+            isNull(coverageWaivers.revokedAt),
+          ),
+        )
+      expect(held).toHaveLength(1)
+    })
+
     test('an inherited waiver still raises the choice a plan proposes — AC-1424', async () => {
       const repoUrl = `file:///dev/null/shared-${crypto.randomUUID().slice(0, 8)}`
       const first = await planned(repoUrl, MISSING)

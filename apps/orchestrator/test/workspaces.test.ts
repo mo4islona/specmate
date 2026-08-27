@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { StageRef, Workspace, WorkspaceService } from '@specmate/workspace'
+import { mirrorKey } from '@specmate/workspace'
 import { createEngineWorkspaces } from '../src/workspaces.ts'
 
 /**
@@ -12,6 +13,7 @@ const IMAGE = 'ghcr.io/specmate/runner@sha256:abc'
 const WORKSPACE = {
   slug: 'a-task',
   repoUrl: 'https://github.com/owner/repo',
+  mirrorKey: mirrorKey('https://github.com/owner/repo'),
   branch: 'specmate/a-task',
   baseBranch: 'release-4',
   path: '/workspaces/tasks/a-task',

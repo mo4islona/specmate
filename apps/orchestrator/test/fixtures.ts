@@ -9,6 +9,7 @@ import type { Database, Task } from '@specmate/db'
 import { tasks } from '@specmate/db'
 import type { ConversationExecution, StageExecution } from '@specmate/runner'
 import type { ConversationWorkspace, Workspace } from '@specmate/workspace'
+import { mirrorKey } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
 import type {
   ConversationDispatch,
@@ -56,6 +57,7 @@ export function fakeWorkspaces(): FakeWorkspaces {
   const workspace = (slug: string): Workspace => ({
     slug,
     repoUrl: 'file:///dev/null',
+    mirrorKey: mirrorKey('file:///dev/null'),
     branch: `task/${slug}`,
     path: `/tmp/fake/${slug}`,
     changeDir: `openspec/changes/${slug}`,

@@ -4,11 +4,13 @@ import {
   createDb,
   type Database,
   feedback,
+  findOrCreateRepository,
   iterations,
   runGraphs,
   stages,
   tasks,
 } from '@specmate/db'
+import { mirrorKey } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
 import { loadLedgerSnapshot, TaskNotFoundError } from '../src/ledger.ts'
 
@@ -36,6 +38,12 @@ describeDb('ledger snapshot', () => {
         title: 'Ledger fixture',
         type: 'bugfix',
         repoUrl: 'file:///tmp/ledger-fixture',
+        repositoryId: (
+          await findOrCreateRepository(db, {
+            repoUrl: 'file:///tmp/ledger-fixture',
+            mirrorKey: mirrorKey('file:///tmp/ledger-fixture'),
+          })
+        ).id,
         baseBranch: 'main',
         status: 'spec_review',
       })

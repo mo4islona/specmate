@@ -16,6 +16,7 @@ import {
   type ReviewFinding,
   resolveModelBindings,
   type SpecConvention,
+  type SpecConventionSetting,
   type StageResult,
   type TaskState,
 } from '@specmate/core'
@@ -224,14 +225,55 @@ export const providerCredentials = pgTable('provider_credentials', {
 
 /**
  * A future setting is a new row here, not a migration — see model-settings/design.md.
- * `model-defaults` and `default-repository` are wired up today; nothing generic reads or
- * writes an arbitrary key.
+ * `model-defaults` is wired up today; nothing generic reads or writes an arbitrary key.
+ * What a repository is has a table of its own (REQ-316) — a setting keyed by URL string
+ * was how the default and the spec convention got in here, and both are columns now.
  */
 export const appSettings = pgTable('app_settings', {
   key: text().primaryKey(),
   value: jsonb().$type<Record<string, unknown>>().notNull(),
   updatedAt: timestamps.updatedAt,
 })
+
+// ─── repositories ─────────────────────────────────────────────────────────────
+
+/**
+ * REQ-316. A repository is a record, not an aggregate over the tasks that named it,
+ * so the two facts an owner states in advance — the default, and the specification
+ * that governs it — are stated about something that exists.
+ */
+export const repositories = pgTable(
+  'repositories',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /**
+     * The identity: `normalizeRemote`'s form, which folds the SSH and HTTPS spellings
+     * of one remote together. Unique, so the database is what holds them to one row.
+     */
+    normalized: text().notNull(),
+    /** The remote as the owner wrote it. A display string; identity is `normalized`. */
+    repoUrl: text('repo_url').notNull(),
+    /**
+     * Where this repository's files already live. Recorded rather than recomputed
+     * (D1): `mirrorKey` digests the raw URL, so once two spellings share a row it
+     * answers differently depending on which string the caller happened to hold.
+     */
+    mirrorKey: text('mirror_key').notNull(),
+    /** Resolved by provisioning; null until a task has run and found it (REQ-703). */
+    defaultBranch: text('default_branch'),
+    /** What the owner set for this repository, or null where detection governs (REQ-1702). */
+    specConvention: jsonb('spec_convention').$type<SpecConventionSetting>(),
+    isDefault: boolean('is_default').notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('repositories_normalized_idx').on(t.normalized),
+    // Also the id the REST surface addresses a repository by, so it has to be one row.
+    uniqueIndex('repositories_mirror_key_idx').on(t.mirrorKey),
+    // At most one default, said by the database rather than by whoever writes it.
+    uniqueIndex('repositories_default_idx').on(t.isDefault).where(sql`${t.isDefault}`),
+  ],
+)
 
 // ─── tasks ────────────────────────────────────────────────────────────────────
 
@@ -244,7 +286,15 @@ export const tasks = pgTable(
     /** The owner's request in their own words; absent on a title-only launch. */
     description: text(),
     type: taskTypeEnum().notNull(),
+    /**
+     * The remote this run actually used, kept beside the key rather than read through
+     * it (D2): a repository may be respelled later, and what a task ran against is a
+     * fact about that run. It is also the evidence the backfill can be audited from.
+     */
     repoUrl: text('repo_url').notNull(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'restrict' }),
     /** Null means the repository's default branch, resolved at provisioning (REQ-703). */
     baseBranch: text('base_branch'),
     status: taskStatusEnum().notNull().default('draft').$type<TaskState>(),
@@ -258,8 +308,15 @@ export const tasks = pgTable(
     }),
     /** Denormalised so the depth cap is a column read, not a walk up the chain. */
     planDepth: integer('plan_depth').notNull().default(0),
-    /** What planning declared; null until it has run. Selects the pipeline profile (REQ-408). */
+    /** The size in force; null until something declares one. Selects the pipeline profile (REQ-408). */
     planSize: planSizeEnum('plan_size').$type<PlanSize>(),
+    /**
+     * The size the owner declared at launch, kept because `plan_size` also holds the
+     * one planning declares and the two are otherwise indistinguishable: a redirect
+     * re-runs planning, and its second declaration must be able to correct its first
+     * without touching a size the owner chose (AC-641 makes the same argument for caps).
+     */
+    planSizeOverride: planSizeEnum('plan_size_override').$type<PlanSize>(),
     /**
      * What planning called the change, which names its folder (REQ-705). Null
      * until planning has declared one — and for every task that predates the
@@ -587,14 +644,22 @@ export const coverageWaivers = pgTable(
   'coverage_waivers',
   {
     id: uuid().primaryKey().defaultRandom(),
+    /** The spelling the acceptance was written under; in force is decided by the key. */
     repoUrl: text('repo_url').notNull(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'restrict' }),
     /** The task whose resolution accepted it; nulled rather than cascaded, so the waiver outlives it. */
     originTaskId: uuid('origin_task_id').references(() => tasks.id, { onDelete: 'set null' }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('coverage_waivers_in_force_idx').on(t.repoUrl).where(sql`${t.revokedAt} is null`),
+    // REQ-315: one in force per repository, and per the record rather than per spelling,
+    // so two spellings of one remote cannot each hold an acceptance open.
+    uniqueIndex('coverage_waivers_in_force_idx')
+      .on(t.repositoryId)
+      .where(sql`${t.revokedAt} is null`),
   ],
 )
 

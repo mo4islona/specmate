@@ -1,8 +1,31 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import type { PinnedGraph } from '@specmate/core'
+import { normalizeRemote } from '@specmate/core'
 import { eq } from 'drizzle-orm'
-import { createDb, type Database, feedback, runGraphs, stages, tasks } from '../src/index.ts'
+import {
+  createDb,
+  type Database,
+  feedback,
+  findOrCreateRepository,
+  runGraphs,
+  stages,
+  tasks,
+} from '../src/index.ts'
+
+/**
+ * Every task needs a repository record now (REQ-316). The mirror key is the
+ * workspace layer's to mint and this package must not depend on it, so these
+ * tests use a stable stand-in — nothing here reads a path.
+ */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, {
+    repoUrl,
+    mirrorKey: `test-${normalizeRemote(repoUrl).replaceAll(/[^a-z0-9]+/g, '-')}`,
+  })
+
+  return repository.id
+}
 
 /** The rows under test do not read the graph; it only has to be one. */
 const EMPTY_DAG = {
@@ -28,6 +51,7 @@ describeDb('feedback persistence', () => {
         title: 'Feedback fixture',
         type: 'bugfix',
         repoUrl: 'https://github.com/example/feedback-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/feedback-fixture'),
         baseBranch: 'main',
       })
       .returning()

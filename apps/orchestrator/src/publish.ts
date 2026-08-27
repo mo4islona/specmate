@@ -1,9 +1,10 @@
 import { type ActionNode, forwardTarget, type PinnedGraph, type TaskState } from '@specmate/core'
-import { type Database, pullRequests, type Task, tasks } from '@specmate/db'
+import { type Database, pullRequests, repositories, type Task, tasks } from '@specmate/db'
 import {
   type Git,
   githubRepository,
   mirrorPath,
+  recordedMirrorKey,
   taskBranch,
   type WorkspaceConfig,
 } from '@specmate/workspace'
@@ -61,7 +62,14 @@ export class Publisher {
     }
 
     const branch = taskBranch(task.slug)
-    const mirror = mirrorPath(this.options.workspaceConfig, task.repoUrl)
+    const [record] = await this.options.db
+      .select({ mirrorKey: repositories.mirrorKey })
+      .from(repositories)
+      .where(eq(repositories.id, task.repositoryId))
+      .limit(1)
+    if (!record) throw new PublishError(`task names a repository that has no record: ${task.id}`)
+
+    const mirror = mirrorPath(this.options.workspaceConfig, recordedMirrorKey(record.mirrorKey))
     await this.pushBranch(mirror, task.repoUrl, branch)
 
     const body = await this.readSummary(mirror, task.slug, branch)

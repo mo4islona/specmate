@@ -297,7 +297,18 @@ interface SpecConventionProps {
  */
 function SpecConvention({ profile, suitePath, source }: SpecConventionProps) {
   if (!profile || profile === 'none') {
-    return <Note size="xs">No specification suite — the pipeline still specifies.</Note>
+    // Marked rather than merely said: this is the one answer here that changes
+    // the shape of the run. A mark, not a colour — the budget spends amber on
+    // what is waiting for the owner, and nothing is.
+    return (
+      <Note size="xs" className="flex items-start gap-1.5">
+        <Icon name="info" size="sm" className="mt-px shrink-0" />
+        <span>
+          No specification suite — the specifying stages are skipped, and acceptance goes in the
+          brief.
+        </span>
+      </Note>
+    )
   }
 
   return (
@@ -496,14 +507,7 @@ function HoldingsSections({ detail, loading }: HoldingsSectionsProps) {
 
   return (
     <>
-      <RailSection
-        label="Specification"
-        aside={
-          <QuietLink href="/settings" className="font-mono text-[0.62rem]">
-            change
-          </QuietLink>
-        }
-      >
+      <RailSection label="Specification">
         <Reveal>
           <SpecConvention
             profile={

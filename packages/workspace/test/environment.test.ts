@@ -1,14 +1,22 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import type { ExecutionEnvironment } from '@specmate/core'
-import { createDb, type Database, events, tasks } from '@specmate/db'
+import { createDb, type Database, events, findOrCreateRepository, tasks } from '@specmate/db'
 import { asc, eq, inArray } from 'drizzle-orm'
+import { mirrorKey } from '../src/index.ts'
 import {
   ENVIRONMENT_PINNED_EVENT,
   ENVIRONMENT_REPINNED_EVENT,
   WorkspaceService,
 } from '../src/service.ts'
 import { cleanupTempDirs, makeManager, makeOrigin, resolveTestEnvironment } from './fixtures.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -43,6 +51,7 @@ describeDb('workspace execution environment', () => {
         title: 'environment fixture',
         type: 'feature',
         repoUrl: origin.url,
+        repositoryId: await repositoryIdFor(db, origin.url),
         baseBranch: 'main',
       })
       .returning()

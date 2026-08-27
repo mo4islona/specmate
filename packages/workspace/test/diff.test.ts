@@ -5,6 +5,7 @@ import {
   Git,
   GitError,
   MAX_DIFF_CONTEXT,
+  mirrorKey,
   mirrorPath,
   resolveTaskDiffRange,
   type StageRef,
@@ -32,12 +33,14 @@ describe('task diff range', () => {
     const workspace = await manager.provision({
       slug: 'diff-range',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     const git = new Git(manager.config)
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'diff-range',
     })
@@ -54,6 +57,7 @@ describe('task diff range', () => {
 
     const range = resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'never-provisioned',
     })
@@ -68,6 +72,7 @@ describe('task diff range', () => {
     const workspace = await manager.provision({
       slug: 'unrelated-history',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -82,6 +87,7 @@ describe('task diff range', () => {
 
     const range = resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'unrelated-history',
     })
@@ -93,9 +99,14 @@ describe('task diff range', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    await manager.provision({ slug: 'lock-order', repoUrl: origin.url, baseBranch: 'main' })
+    await manager.provision({
+      slug: 'lock-order',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
 
-    const mirror = mirrorPath(manager.config, origin.url)
+    const mirror = mirrorPath(manager.config, mirrorKey(origin.url))
     const lockOptions = {
       heartbeatMs: manager.config.lockHeartbeatMs,
       staleMs: manager.config.lockStaleMs,
@@ -112,6 +123,7 @@ describe('task diff range', () => {
 
     const reader = resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'lock-order',
     }).then(() => order.push('diff:done'))
@@ -130,6 +142,7 @@ describe('files changed', () => {
     const workspace = await manager.provision({
       slug: 'tab-path',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, { 'src/foo\tbar.ts': 'export const a = 1\n' })
@@ -137,6 +150,7 @@ describe('files changed', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'tab-path',
     })
@@ -156,6 +170,7 @@ describe('files changed', () => {
     const workspace = await manager.provision({
       slug: 'has-commits',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, {
@@ -166,6 +181,7 @@ describe('files changed', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'has-commits',
     })
@@ -184,10 +200,16 @@ describe('files changed', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    await manager.provision({ slug: 'no-commits', repoUrl: origin.url, baseBranch: 'main' })
+    await manager.provision({
+      slug: 'no-commits',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'no-commits',
     })
@@ -203,6 +225,7 @@ describe('files changed', () => {
     const workspace = await manager.provision({
       slug: 'change-only',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, {
@@ -212,6 +235,7 @@ describe('files changed', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'change-only',
     })
@@ -241,6 +265,7 @@ describe('files changed', () => {
     const workspace = await manager.provision({
       slug: 'deleted-file',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await rm(join(workspace.path, 'src/existing.ts'))
@@ -248,6 +273,7 @@ describe('files changed', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'deleted-file',
     })
@@ -270,6 +296,7 @@ describe('files changed', () => {
     const workspace = await manager.provision({
       slug: 'type-changed-file',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await rm(join(workspace.path, 'src/target.ts'))
@@ -278,6 +305,7 @@ describe('files changed', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'type-changed-file',
     })
@@ -299,6 +327,7 @@ describe('one file diff', () => {
     const workspace = await manager.provision({
       slug: 'one-file',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, { 'src/thing.ts': 'export const thing = 2\n' })
@@ -306,6 +335,7 @@ describe('one file diff', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'one-file',
     })
@@ -321,6 +351,7 @@ describe('one file diff', () => {
     const workspace = await manager.provision({
       slug: 'directory-path',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, {
@@ -331,6 +362,7 @@ describe('one file diff', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'directory-path',
     })
@@ -349,6 +381,7 @@ describe('one file diff', () => {
     const workspace = await manager.provision({
       slug: 'exclude-change-dir',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, {
@@ -358,6 +391,7 @@ describe('one file diff', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug: 'exclude-change-dir',
     })
@@ -375,6 +409,7 @@ describe('a task whose workspace has been released (AC-1037)', () => {
     const workspace = await manager.provision({
       slug: 'released',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, { 'src/kept.ts': 'export const kept = true\n' })
@@ -384,18 +419,20 @@ describe('a task whose workspace has been released (AC-1037)', () => {
       git,
       await resolveTaskDiffRange(git, manager.config, {
         repoUrl: origin.url,
+        mirrorKey: mirrorKey(origin.url),
         baseBranch: 'main',
         slug: 'released',
       }),
       workspace.changeDir,
     )
 
-    await manager.release('released', origin.url)
+    await manager.release('released', mirrorKey(origin.url))
 
     const after = await taskFilesChanged(
       git,
       await resolveTaskDiffRange(git, manager.config, {
         repoUrl: origin.url,
+        mirrorKey: mirrorKey(origin.url),
         baseBranch: 'main',
         slug: 'released',
       }),
@@ -418,7 +455,12 @@ describe('one file diff context width', () => {
     const origin = await makeOrigin({ 'long.txt': original })
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({ slug, repoUrl: origin.url, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
 
     const edited = [...lines]
     edited[29] = 'line 30 edited'
@@ -427,6 +469,7 @@ describe('one file diff context width', () => {
 
     const range = await resolveTaskDiffRange(git, manager.config, {
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       slug,
     })

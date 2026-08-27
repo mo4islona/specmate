@@ -15,17 +15,43 @@ export const SCRATCH_DIR = '.specmate'
 export const CONVERSATION_FILE = 'CONVERSATION.json'
 
 /**
+ * A repository's name on disk. Branded rather than a bare `string` because the
+ * only thing separating it from the URL it was minted from is which parameter it
+ * lands in — and passing the URL where the key belongs is how one repository got
+ * two mirrors. The brand is what makes the compiler find every such call.
+ */
+export type MirrorKey = string & { readonly __mirrorKey: unique symbol }
+
+/**
+ * The key a repository that has no record yet will be filed under. Everything
+ * else reads the key off the record (D1); this mints one, exactly once.
+ *
  * Two remotes can spell the same repository (`git@host:org/repo.git`,
  * `https://host/org/repo`); the readable part is for humans, the digest of the
  * URL as given is what keeps distinct configurations from colliding.
  */
-export function mirrorKey(repoUrl: string): string {
+export function mirrorKey(repoUrl: string): MirrorKey {
   const readable = normalizeRemote(repoUrl)
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64)
   const digest = createHash('sha256').update(repoUrl).digest('hex').slice(0, 10)
-  return `${readable || 'repo'}-${digest}`
+  return `${readable || 'repo'}-${digest}` as MirrorKey
+}
+
+/**
+ * A repository as this layer needs it: the remote to talk to, and the name its
+ * files are filed under. The two travel together because every mirror operation
+ * needs both, and deriving the second from the first is the thing D1 stops.
+ */
+export interface RepositoryRef {
+  readonly repoUrl: string
+  readonly mirrorKey: MirrorKey
+}
+
+/** A key read back off a repository record, which is the only other place one exists. */
+export function recordedMirrorKey(value: string): MirrorKey {
+  return value as MirrorKey
 }
 
 export { normalizeRemote }
@@ -41,8 +67,14 @@ export function githubRepository(repoUrl: string): string | undefined {
   return `${match[1]}/${match[2]}`
 }
 
-export function mirrorPath(config: WorkspaceConfig, repoUrl: string): string {
-  return join(config.root, 'mirrors', `${mirrorKey(repoUrl)}.git`)
+/**
+ * Where a repository's cache lives. Takes the key the repository *record* carries
+ * rather than deriving one from whatever spelling the caller holds (D1) — the
+ * digest is over the raw URL, so deriving it here gave one repository two mirrors
+ * the moment two tasks named it differently.
+ */
+export function mirrorPath(config: WorkspaceConfig, mirrorKey: MirrorKey): string {
+  return join(config.root, 'mirrors', `${mirrorKey}.git`)
 }
 
 export function worktreePath(config: WorkspaceConfig, slug: string): string {
@@ -55,8 +87,8 @@ export function worktreePath(config: WorkspaceConfig, slug: string): string {
  * rather than in a volume of its own, because the API and the orchestrator
  * already have this root at the same absolute path.
  */
-export function memoryPath(config: WorkspaceConfig, repoUrl: string): string {
-  return join(config.root, 'memory', mirrorKey(repoUrl))
+export function memoryPath(config: WorkspaceConfig, mirrorKey: MirrorKey): string {
+  return join(config.root, 'memory', mirrorKey)
 }
 
 /** Disposable detached checkout used by one conversation response attempt. */

@@ -3389,7 +3389,12 @@ export class Engine {
    */
   private async waiveHarnessStatus(tx: DbClient, taskId: string): Promise<void> {
     const [current] = await tx
-      .select({ id: tasks.id, repoUrl: tasks.repoUrl, harnessStatus: tasks.harnessStatus })
+      .select({
+        id: tasks.id,
+        repoUrl: tasks.repoUrl,
+        repositoryId: tasks.repositoryId,
+        harnessStatus: tasks.harnessStatus,
+      })
       .from(tasks)
       .where(eq(tasks.id, taskId))
       .limit(1)
@@ -3409,6 +3414,7 @@ export class Engine {
       .where(eq(tasks.id, taskId))
 
     const waiver = await recordCoverageWaiver(tx, {
+      repositoryId: current.repositoryId,
       repoUrl: current.repoUrl,
       originTaskId: current.id,
     })

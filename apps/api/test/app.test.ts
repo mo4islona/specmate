@@ -21,6 +21,7 @@ import {
   decisions,
   events,
   feedback,
+  findOrCreateRepository,
   getModelDefaults,
   iterations,
   pullRequests,
@@ -33,6 +34,7 @@ import { Engine } from '@specmate/orchestrator/engine'
 import { createTask as createOrchestratedTask } from '@specmate/orchestrator/store'
 import {
   Git,
+  mirrorKey,
   resolveWorkspaceConfig,
   taskBranch,
   WorkspaceManager,
@@ -41,6 +43,13 @@ import {
 import { asc, eq, inArray } from 'drizzle-orm'
 import { createApp, type WorkspaceDiffOperations } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 /** No nodes on purpose: a comment on this task has no node to pin itself to. */
 const EMPTY_DAG = {
@@ -113,6 +122,7 @@ describeDb('api conversations', () => {
         title: 'API conversation fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/api-conversation',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/api-conversation'),
         status,
       })
       .returning()
@@ -435,6 +445,7 @@ describeDb('api', () => {
         title: `Delete ${status} fixture`,
         type: 'feature',
         repoUrl: 'https://github.com/example/api-delete',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/api-delete'),
         status,
       })
       .returning()
@@ -808,6 +819,7 @@ describeDb('api', () => {
     it('saves a convention and reads it back under the repository — AC-975, AC-976', async () => {
       const saved = await put({
         repoUrl: repo,
+        repositoryId: await repositoryIdFor(db, repo),
         setting: { profile: 'custom', suitePath: 'docs/spec', conventionNote: 'One per service.' },
       })
       expect(saved.status).toBe(200)
@@ -877,7 +889,11 @@ describeDb('api', () => {
       const { task } = (await created.json()) as { task: { id: string } }
       createdTaskIds.push(task.id)
 
-      await db.insert(coverageWaivers).values({ repoUrl, originTaskId: task.id })
+      await db.insert(coverageWaivers).values({
+        repoUrl,
+        repositoryId: await repositoryIdFor(db, repoUrl),
+        originTaskId: task.id,
+      })
 
       const listed = await app.request('/api/v1/repositories', { headers: auth })
       expect(listed.status).toBe(200)
@@ -937,6 +953,7 @@ describeDb('api', () => {
           title: 'Activity fixture',
           type: 'feature',
           repoUrl: 'https://github.com/example/activity-fixture',
+          repositoryId: await repositoryIdFor(db, 'https://github.com/example/activity-fixture'),
         })
         .returning()
       if (!task) throw new Error('task insert returned no row')
@@ -1339,6 +1356,7 @@ describeDb('api', () => {
               title: 'Gate fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/gate-fixture',
+              repositoryId: await repositoryIdFor(db, 'https://github.com/example/gate-fixture'),
               status: 'human_spec_gate',
               updatedAt: new Date('2026-08-16T11:00:00.000Z'),
             },
@@ -1347,6 +1365,7 @@ describeDb('api', () => {
               title: 'Failure fixture',
               type: 'bugfix',
               repoUrl: 'https://github.com/example/failure-fixture',
+              repositoryId: await repositoryIdFor(db, 'https://github.com/example/failure-fixture'),
               status: 'failed',
               updatedAt: new Date('2026-08-16T10:00:00.000Z'),
             },
@@ -1355,6 +1374,7 @@ describeDb('api', () => {
               title: 'Stall fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/stall-fixture',
+              repositoryId: await repositoryIdFor(db, 'https://github.com/example/stall-fixture'),
               status: 'implement',
             },
             {
@@ -1362,6 +1382,7 @@ describeDb('api', () => {
               title: 'Healthy fixture',
               type: 'bugfix',
               repoUrl: 'https://github.com/example/healthy-fixture',
+              repositoryId: await repositoryIdFor(db, 'https://github.com/example/healthy-fixture'),
               status: 'specify',
             },
             {
@@ -1369,6 +1390,10 @@ describeDb('api', () => {
               title: 'Decision fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/decision-fixture',
+              repositoryId: await repositoryIdFor(
+                db,
+                'https://github.com/example/decision-fixture',
+              ),
               status: 'specify',
               updatedAt: new Date('2026-08-16T11:15:00.000Z'),
             },
@@ -1377,6 +1402,10 @@ describeDb('api', () => {
               title: 'Parked-on-decision fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/parked-decision-fixture',
+              repositoryId: await repositoryIdFor(
+                db,
+                'https://github.com/example/parked-decision-fixture',
+              ),
               status: 'waiting_human',
               updatedAt: new Date('2026-08-16T11:25:00.000Z'),
             },
@@ -1387,6 +1416,7 @@ describeDb('api', () => {
               title: 'Orphan waiting_human fixture',
               type: 'feature',
               repoUrl: 'https://github.com/example/orphan-fixture',
+              repositoryId: await repositoryIdFor(db, 'https://github.com/example/orphan-fixture'),
               status: 'waiting_human',
               updatedAt: new Date('2026-08-16T11:35:00.000Z'),
             },
@@ -1552,6 +1582,10 @@ describeDb('api', () => {
             title: 'Looping stage fixture',
             type: 'feature',
             repoUrl: 'https://github.com/example/activity-loop-fixture',
+            repositoryId: await repositoryIdFor(
+              db,
+              'https://github.com/example/activity-loop-fixture',
+            ),
             status: 'implement',
           })
           .returning()
@@ -1616,6 +1650,7 @@ describeDb('api', () => {
         title: 'Comment fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/comment-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/comment-fixture'),
       })
       .returning()
     if (!task) throw new Error('task insert returned no row')
@@ -1707,6 +1742,7 @@ describeDb('api', () => {
         title: 'Guidance fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/guidance-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/guidance-fixture'),
         status: 'implement',
       })
       .returning()
@@ -1773,6 +1809,7 @@ describeDb('api', () => {
         title: 'Next node fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/next-node-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/next-node-fixture'),
         status: 'human_spec_gate',
       })
       .returning()
@@ -1829,6 +1866,10 @@ describeDb('api', () => {
         title: 'Paused guidance fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/paused-guidance-fixture',
+        repositoryId: await repositoryIdFor(
+          db,
+          'https://github.com/example/paused-guidance-fixture',
+        ),
         status: 'paused',
         resumeStatus: 'implement',
       })
@@ -1900,6 +1941,7 @@ describeDb('api', () => {
         title: 'Archived fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/archived-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/archived-fixture'),
         status: 'archived',
       })
       .returning()
@@ -1939,6 +1981,10 @@ describeDb('api', () => {
           title: `${label} gate fixture`,
           type: 'feature',
           repoUrl: `https://github.com/example/${label}-gate-fixture`,
+          repositoryId: await repositoryIdFor(
+            db,
+            `https://github.com/example/${label}-gate-fixture`,
+          ),
           status,
         })
         .returning()
@@ -2041,6 +2087,7 @@ describeDb('api', () => {
         title: 'Kickoff cap fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/kickoff-cap-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/kickoff-cap-fixture'),
         status: 'human_kickoff_gate',
       })
       .returning()
@@ -2080,6 +2127,7 @@ describeDb('api', () => {
         title: 'Decision fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/decision-fixture'),
         status: 'waiting_human',
         resumeStatus: 'specify',
       })
@@ -2185,6 +2233,10 @@ describeDb('api', () => {
         title: 'Decision ordering fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-order-fixture',
+        repositoryId: await repositoryIdFor(
+          db,
+          'https://github.com/example/decision-order-fixture',
+        ),
         status: 'waiting_human',
         resumeStatus: 'specify',
       })
@@ -2247,6 +2299,7 @@ describeDb('api', () => {
         title: 'No resume state fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/no-resume-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/no-resume-fixture'),
         status: 'waiting_human',
         resumeStatus: null,
       })
@@ -2286,6 +2339,10 @@ describeDb('api', () => {
         title: 'Decision action fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/decision-action-fixture',
+        repositoryId: await repositoryIdFor(
+          db,
+          'https://github.com/example/decision-action-fixture',
+        ),
         status: 'waiting_human',
         resumeStatus: 'specify',
       })
@@ -2358,6 +2415,7 @@ describeDb('api', () => {
         title: 'Stream fixture',
         type: 'bugfix',
         repoUrl: 'https://github.com/example/stream-fixture',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/stream-fixture'),
       })
       .returning()
     if (!task) throw new Error('task insert returned no row')
@@ -2534,6 +2592,7 @@ describeDb('api task diff', () => {
         title: 'Diff fixture',
         type: 'feature',
         repoUrl: originUrl,
+        repositoryId: await repositoryIdFor(db, originUrl),
         baseBranch: 'main',
       })
       .returning()
@@ -2546,7 +2605,12 @@ describeDb('api task diff', () => {
   it('lists changed files with status and line counts (AC-1034)', async () => {
     const slug = `diff-files-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     await mkdir(join(workspace.path, 'src'), { recursive: true })
     await writeFile(join(workspace.path, 'src', 'added.ts'), 'export const a = 1\n')
     await manager.commitStage(workspace, {
@@ -2579,7 +2643,12 @@ describeDb('api task diff', () => {
   it('returns an empty list before any product-code commit exists (AC-1035)', async () => {
     const slug = `diff-empty-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
 
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
@@ -2590,7 +2659,12 @@ describeDb('api task diff', () => {
   it('returns one file unified diff by path (AC-1036)', async () => {
     const slug = `diff-file-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     await writeFile(join(workspace.path, 'README.md'), '# origin\nextra line\n')
     await manager.commitStage(workspace, {
       stageId: crypto.randomUUID(),
@@ -2612,7 +2686,12 @@ describeDb('api task diff', () => {
   it('names the commit the comparison was computed against, and renames it on a new commit (AC-1062)', async () => {
     const slug = `diff-tip-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     const commit = () =>
       manager.commitStage(workspace, {
         stageId: crypto.randomUUID(),
@@ -2638,7 +2717,12 @@ describeDb('api task diff', () => {
   it('returns more surrounding context when a wider read is asked for (AC-1063)', async () => {
     const slug = `diff-context-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     const edited = [...LONG_FILE_LINES]
     edited[19] = 'line 20 edited'
     await writeFile(join(workspace.path, 'long.txt'), edited.join('\n'))
@@ -2670,7 +2754,12 @@ describeDb('api task diff', () => {
   it('reads the same diff after the workspace has been released (AC-1037)', async () => {
     const slug = `diff-released-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     await writeFile(join(workspace.path, 'README.md'), '# origin\nafter release\n')
     await manager.commitStage(workspace, {
       stageId: crypto.randomUUID(),
@@ -2678,7 +2767,7 @@ describeDb('api task diff', () => {
       provider: 'claude-code',
       attempt: 1,
     })
-    await manager.release(slug, originUrl)
+    await manager.release(slug, mirrorKey(originUrl))
 
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
@@ -2712,7 +2801,12 @@ describeDb('api task diff', () => {
   it('treats the path query parameter as one literal file, not a git pathspec (regression)', async () => {
     const slug = `diff-pathspec-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
     await writeFile(join(workspace.path, 'README.md'), '# origin\nextra line\n')
     await manager.commitStage(workspace, {
       stageId: crypto.randomUUID(),
@@ -2732,7 +2826,12 @@ describeDb('api task diff', () => {
   it('reports a task branch with no common history as not-found, not a crash', async () => {
     const slug = `diff-unrelated-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({ slug, repoUrl: originUrl, baseBranch: 'main' })
+    const workspace = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
 
     const strangerDir = await mkdtemp(join(tmpdir(), 'api-diff-stranger-'))
     const strangerGit = new Git(resolveWorkspaceConfig({ root: strangerDir }))

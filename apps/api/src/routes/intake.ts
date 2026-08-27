@@ -1,3 +1,4 @@
+import { normalizeRemote } from '@specmate/core'
 import { getDefaultRepository } from '@specmate/db'
 import { type ForgeReference, referencesIn } from '@specmate/github'
 import { mirrorKey } from '@specmate/workspace'
@@ -21,7 +22,7 @@ export function intakeRoutes(ctx: RouteContext) {
     new Hono()
       .post('/intake/preview', validator('json', validateJson(PreviewIntake)), async (c) => {
         const { description, repoUrl } = c.req.valid('json')
-        const [known, defaultRepoUrl] = await Promise.all([
+        const [known, defaultRepository] = await Promise.all([
           knownRepositories(db),
           getDefaultRepository(db),
         ])
@@ -29,11 +30,20 @@ export function intakeRoutes(ctx: RouteContext) {
           repoUrl,
           request: description,
           known: known.map((row) => row.repoUrl),
-          defaultRepoUrl,
+          defaultRepoUrl: defaultRepository?.repoUrl ?? null,
         })
-        const identify = (url: string) => ({ repoUrl: url, id: mirrorKey(url) })
-        const isKnown = (url: string) =>
-          known.some((row) => mirrorKey(row.repoUrl) === mirrorKey(url))
+        // The id a known repository is addressed by is the one on its record; a
+        // repository with no record is addressable only by a key minted here, and
+        // that is the one case `mirrorKey` still answers outside the two mints.
+        // Identity is the normalised remote either way — comparing two derived
+        // keys is what made one repository read as unknown when spelled the other
+        // way round (D1).
+        const recorded = new Map(known.map((row) => [normalizeRemote(row.repoUrl), row]))
+        const identify = (url: string) => ({
+          repoUrl: url,
+          id: recorded.get(normalizeRemote(url))?.mirrorKey ?? mirrorKey(url),
+        })
+        const isKnown = (url: string) => recorded.has(normalizeRemote(url))
 
         return c.json({
           repository: resolution.resolved

@@ -75,6 +75,22 @@ export interface StreamSettings {
   heartbeatIntervalMs: number
 }
 
+export const DEFAULT_STREAM_SETTINGS: StreamSettings = {
+  pollIntervalMs: 1_000,
+  heartbeatIntervalMs: 15_000,
+}
+
+/**
+ * What the server tells its sockets, in seconds, because Bun's own default is
+ * ten — under the heartbeat. A task with nothing happening writes nothing for
+ * fifteen seconds, so every idle stream was cut before its first heartbeat ever
+ * went out, and the shell read `reconnecting` every eleven seconds forever.
+ * Two heartbeats of slack: one may be late without costing the connection.
+ */
+export const SOCKET_IDLE_TIMEOUT_S = Math.ceil(
+  (DEFAULT_STREAM_SETTINGS.heartbeatIntervalMs * 2) / 1_000,
+)
+
 interface EventQuery {
   cursor: number
   taskId?: string
@@ -160,11 +176,7 @@ export function createRouteContext({
     githubToken({ db, clientId: config.GITHUB_APP_CLIENT_ID }).catch(() => null)
   const referenceReads: ReferenceReads = references ?? new ReferenceReader({ token: credential })
   const repositoryProbes: RepositoryProbes = probes ?? new RepositoryProber({ token: credential })
-  const streamSettings: StreamSettings = {
-    pollIntervalMs: 1_000,
-    heartbeatIntervalMs: 15_000,
-    ...streamOverrides,
-  }
+  const streamSettings: StreamSettings = { ...DEFAULT_STREAM_SETTINGS, ...streamOverrides }
 
   async function requireTask(id: string): Promise<Task> {
     const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1)
