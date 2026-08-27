@@ -68,7 +68,7 @@ export type GateOperations = Pick<
   | 'dismiss'
 >
 
-export type WorkspaceDiffOperations = Pick<WorkspaceService, 'diffFiles' | 'diffFile'>
+export type WorkspaceDiffOperations = Pick<WorkspaceService, 'diffFiles' | 'diffFile' | 'release'>
 
 export interface StreamSettings {
   pollIntervalMs: number

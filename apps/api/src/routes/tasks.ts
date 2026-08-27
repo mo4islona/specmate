@@ -7,7 +7,7 @@ import {
   tasks,
 } from '@specmate/db'
 import { createTask, taskSpend } from '@specmate/orchestrator/store'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { validator } from 'hono/validator'
 import { ApiError } from '../errors.ts'
@@ -73,6 +73,26 @@ export function taskRoutes(ctx: RouteContext) {
       })
 
       return c.json({ task }, 201)
+    })
+
+    .delete('/tasks/:id', async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      if (task.status !== 'archived' && task.status !== 'cancelled') {
+        throw new ApiError('conflict', 'only archived or cancelled tasks can be deleted', {
+          status: 409,
+        })
+      }
+
+      await workspace.release(task.id)
+      const [deleted] = await db
+        .delete(tasks)
+        .where(and(eq(tasks.id, task.id), inArray(tasks.status, ['archived', 'cancelled'])))
+        .returning({ id: tasks.id })
+      if (!deleted) {
+        throw new ApiError('conflict', 'task is no longer eligible for deletion', { status: 409 })
+      }
+
+      return c.body(null, 204)
     })
 
     .get('/tasks/:id', async (c) => {

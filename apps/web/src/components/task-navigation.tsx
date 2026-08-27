@@ -5,6 +5,7 @@ import { listAttention, listTasks, type TaskSummary } from '../lib/api-client.ts
 import { queryKeys } from '../lib/query-keys.ts'
 import { nodeLabel } from '../lib/task-thread.ts'
 import { cn, Dot, MicroLabel, NavRow, Note, SkeletonRows, Waiting } from '../ui/index.ts'
+import { TaskActions } from './task-actions.tsx'
 import { signalText, statusTone, toneDot } from './tone.ts'
 
 const GROUPS = ['Needs input', 'Active', 'Queued', 'Complete'] as const
@@ -70,28 +71,41 @@ export function TaskNavigation() {
             <MicroLabel as="h2">{group}</MicroLabel>
 
             <ul className="mt-2 space-y-0.5">
-              {rows.map((task) => (
-                <li key={task.id}>
-                  <NavRow
-                    href={`/tasks/${task.id}`}
-                    active={location.startsWith(`/tasks/${task.id}`)}
-                    title={task.title}
-                    className="flex gap-2.5"
-                  >
-                    <Dot
-                      className={`mt-[0.42rem] ${toneDot(statusTone(task.status))}`}
-                      live={breathing}
-                      halo={asking}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[0.82rem] leading-5">{task.title}</span>
-                      <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted-foreground">
-                        {nodeLabel(task.status)}
+              {rows.map((task) => {
+                const current = location.startsWith(`/tasks/${task.id}`)
+                const deletable = task.status === 'archived' || task.status === 'cancelled'
+
+                return (
+                  <li key={task.id} className={cn(deletable && 'group relative')}>
+                    <NavRow
+                      href={`/tasks/${task.id}`}
+                      active={current}
+                      title={task.title}
+                      className={cn('flex gap-2.5', deletable && 'pr-10')}
+                    >
+                      <Dot
+                        className={`mt-[0.42rem] ${toneDot(statusTone(task.status))}`}
+                        live={breathing}
+                        halo={asking}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[0.82rem] leading-5">
+                          {task.title}
+                        </span>
+                        <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted-foreground">
+                          {nodeLabel(task.status)}
+                        </span>
                       </span>
-                    </span>
-                  </NavRow>
-                </li>
-              ))}
+                    </NavRow>
+
+                    {deletable && (
+                      <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2">
+                        <TaskActions task={task} current={current} />
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </section>
         )

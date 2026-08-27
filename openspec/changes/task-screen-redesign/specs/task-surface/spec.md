@@ -1,3 +1,37 @@
+## ADDED Requirements
+
+### Requirement: REQ-1023 — Archived and cancelled tasks can be deleted permanently
+
+The API SHALL expose permanent deletion of a task and SHALL accept it only while the stored task
+is archived or cancelled. Eligibility MUST be decided from the stored state when deletion is
+attempted, never from a state supplied by the caller. An active or failed task SHALL be rejected
+as a conflict and MUST remain unchanged. Before removing the database record, the service SHALL
+release the task's workspace under REQ-710; if release fails, deletion SHALL fail and the task
+record MUST remain. Removing the task SHALL remove its subordinate records under REQ-310 and
+SHALL NOT rewrite commits, branches, or pull requests in the remote repository. A successful
+deletion SHALL return with no body; every later task-list or task-detail read SHALL behave as if
+that task does not exist.
+
+#### Scenario: AC-1081 — Archived task is deleted
+
+- **WHEN** permanent deletion is requested for an archived task and its workspace release succeeds
+- **THEN** the task and its subordinate records SHALL be removed and the response SHALL succeed with no body
+
+#### Scenario: AC-1082 — Recoverable task is rejected
+
+- **WHEN** permanent deletion is requested for an active or failed task
+- **THEN** the API SHALL return a conflict and SHALL leave the task and its subordinate records unchanged
+
+#### Scenario: AC-1083 — Workspace release fails before deletion
+
+- **WHEN** permanent deletion is requested for an eligible task but its workspace cannot be released
+- **THEN** the request SHALL fail and the task record SHALL remain readable
+
+#### Scenario: AC-1084 — Deleted task is absent from reads
+
+- **WHEN** a task has been deleted successfully
+- **THEN** it SHALL be absent from the task list and a detail read for its identifier SHALL return not found
+
 ## MODIFIED Requirements
 
 ### Requirement: REQ-1008 — Operator feedback capture
