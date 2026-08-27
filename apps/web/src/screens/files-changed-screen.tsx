@@ -215,41 +215,44 @@ function FilesReview({ taskId, tip, files }: FilesReviewProps) {
       <div className="grid min-h-0 min-w-0 flex-1 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <Panel
           as="div"
-          className="scroll-thin min-w-0 self-start lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto"
+          flush
+          className="flex min-w-0 flex-col self-start overflow-hidden lg:sticky lg:top-0 lg:max-h-screen"
         >
-          <Input
-            type="search"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter files"
-            aria-label="Filter files"
-          />
+          <div className="rail-inset border-b border-border">
+            <Input
+              type="search"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder="Filter files"
+              aria-label="Filter files"
+            />
+          </div>
 
-          {shown.length === 0 && (
-            <EmptyState className="mt-3">No file's path matches that.</EmptyState>
-          )}
+          <div className="scroll-thin rail-inset min-h-0 min-w-0 flex-1 overflow-y-auto">
+            {shown.length === 0 && <Note size="xs">No file's path matches that.</Note>}
 
-          <nav aria-label="Changed files" className="min-w-0">
-            {GROUPS.map((group) => {
-              const groupFiles = shown.filter((file) => file.group === group.id)
-              if (groupFiles.length === 0) return null
+            <nav aria-label="Changed files" className="min-w-0">
+              {GROUPS.map((group) => {
+                const groupFiles = shown.filter((file) => file.group === group.id)
+                if (groupFiles.length === 0) return null
 
-              return (
-                <section key={group.id} className="mt-4 min-w-0 first:mt-3">
-                  <MicroLabel>
-                    {group.label} · {groupFiles.length}
-                  </MicroLabel>
+                return (
+                  <section key={group.id} className="mt-5 min-w-0 first:mt-0">
+                    <MicroLabel>
+                      {group.label} · {groupFiles.length}
+                    </MicroLabel>
 
-                  <FileList
-                    groups={groupByDirectory(groupFiles)}
-                    selected={selected}
-                    viewed={viewed}
-                    onSelect={select}
-                  />
-                </section>
-              )
-            })}
-          </nav>
+                    <FileList
+                      groups={groupByDirectory(groupFiles)}
+                      selected={selected}
+                      viewed={viewed}
+                      onSelect={select}
+                    />
+                  </section>
+                )
+              })}
+            </nav>
+          </div>
         </Panel>
 
         <div className="scroll-thin min-w-0 space-y-3 xl:overflow-y-auto">

@@ -41,9 +41,14 @@ export function StatCounts({
 
   return (
     <span className="flex shrink-0 items-center gap-2.5 font-mono text-[0.65rem]">
+      {/* A zero is not a change, so it does not wear a change's colour. Every
+          added file carries a `−0`, and in danger red a stack of them read as a
+          column of losses down a rail where nothing had been lost. */}
       <span className="whitespace-nowrap">
-        <span className="text-success">+{file.additions}</span>{' '}
-        <span className="text-danger">−{file.deletions}</span>
+        <span className={file.additions > 0 ? 'text-success' : 'text-muted'}>
+          +{file.additions}
+        </span>{' '}
+        <span className={file.deletions > 0 ? 'text-danger' : 'text-muted'}>−{file.deletions}</span>
       </span>
       {bar && <StatBar additions={file.additions} deletions={file.deletions} />}
     </span>

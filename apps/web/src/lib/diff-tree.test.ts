@@ -61,8 +61,20 @@ describe('shortDirectory', () => {
   it('cuts the front, since the back is what tells two paths apart', () => {
     const short = shortDirectory('openspec/changes/files-review-surface/specs/operator-ui', 24)
 
-    expect(short).toHaveLength(24)
-    expect(short.startsWith('…')).toBe(true)
+    expect(short.length).toBeLessThanOrEqual(24)
+    expect(short.startsWith('…/')).toBe(true)
     expect(short.endsWith('specs/operator-ui')).toBe(true)
+  })
+
+  it('drops whole segments rather than half a name', () => {
+    expect(shortDirectory('openspec/changes/from-mo4islona-wick-charts-01a0337f')).toBe(
+      '…/from-mo4islona-wick-charts-01a0337f',
+    )
+  })
+
+  it('leaves the one segment it cannot shorten for the row to clip', () => {
+    expect(shortDirectory('a-directory-whose-single-name-runs-past-the-budget', 20)).toBe(
+      'a-directory-whose-single-name-runs-past-the-budget',
+    )
   })
 })
