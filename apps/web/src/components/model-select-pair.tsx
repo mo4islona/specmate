@@ -1,6 +1,6 @@
 import { MODELS, type ModelId, REASONING_EFFORTS, type ReasoningEffort } from '@specmate/core'
 import { shortModel } from '../lib/task-pipeline.ts'
-import { Select } from '../ui/index.ts'
+import { Select, SelectOption } from '../ui/index.ts'
 
 interface ModelSelectPairProps {
   role: string
@@ -41,13 +41,13 @@ export function ModelSelectPair({
         mono
         value={modelValue}
         disabled={disabled}
-        onChange={(event) => onModelChange(event.currentTarget.value as ModelId | '')}
+        onValueChange={(value) => onModelChange(value as ModelId | '')}
       >
-        {includeUseDefault && <option value="">Use default</option>}
+        {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
         {MODELS.map((model) => (
-          <option key={model} value={model}>
+          <SelectOption key={model} value={model}>
             {shortModel(model)}
-          </option>
+          </SelectOption>
         ))}
       </Select>
       <Select
@@ -55,15 +55,13 @@ export function ModelSelectPair({
         mono
         value={reasoningEffortValue}
         disabled={disabled}
-        onChange={(event) =>
-          onReasoningEffortChange(event.currentTarget.value as ReasoningEffort | '')
-        }
+        onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort | '')}
       >
-        {includeUseDefault && <option value="">Use default</option>}
+        {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
         {REASONING_EFFORTS.map((effort) => (
-          <option key={effort} value={effort}>
+          <SelectOption key={effort} value={effort}>
             {effort}
-          </option>
+          </SelectOption>
         ))}
       </Select>
     </div>

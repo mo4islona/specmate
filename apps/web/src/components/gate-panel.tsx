@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Button, buttonVariants, cn, ErrorNote, Icon, Popover, Select } from '../ui/index.ts'
+import { Button, buttonVariants, cn, ErrorNote, Icon, Popover, Select, SelectOption } from '../ui/index.ts'
 
 interface GateVerbsProps {
   readonly gateKey: string
@@ -75,14 +75,14 @@ export function GateVerbs({
           <Select
             className="mt-3"
             value={reworkTarget}
-            onChange={(event) => onReworkTargetChange(event.currentTarget.value)}
+            onValueChange={onReworkTargetChange}
             aria-label="Rework target"
           >
-            <option value="">Rework target…</option>
+            <SelectOption value="">Rework target…</SelectOption>
             {reworkTargets.map((target) => (
-              <option key={target} value={target}>
+              <SelectOption key={target} value={target}>
                 {nodeLabel(target).toLowerCase()}
-              </option>
+              </SelectOption>
             ))}
           </Select>
 

@@ -42,6 +42,7 @@ import {
   Reveal,
   Section,
   Select,
+  SelectOption,
   Skeleton,
   SkeletonFacts,
   SkeletonRows,
@@ -356,8 +357,8 @@ export function KitScreen() {
 
           <Field label="Convention">
             <Select defaultValue="openspec">
-              <option value="openspec">OpenSpec</option>
-              <option value="custom">A suite at a path</option>
+              <SelectOption value="openspec">OpenSpec</SelectOption>
+              <SelectOption value="custom">A suite at a path</SelectOption>
             </Select>
           </Field>
 

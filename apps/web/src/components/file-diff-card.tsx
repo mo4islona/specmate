@@ -106,7 +106,7 @@ export function FileDiffCard({
           <Checkbox
             label="Viewed"
             checked={viewed}
-            onChange={(event) => onViewedChange(event.target.checked)}
+            onCheckedChange={(checked) => onViewedChange(checked === true)}
           />
         </div>
       </header>

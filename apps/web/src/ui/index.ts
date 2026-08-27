@@ -26,7 +26,15 @@ export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.
 export { cn } from './cn.ts'
 export { Diff, type DiffView } from './diff.tsx'
 export { Drawer } from './drawer.tsx'
-export { Checkbox, Field, FieldLabel, Input, Select, Textarea } from './field.tsx'
+export {
+  Checkbox,
+  Field,
+  FieldLabel,
+  Input,
+  Select,
+  SelectOption,
+  Textarea,
+} from './field.tsx'
 export { Meter, StatBar } from './gauge.tsx'
 export { HoverHint } from './hover-hint.tsx'
 export { ICON_NAMES, ICON_SIZES, Icon, type IconName, type IconSize } from './icon.tsx'
