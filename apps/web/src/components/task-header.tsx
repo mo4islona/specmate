@@ -31,7 +31,7 @@ export function TaskHeader({ title, state, badges }: TaskHeaderProps) {
         />
         <span className="min-w-0">
           {state.headline}
-          {state.detail && <span className="text-muted"> — {state.detail}</span>}
+          {state.detail && <span className="text-muted-foreground"> — {state.detail}</span>}
         </span>
       </p>
 

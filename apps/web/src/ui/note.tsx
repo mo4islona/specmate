@@ -7,13 +7,13 @@ import { cx } from './cx.ts'
  * that are left are only for a label that *is* the signal. See the colour budget
  * at the top of `index.css`.
  */
-export type Tone = 'muted' | 'accent' | 'attention' | 'danger'
+export type Tone = 'muted' | 'primary' | 'warning' | 'destructive'
 
 const TONE: Record<Tone, string> = {
-  muted: 'text-muted',
-  accent: 'text-accent',
-  attention: 'text-attention',
-  danger: 'text-danger',
+  muted: 'text-muted-foreground',
+  primary: 'text-primary',
+  warning: 'text-warning',
+  destructive: 'text-destructive',
 }
 
 export function toneClass(tone: Tone): string {
@@ -33,7 +33,7 @@ const NOTE_SIZE = {
 /** Anything the interface says in its quiet voice: a description, an absence, a wait. */
 export function Note({ size = 'sm', className, children, ...rest }: NoteProps) {
   return (
-    <p className={cx('text-muted', NOTE_SIZE[size], className)} {...rest}>
+    <p className={cx('text-muted-foreground', NOTE_SIZE[size], className)} {...rest}>
       {children}
     </p>
   )
@@ -78,7 +78,7 @@ export function TextButton({ className, children, ...rest }: ComponentPropsWithR
     <button
       type="button"
       className={cx(
-        'font-mono text-[0.62rem] text-muted hover:text-text hover:underline',
+        'font-mono text-[0.62rem] text-muted-foreground hover:text-foreground hover:underline',
         className,
       )}
       {...rest}
@@ -135,7 +135,7 @@ export function EmptyState({ height = 'sm', mono = false, className, children }:
   return (
     <div
       className={cx(
-        'grid place-items-center p-6 text-center text-sm text-muted',
+        'grid place-items-center p-6 text-center text-sm text-muted-foreground',
         EMPTY_HEIGHT[height],
         mono && 'font-mono',
         className,

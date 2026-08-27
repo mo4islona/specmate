@@ -50,7 +50,7 @@ export function CoverageWaiversSection() {
             <ListRow
               key={repository.id}
               primary={
-                <p className="break-all font-mono text-xs text-muted">{repository.repoUrl}</p>
+                <p className="break-all font-mono text-xs text-muted-foreground">{repository.repoUrl}</p>
               }
               secondary={
                 <Note size="xs" className="mt-1">

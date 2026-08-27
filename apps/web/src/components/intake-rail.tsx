@@ -207,7 +207,7 @@ function RepositorySection({ preview, refreshing, pinned, onPin }: RepositorySec
       label="Repository"
       aside={
         refreshing ? (
-          <span className="font-mono text-[0.62rem] text-muted" role="status">
+          <span className="font-mono text-[0.62rem] text-muted-foreground" role="status">
             reading…
           </span>
         ) : null
@@ -303,8 +303,8 @@ function SpecConvention({ profile, suitePath, source }: SpecConventionProps) {
   return (
     <>
       <p className="space-x-2 font-mono text-xs">
-        <span className="text-text">{profile}</span>
-        {suitePath && <span className="text-muted">{suitePath}</span>}
+        <span className="text-foreground">{profile}</span>
+        {suitePath && <span className="text-muted-foreground">{suitePath}</span>}
       </p>
       {source && (
         <Note size="xs" className="mt-1">
@@ -377,7 +377,7 @@ function RepositoryName({ repoUrl }: { repoUrl: string }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="truncate text-muted hover:text-text hover:underline"
+      className="truncate text-muted-foreground hover:text-foreground hover:underline"
     >
       {label}
     </a>
@@ -435,7 +435,7 @@ function ReferenceRow({ reference, read, pending }: ReferenceRowProps) {
           href={reference.url}
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 font-mono text-muted hover:text-text hover:underline"
+          className="shrink-0 font-mono text-muted-foreground hover:text-foreground hover:underline"
         >
           {repoLabel(`${reference.host}/${reference.owner}/${reference.repo}`)}
           {number}
@@ -450,7 +450,7 @@ function ReferenceRow({ reference, read, pending }: ReferenceRowProps) {
         <p className="flex flex-wrap items-center gap-1">
           <Badge tone={STATE_TONE[read.detail.state]}>{read.detail.state}</Badge>
           {read.detail.author && (
-            <span className="font-mono text-[0.62rem] text-muted">{read.detail.author}</span>
+            <span className="font-mono text-[0.62rem] text-muted-foreground">{read.detail.author}</span>
           )}
           {read.detail.labels.slice(0, 3).map((label) => (
             <Badge key={label} tone="muted">
@@ -523,7 +523,7 @@ function HoldingsSections({ detail, loading }: HoldingsSectionsProps) {
         label="Remembers"
         aside={
           detail.memory.total > 0 ? (
-            <span className="font-mono text-[0.62rem] text-muted">{detail.memory.total}</span>
+            <span className="font-mono text-[0.62rem] text-muted-foreground">{detail.memory.total}</span>
           ) : null
         }
       >
@@ -571,7 +571,7 @@ function HoldingsSections({ detail, loading }: HoldingsSectionsProps) {
 function MemoryRow({ entry }: { entry: MemoryEntry }) {
   return (
     <li className="text-xs leading-5">
-      <span className="text-text">{entry.description}</span>
+      <span className="text-foreground">{entry.description}</span>
       {entry.borrowedFrom && (
         <Badge tone="muted" className="ml-1.5">
           borrowed
@@ -587,7 +587,7 @@ function RecentTaskRow({ task }: { task: RecentTask }) {
       <QuietLink href={`/tasks/${task.id}`} className="min-w-0 truncate">
         {task.title}
       </QuietLink>
-      <span className="shrink-0 font-mono text-[0.62rem] text-muted">
+      <span className="shrink-0 font-mono text-[0.62rem] text-muted-foreground">
         {formatAge(task.createdAt)}
       </span>
     </li>

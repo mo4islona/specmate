@@ -47,12 +47,12 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
           aria-haspopup="menu"
           onClick={() => setOpen(!open)}
         >
-          <span className="text-muted">Size</span>
+          <span className="text-muted-foreground">Size</span>
           <span>{value}</span>
           <Icon
             name="chevron-down"
             size="xs"
-            className={cx('text-muted transition-transform', open && 'rotate-180')}
+            className={cx('text-muted-foreground transition-transform', open && 'rotate-180')}
           />
         </Chip>
       }
@@ -66,7 +66,7 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
             type="button"
             role="menuitemradio"
             aria-checked={chosen}
-            className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-text/[0.06]"
+            className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.06]"
             onClick={() => {
               onChange(choice)
               setOpen(false)
@@ -76,17 +76,17 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
               <span
                 className={cx(
                   'block font-mono text-[0.78rem]',
-                  chosen ? 'font-medium text-text' : 'text-text',
+                  chosen ? 'font-medium text-foreground' : 'text-foreground',
                 )}
               >
                 {choice}
               </span>
-              <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted">
+              <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted-foreground">
                 {NOTE[choice]}
               </span>
             </span>
 
-            <Icon name="check" className={cx('mt-0.5 text-text', !chosen && 'invisible')} />
+            <Icon name="check" className={cx('mt-0.5 text-foreground', !chosen && 'invisible')} />
           </button>
         )
       })}

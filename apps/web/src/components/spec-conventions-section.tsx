@@ -109,7 +109,7 @@ export function SpecConventionsSection() {
         {entries.map(([key, setting]) => (
           <ListRow
             key={key}
-            primary={<p className="break-all font-mono text-xs text-muted">{key}</p>}
+            primary={<p className="break-all font-mono text-xs text-muted-foreground">{key}</p>}
             secondary={
               <>
                 <Note size="xs" className="mt-1">

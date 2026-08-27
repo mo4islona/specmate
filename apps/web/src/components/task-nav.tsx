@@ -57,12 +57,12 @@ function SurfaceLink({ entry, active }: { entry: SurfaceEntry; active: boolean }
       className={cx(
         'flex items-baseline gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-mono text-[0.72rem] transition-colors',
         active
-          ? 'bg-text/[0.09] font-semibold text-text'
-          : 'text-muted hover:bg-text/[0.06] hover:text-text',
+          ? 'bg-foreground/[0.09] font-semibold text-foreground'
+          : 'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground',
       )}
     >
       <span>{entry.label}</span>
-      {entry.count !== null && <span className="text-[0.66rem] text-muted">{entry.count}</span>}
+      {entry.count !== null && <span className="text-[0.66rem] text-muted-foreground">{entry.count}</span>}
     </Link>
   )
 }

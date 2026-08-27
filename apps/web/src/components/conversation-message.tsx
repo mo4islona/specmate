@@ -23,11 +23,11 @@ export function ConversationMessageItem({ message }: { message: ConversationMess
     <li className="py-2" data-timeline-kind="conversation-message">
       <div className="flex items-baseline gap-2">
         <MicroLabel as="span">{AUTHORS[message.role]}</MicroLabel>
-        <span className="font-mono text-[0.6rem] text-muted">
+        <span className="font-mono text-[0.6rem] text-muted-foreground">
           at {message.taskState.replaceAll('_', ' ')}
         </span>
         <time
-          className="ml-auto shrink-0 font-mono text-[0.62rem] text-muted"
+          className="ml-auto shrink-0 font-mono text-[0.62rem] text-muted-foreground"
           dateTime={String(message.createdAt)}
         >
           {formatClock(message.createdAt)}

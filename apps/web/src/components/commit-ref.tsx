@@ -14,7 +14,7 @@ interface CommitRefProps {
  */
 export function CommitRef({ sha, repoUrl, className = '' }: CommitRefProps) {
   const href = commitUrl(repoUrl, sha)
-  const classes = cx('font-mono text-[0.68rem] text-muted', className)
+  const classes = cx('font-mono text-[0.68rem] text-muted-foreground', className)
 
   if (!href) {
     return (
@@ -28,7 +28,7 @@ export function CommitRef({ sha, repoUrl, className = '' }: CommitRefProps) {
     <a
       className={cx(
         classes,
-        'underline decoration-border-bright underline-offset-2 hover:text-text',
+        'underline decoration-border-strong underline-offset-2 hover:text-foreground',
       )}
       href={href}
       title={sha}

@@ -57,7 +57,7 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
                     // the ✕ beside it contradicts.
                     className={cx(
                       box,
-                      selectedKey === node.key ? 'bg-text/[0.09]' : 'hover:bg-text/[0.05]',
+                      selectedKey === node.key ? 'bg-foreground/[0.09]' : 'hover:bg-foreground/[0.05]',
                     )}
                   >
                     {row}
@@ -100,7 +100,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
       </span>
 
       {skipReason !== null && (
-        <span className="mt-0.5 block pl-[1.35rem] text-[0.67rem] leading-[1.45] text-muted">
+        <span className="mt-0.5 block pl-[1.35rem] text-[0.67rem] leading-[1.45] text-muted-foreground">
           {skipReason}
         </span>
       )}
@@ -115,7 +115,7 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
 function NodeFact({ node, now }: { node: PipelineNodeView; now: number }) {
   const classes = cx(
     'shrink-0 text-right font-mono text-[0.61rem]',
-    node.state === 'stopped' ? signalText('stopped') : 'text-muted',
+    node.state === 'stopped' ? signalText('stopped') : 'text-muted-foreground',
   )
 
   if (node.state === 'stopped') {

@@ -38,7 +38,7 @@ function Lockup({ stream, compact = false }: LockupProps) {
       <SpecMateMark stream={stream} className={cx('shrink-0', compact ? 'h-6 w-6' : 'h-7 w-7')} />
       <span
         className={cx(
-          'font-mono font-semibold tracking-[0.02em] text-text',
+          'font-mono font-semibold tracking-[0.02em] text-foreground',
           compact ? 'text-sm' : 'text-base',
         )}
       >
@@ -68,11 +68,11 @@ export function AppShell({ children }: AppShellProps) {
   const stream = useStreamStatus()
 
   return (
-    <div className="min-h-screen bg-ground text-text lg:grid lg:grid-cols-[18rem_minmax(0,1fr)]">
+    <div className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[18rem_minmax(0,1fr)]">
       {/* One gutter down the whole column: the mark, the group headings and the
           rows all start on it, and each row's own box reaches half a gutter past
           it on either side so that pointing at one has an edge to show. */}
-      <aside className="hidden flex-col border-r border-border bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen">
+      <aside className="hidden flex-col border-r border-border bg-card lg:sticky lg:top-0 lg:flex lg:h-screen">
         <div className="rail-inset border-b border-border">
           <Lockup stream={stream} />
 
@@ -98,7 +98,7 @@ export function AppShell({ children }: AppShellProps) {
       </aside>
 
       <div className="min-w-0">
-        <header className="shell-main sticky top-0 z-20 border-b border-border bg-ground/95 py-3 backdrop-blur lg:hidden">
+        <header className="shell-main sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <Lockup stream={stream} compact />
 
@@ -116,7 +116,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
 
           <details className="mt-3 border-t border-border pt-2">
-            <summary className="cursor-pointer py-1 font-mono text-xs uppercase tracking-widest text-muted">
+            <summary className="cursor-pointer py-1 font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Task index
             </summary>
             <div className="max-h-[55vh] overflow-y-auto pt-3">

@@ -65,7 +65,7 @@ const BUTTONS: readonly ButtonVariant[] = [
 
 const BADGES: readonly BadgeTone[] = ['active', 'parked', 'failed', 'done', 'muted', 'warning']
 
-const TONES: readonly Tone[] = ['muted', 'accent', 'attention', 'danger']
+const TONES: readonly Tone[] = ['muted', 'primary', 'warning', 'destructive']
 
 /** The whole colour budget, in the order it gets louder. */
 const SIGNALS: readonly Signal[] = ['idle', 'settled', 'live', 'asking', 'stopped']
@@ -110,7 +110,7 @@ const SPECIMEN_WHOLE_FILE = [
 function Specimen({ name, children }: { name: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="font-mono text-[0.62rem] text-muted">{name}</p>
+      <p className="font-mono text-[0.62rem] text-muted-foreground">{name}</p>
       <div className="mt-1.5">{children}</div>
     </div>
   )
@@ -309,7 +309,7 @@ export function KitScreen() {
             {ICON_NAMES.map((name) => (
               <span key={name} className="flex items-center gap-1.5">
                 <Icon name={name} />
-                <span className="font-mono text-[0.62rem] text-muted">{name}</span>
+                <span className="font-mono text-[0.62rem] text-muted-foreground">{name}</span>
               </span>
             ))}
           </Row>
@@ -320,7 +320,7 @@ export function KitScreen() {
             {ICON_SIZES.map((size) => (
               <span key={size} className="flex items-center gap-1.5">
                 <Icon name="settings" size={size} />
-                <span className="font-mono text-[0.62rem] text-muted">{size}</span>
+                <span className="font-mono text-[0.62rem] text-muted-foreground">{size}</span>
               </span>
             ))}
           </Row>
@@ -387,14 +387,14 @@ export function KitScreen() {
           </Subpanel>
         </Panel>
 
-        <PanelLink href="/kit" className="group block transition-colors hover:border-border-bright">
+        <PanelLink href="/kit" className="group block transition-colors hover:border-border-strong">
           <Note size="xs">panel-link — a panel that goes somewhere</Note>
         </PanelLink>
 
         <ul className="space-y-3">
           <ListRow
             primary={
-              <p className="break-all font-mono text-xs text-muted">github.com/example/api</p>
+              <p className="break-all font-mono text-xs text-muted-foreground">github.com/example/api</p>
             }
             secondary={
               <Note size="xs" className="mt-1">
@@ -411,7 +411,7 @@ export function KitScreen() {
             <span className="text-[0.82rem]">selected row</span>
           </NavRow>
           <NavRow href="/kit" active={false} className="flex items-center gap-2.5">
-            <Dot className="bg-muted" />
+            <Dot className="bg-muted-foreground" />
             <span className="text-[0.82rem]">a row at rest</span>
           </NavRow>
         </div>
@@ -443,7 +443,7 @@ export function KitScreen() {
                 type="button"
                 role="menuitemradio"
                 aria-checked={size === chosen}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-text/[0.06]"
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.06]"
                 onClick={() => {
                   setChosen(size)
                   setOpen(false)
@@ -467,8 +467,8 @@ export function KitScreen() {
         description="The one input, in each of the moods it can be in. The accent is the state's; the frame and the field never change."
       >
         <Console tone="asking" onSubmit={(event) => event.preventDefault()}>
-          <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] text-muted">
-            <span className="text-attention" aria-hidden="true">
+          <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] text-muted-foreground">
+            <span className="text-warning" aria-hidden="true">
               ●
             </span>
             <span>kickoff · question 1 of 2</span>
@@ -594,7 +594,7 @@ export function KitScreen() {
           onDismiss={() => setDrawer(false)}
           label="File diff"
           detail={
-            <p className="mt-1 break-all font-mono text-xs text-muted">
+            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
               openspec/changes/pie-chart-axis-fade/proposal.md
             </p>
           }
@@ -646,7 +646,7 @@ export function KitScreen() {
         </Specimen>
 
         <Specimen name="Working — a wait too small for a shape">
-          <p className="font-mono text-xs text-muted">
+          <p className="font-mono text-xs text-muted-foreground">
             <Working>loading the whole edit…</Working>
           </p>
         </Specimen>

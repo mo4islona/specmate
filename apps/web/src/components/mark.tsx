@@ -42,7 +42,7 @@ export function SpecMateMark({ className, stream = null }: MarkProps) {
       className={className}
       aria-hidden="true"
     >
-      <g className="text-text" stroke="currentColor" strokeWidth={7}>
+      <g className="text-foreground" stroke="currentColor" strokeWidth={7}>
         <path d="M36 22 H21 V78 H36" />
         <path d="M66 22 H81 V78 H66" />
       </g>

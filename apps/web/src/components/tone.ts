@@ -35,11 +35,11 @@ export type Signal =
   | 'idle'
 
 const SIGNAL_TEXT: Record<Signal, string> = {
-  live: 'text-accent',
-  asking: 'text-attention',
-  stopped: 'text-danger',
-  settled: 'text-text',
-  idle: 'text-muted',
+  live: 'text-primary',
+  asking: 'text-warning',
+  stopped: 'text-destructive',
+  settled: 'text-foreground',
+  idle: 'text-muted-foreground',
 }
 
 /**
@@ -47,11 +47,11 @@ const SIGNAL_TEXT: Record<Signal, string> = {
  * whether the mark also breathes is the caller's to say. See `signalBreathes`.
  */
 const SIGNAL_DOT: Record<Signal, string> = {
-  live: 'bg-accent',
-  asking: 'bg-attention',
-  stopped: 'bg-danger',
-  settled: 'bg-border-bright',
-  idle: 'bg-muted',
+  live: 'bg-primary',
+  asking: 'bg-warning',
+  stopped: 'bg-destructive',
+  settled: 'bg-border-strong',
+  idle: 'bg-muted-foreground',
 }
 
 /** A signal loud enough to be worth a heavier word than its neighbours. */
@@ -117,7 +117,7 @@ export function nodeName(state: NodeState): string {
  * distinction the grey ramp cannot carry on its own.
  */
 export function nodeDot(state: NodeState): string {
-  if (state === 'pending' || state === 'skipped') return 'border border-border-bright bg-ground'
+  if (state === 'pending' || state === 'skipped') return 'border border-border-strong bg-background'
 
   return SIGNAL_DOT[NODE_SIGNAL[state]]
 }
@@ -141,7 +141,7 @@ export function nodeMarkClass(state: NodeState): string {
   const signal = NODE_SIGNAL[state]
   const live = state === 'running' ? 'dot-live ' : ''
 
-  return `${live}${signal === 'settled' ? 'text-muted' : SIGNAL_TEXT[signal]}`
+  return `${live}${signal === 'settled' ? 'text-muted-foreground' : SIGNAL_TEXT[signal]}`
 }
 
 // ── The task, as the index and the header read it ───────────────────────────

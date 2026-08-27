@@ -134,8 +134,8 @@ interface ErrorStateProps {
 /** A request that will not be answered, and what the server said about it. */
 export function ErrorState({ title, detail }: ErrorStateProps) {
   return (
-    <Panel as="div" className="border-danger/35">
-      <MicroLabel tone="danger">Request failed</MicroLabel>
+    <Panel as="div" className="border-destructive/35">
+      <MicroLabel tone="destructive">Request failed</MicroLabel>
 
       <h2 className="mt-2 text-lg font-semibold">{title}</h2>
 

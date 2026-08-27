@@ -14,15 +14,15 @@ import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { signalText } from './tone.ts'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
-  guide: 'text-muted',
-  task: 'text-muted',
+  guide: 'text-muted-foreground',
+  task: 'text-muted-foreground',
 }
 
 /** The bullet carries the colour; the words stay in the reading tone. */
 const BULLET_TONE: Record<LineTone, string> = {
-  boundary: 'text-border-bright',
+  boundary: 'text-border-strong',
   trouble: signalText('stopped'),
-  plain: 'text-muted',
+  plain: 'text-muted-foreground',
 }
 
 /**
@@ -98,7 +98,7 @@ function LiveLine({ live }: { live: LiveActivity }) {
 
       <span className="min-w-0 break-all">
         <span className={signalText('live')}>{live.action}…</span>
-        {live.target && <span className="text-muted"> {live.target}</span>}
+        {live.target && <span className="text-muted-foreground"> {live.target}</span>}
       </span>
     </li>
   )
@@ -147,14 +147,14 @@ const RunLine = memo(function RunLine({
 
         {call ? (
           <span className="min-w-0 break-all">
-            <span className="text-text">{entry.action}</span>
-            <span className="text-muted">({entry.target})</span>
+            <span className="text-foreground">{entry.action}</span>
+            <span className="text-muted-foreground">({entry.target})</span>
           </span>
         ) : (
           <span
             className={cx(
               'min-w-0 break-words',
-              entry.tone === 'trouble' ? signalText('stopped') : 'text-text',
+              entry.tone === 'trouble' ? signalText('stopped') : 'text-foreground',
             )}
           >
             {entry.action}
@@ -163,8 +163,8 @@ const RunLine = memo(function RunLine({
       </p>
 
       {!call && entry.target && (
-        <p className="flex items-baseline gap-2 pl-2 text-muted">
-          <span className="shrink-0 text-muted" aria-hidden="true">
+        <p className="flex items-baseline gap-2 pl-2 text-muted-foreground">
+          <span className="shrink-0 text-muted-foreground" aria-hidden="true">
             └
           </span>
           <span className="min-w-0 break-words">{entry.target}</span>
@@ -231,7 +231,7 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
         )}
 
         {showsLine && (
-          <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[0.62rem] text-muted">
+          <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[0.62rem] text-muted-foreground">
             {/* Your own side needs no name; a node's name is the only identity
                 the machine has, so it keeps one. */}
             {entry.author !== 'owner' && (
@@ -245,7 +245,7 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
             ) : (
               <>
                 <span>{entry.title}</span>
-                <time dateTime={String(entry.at)} className="text-muted">
+                <time dateTime={String(entry.at)} className="text-muted-foreground">
                   {formatClock(entry.at)}
                 </time>
               </>
@@ -256,12 +256,12 @@ const FeedTurn = memo(function FeedTurn({ entry }: { entry: TurnEntry }) {
         {entry.body && (
           <div
             data-balloon={balloon ? '' : undefined}
-            className={cx('min-w-0', balloon && 'rounded-[1.25rem] bg-elevated px-4 py-2.5')}
+            className={cx('min-w-0', balloon && 'rounded-[1.25rem] bg-popover px-4 py-2.5')}
           >
             <div
               className={cx(
                 'artifact-document text-[0.85rem]',
-                clamped && 'line-clamp-2 text-muted',
+                clamped && 'line-clamp-2 text-muted-foreground',
               )}
             >
               <ArtifactMarkdown content={entry.body} />

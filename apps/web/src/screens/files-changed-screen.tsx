@@ -169,7 +169,7 @@ function FilesReview({ taskId, tip, files }: FilesReviewProps) {
             <span className="font-mono">
               {viewed.size} / {files.length}
             </span>{' '}
-            <span className="text-muted">viewed</span>
+            <span className="text-muted-foreground">viewed</span>
           </p>
         </div>
 
