@@ -16,7 +16,7 @@ import { cn } from './cn.ts'
  * pair the wrong way round.
  */
 const badgeVariants = cva(
-  'inline-flex max-w-full items-center rounded-full px-[0.6rem] py-[0.15rem] font-mono text-[0.68rem] leading-[1.45] bg-[color-mix(in_srgb,var(--badge-tone)_8%,var(--color-background))] text-[var(--badge-tone)]',
+  'inline-flex max-w-full items-center rounded-full px-[0.6rem] py-[0.15rem] font-mono text-[0.68rem]/[1.45] bg-[color-mix(in_srgb,var(--badge-tone)_8%,var(--color-background))] text-[var(--badge-tone)]',
   {
     variants: {
       tone: {

@@ -26,7 +26,7 @@ interface NoteProps extends HTMLAttributes<HTMLParagraphElement> {
 }
 
 const NOTE_SIZE = {
-  sm: 'text-sm leading-6',
+  sm: 'text-sm/6',
   xs: 'text-xs',
 } as const
 
@@ -44,7 +44,7 @@ interface MicroLabelProps extends HTMLAttributes<HTMLElement> {
   readonly tone?: Tone
 }
 
-const MICRO = 'font-mono text-[0.68rem] font-semibold uppercase leading-tight tracking-[0.16em]'
+const MICRO = 'font-mono text-[0.68rem]/[1.25] font-semibold uppercase tracking-[0.16em]'
 
 /** The eyebrow over a heading, and the word that names a group in a rail. */
 export function MicroLabel({
@@ -64,10 +64,7 @@ export function MicroLabel({
 /** What went wrong, under the thing it went wrong in. */
 export function ErrorNote({ className, children, ...rest }: HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p
-      className={cn('mt-[0.45rem] text-[0.78rem] leading-[1.4] text-destructive', className)}
-      {...rest}
-    >
+    <p className={cn('mt-[0.45rem] text-[0.78rem]/[1.4] text-destructive', className)} {...rest}>
       {children}
     </p>
   )

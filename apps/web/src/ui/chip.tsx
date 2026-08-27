@@ -16,7 +16,7 @@ const CHIP = [
   'inline-flex min-h-[2rem] items-center gap-[0.4rem] rounded-[0.625rem] text-start',
   'border border-[color-mix(in_srgb,var(--color-border-strong)_55%,transparent)]',
   'bg-[color-mix(in_srgb,var(--color-foreground)_3%,transparent)] px-[0.75rem] py-[0.35rem]',
-  'font-mono text-[0.73rem] leading-[1.35] text-foreground',
+  'font-mono text-[0.73rem]/[1.35] text-foreground',
   'transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
   'not-disabled:hover:border-border-strong not-disabled:hover:bg-[color-mix(in_srgb,var(--color-foreground)_6%,transparent)]',
   'aria-expanded:border-border-strong aria-expanded:bg-[color-mix(in_srgb,var(--color-foreground)_11%,transparent)]',

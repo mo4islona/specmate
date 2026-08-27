@@ -28,7 +28,7 @@ export function ListRow({ primary, secondary, action, className }: ListRowProps)
 }
 
 const FOLDER =
-  'font-mono text-[0.68rem] leading-[1.4] text-[color-mix(in_srgb,var(--color-muted-foreground)_80%,transparent)]'
+  'font-mono text-[0.68rem]/[1.4] text-[color-mix(in_srgb,var(--color-muted-foreground)_80%,transparent)]'
 
 /**
  * A folder in a tree of files. Quieter than the group headings it sits under —
