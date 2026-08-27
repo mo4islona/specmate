@@ -33,6 +33,24 @@ export const ArtifactChange = z.object({
 })
 export type ArtifactChange = z.infer<typeof ArtifactChange>
 
+/**
+ * A manifest line is a ledger entry, not something the engine acts on — the
+ * stage's commit is what records a file. So a line that does not parse drops
+ * out rather than taking the document down with it: a role allowed to write
+ * code has no `kind` for the test file it just wrote, and an invented one used
+ * to cost the run its verdict, its findings and everything else it had done.
+ */
+const ArtifactManifest = z
+  .array(z.unknown())
+  .default([])
+  .transform((entries) =>
+    entries.flatMap((entry) => {
+      const parsed = ArtifactChange.safeParse(entry)
+
+      return parsed.success ? [parsed.data] : []
+    }),
+  )
+
 export const ReviewVerdict = z.enum(['approve', 'revise', 'escalate'])
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>
 
@@ -68,7 +86,7 @@ export const StageResult = z.object({
   schema_version: z.literal(1),
   role: AgentRole,
   status: z.enum(['ok', 'needs_decision', 'failed']),
-  artifacts_changed: z.array(ArtifactChange).default([]),
+  artifacts_changed: ArtifactManifest,
   decisions_needed: z.array(DecisionRequest).default([]),
   /** Required from review-shaped stages (reviewer, verifier): it drives the loop edge. */
   verdict: ReviewVerdict.optional(),
