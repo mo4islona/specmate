@@ -471,9 +471,7 @@ export function KitScreen() {
       >
         <Console tone="asking" onSubmit={(event) => event.preventDefault()}>
           <p className="flex items-baseline gap-2 px-4 pt-3 font-mono text-[0.72rem] text-muted-foreground">
-            <span className="text-warning" aria-hidden="true">
-              ●
-            </span>
+            <Dot className="self-center bg-warning" />
             <span>kickoff · question 1 of 2</span>
           </p>
           <div className="px-4 pb-1 pt-3">
@@ -486,7 +484,10 @@ export function KitScreen() {
             />
           </div>
           <div className="flex items-center gap-1 px-4 pb-3 pt-1">
-            <Button variant="ghost-destructive">■ Stop</Button>
+            <Button variant="ghost-destructive">
+              <Icon name="stop" size="xs" className="fill-current" />
+              Stop
+            </Button>
             <span className="flex-1" />
             <Button variant="warning" type="submit" className="min-h-9 py-1.5">
               Answer
