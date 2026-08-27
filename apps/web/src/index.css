@@ -438,7 +438,7 @@ body {
     background: var(--color-background);
     padding: 0.12em 0.35em;
     font-family: var(--font-mono);
-    font-size: 0.88em;
+    font-size: 0.82em;
   }
 
   .artifact-document pre {
@@ -492,7 +492,7 @@ body {
     border-radius: 0.6rem;
     background: var(--diff-ground);
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     line-height: 1.6;
 
     /* A step's record holds one of these per edit, forty lines each: a screen
