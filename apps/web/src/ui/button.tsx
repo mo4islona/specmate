@@ -1,39 +1,50 @@
+import { Slot } from '@radix-ui/react-slot'
+import { cva, type VariantProps } from 'class-variance-authority'
 import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { Link } from 'wouter'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { Dot } from './note.tsx'
 
 /**
  * Five weights and nothing else — the verb that acts, the same verb when the
  * task is waiting on this click, the one that undoes, the alternative, and the
- * quiet one. `ghost-danger` is the quiet one in the colour of the thing it
+ * quiet one. `ghost-destructive` is the quiet one in the colour of the thing it
  * undoes; it is a modifier on `ghost` rather than a sixth weight.
+ *
+ * A weight carries its own metrics rather than taking a `size` beside it, which
+ * is a departure from shadcn: `ghost` is shorter and lighter than the four solid
+ * ones, and always has been. Splitting the two apart would be an improvement to
+ * make deliberately, on its own, looking at the twenty-odd rows a ghost button
+ * sits in — not as a side effect of changing what it is written in.
  */
-export type ButtonVariant =
-  | 'primary'
-  | 'attention'
-  | 'danger'
-  | 'secondary'
-  | 'ghost'
-  | 'ghost-danger'
+export const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-[0.4rem] rounded-lg font-mono leading-tight transition-[background-color,border-color,color] duration-[120ms] ease-[ease] disabled:cursor-not-allowed disabled:opacity-[0.38]',
+  {
+    variants: {
+      variant: {
+        primary:
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-primary text-primary-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-primary)_84%,var(--color-hover-tint))]',
+        // A state waiting on the owner wears the colour the rest of the screen
+        // uses for "your turn" — never the red of the thing that went wrong.
+        warning:
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-warning text-warning-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-warning)_84%,var(--color-hover-tint))]',
+        destructive:
+          'min-h-[2.4rem] border border-transparent px-[0.95rem] py-2 text-xs font-bold bg-destructive text-destructive-foreground not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_84%,var(--color-hover-tint))]',
+        secondary:
+          'min-h-[2.4rem] border px-[0.95rem] py-2 text-xs font-bold border-[color-mix(in_srgb,var(--color-border-strong)_70%,transparent)] bg-secondary text-secondary-foreground not-disabled:hover:border-border-strong not-disabled:hover:bg-[color-mix(in_srgb,var(--color-foreground)_9%,transparent)]',
+        // No frame until you point at it: a hover border on every quiet control
+        // is what made a row of them read as a toolbar.
+        ghost:
+          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem] text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground',
+        'ghost-destructive':
+          'min-h-[1.95rem] border-0 px-[0.65rem] py-[0.3rem] text-[0.72rem] text-destructive not-disabled:hover:bg-[color-mix(in_srgb,var(--color-destructive)_14%,transparent)] not-disabled:hover:text-destructive',
+      },
+    },
+    defaultVariants: { variant: 'secondary' },
+  },
+)
 
-const VARIANT: Record<ButtonVariant, string> = {
-  primary: 'button-primary',
-  attention: 'button-attention',
-  danger: 'button-danger',
-  secondary: 'button-secondary',
-  ghost: 'button-ghost',
-  'ghost-danger': 'button-ghost button-ghost-danger',
-}
-
-/**
- * For the two things that wear a button and are not one: a `<summary>`, which
- * has to stay a summary for the disclosure to work, and a verb whose cap is
- * spent, which reports rather than acts.
- */
-export function buttonClass(variant: ButtonVariant): string {
-  return VARIANT[variant]
-}
+export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
 
 interface ButtonProps extends ComponentPropsWithRef<'button'> {
   readonly variant?: ButtonVariant
@@ -43,24 +54,37 @@ interface ButtonProps extends ComponentPropsWithRef<'button'> {
    */
   readonly pending?: boolean
   readonly pendingLabel?: ReactNode
+  /** Render the child as the button, for the things that wear one and are not one. */
+  readonly asChild?: boolean
 }
+
+/**
+ * Waiting on the server is not the same as unavailable, and a verb in flight was
+ * wearing the second one's 38% — which is where the breathing mark beside its
+ * label went. Written as the same `disabled:` pair rather than an `aria-busy:`
+ * one so `cn` can settle them: two utilities under different variants both
+ * apply, and which of those wins is Tailwind's emission order rather than ours.
+ */
+const PENDING = 'disabled:cursor-progress disabled:opacity-[0.68]'
 
 export function Button({
   variant = 'secondary',
   pending = false,
   pendingLabel,
   disabled = false,
+  asChild = false,
   className,
   children,
   type = 'button',
   ...rest
 }: ButtonProps) {
   const label = pending && pendingLabel !== undefined ? pendingLabel : children
+  const Tag = asChild ? Slot : 'button'
 
   return (
-    <button
+    <Tag
       type={type}
-      className={cx(VARIANT[variant], className)}
+      className={cn(buttonVariants({ variant }), pending && PENDING, className)}
       disabled={disabled || pending}
       // What tells a verb waiting on the server from a verb you cannot use: it
       // is what lifts the 38% back off, and it is the honest word for the state.
@@ -72,7 +96,7 @@ export function Button({
       {pending && <Dot live className="bg-current" />}
 
       {label}
-    </button>
+    </Tag>
   )
 }
 
@@ -85,6 +109,9 @@ interface IconButtonProps extends ComponentPropsWithRef<'button'> {
  * A verb drawn rather than written, for the controls that sit over what they
  * act on: a row of words under every edit in a step was more of the record than
  * the record. The label is never optional — a glyph nobody can name is a guess.
+ *
+ * It carries its own ground, because the thing under it is usually code and an
+ * unbacked glyph on code is neither.
  */
 export function IconButton({
   label,
@@ -98,7 +125,12 @@ export function IconButton({
       type={type}
       aria-label={label}
       title={label}
-      className={cx('button-icon', className)}
+      className={cn(
+        'inline-flex h-[1.55rem] w-[1.55rem] items-center justify-center rounded-[0.45rem] border-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease]',
+        'bg-[color-mix(in_srgb,var(--color-popover)_90%,transparent)] not-disabled:hover:bg-popover not-disabled:hover:text-foreground',
+        'disabled:cursor-not-allowed disabled:opacity-[0.38]',
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -124,7 +156,7 @@ export function ButtonLink({
   ...rest
 }: ButtonLinkProps) {
   return (
-    <Link href={href} className={cx(VARIANT[variant], className)} {...rest}>
+    <Link href={href} className={cn(buttonVariants({ variant }), className)} {...rest}>
       {children}
     </Link>
   )

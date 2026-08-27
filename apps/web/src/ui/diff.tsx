@@ -1,5 +1,5 @@
 import { type CSSProperties, memo, type ReactNode, useEffect, useMemo, useState } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { useNearViewport } from './near-viewport.ts'
 import { Note } from './note.tsx'
 import { highlightSide, languageOf, loadSyntax, syntaxReady } from './syntax.tsx'
@@ -415,14 +415,14 @@ export const Diff = memo(function Diff({
       <div
         ref={frame}
         style={reservedHeight(split.length)}
-        className={cx('diff-document diff-document-split', className)}
+        className={cn('diff-document diff-document-split', className)}
       >
         {split.map((row, index) => (
           // The diff text has no stable per-line identity of its own; render order never changes.
           // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
-          <div key={index} className={cx('diff-row', lineNumbers && 'diff-row-numbered')}>
+          <div key={index} className={cn('diff-row', lineNumbers && 'diff-row-numbered')}>
             {row.full ? (
-              <div className={cx('diff-line', `diff-line-${row.full.line.kind}`, 'diff-row-full')}>
+              <div className={cn('diff-line', `diff-line-${row.full.line.kind}`, 'diff-row-full')}>
                 {gapRow(row.full) ?? <DiffText line={row.full.line} colours={colours} />}
               </div>
             ) : (
@@ -451,12 +451,12 @@ export const Diff = memo(function Diff({
     <div
       ref={frame}
       style={reservedHeight(rows.length)}
-      className={cx('diff-document', lineNumbers && 'diff-document-numbered', className)}
+      className={cn('diff-document', lineNumbers && 'diff-document-numbered', className)}
     >
       {rows.map((row, position) => (
         // The diff text has no stable per-line identity of its own; render order never changes.
         // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
-        <div key={position} className={cx('diff-line', `diff-line-${row.line.kind}`)}>
+        <div key={position} className={cn('diff-line', `diff-line-${row.line.kind}`)}>
           {lineNumbers && <span className="diff-gutter">{gutterNumber(row.line) ?? ''}</span>}
           {gapRow(row) ?? <DiffText line={row.line} colours={colours} />}
         </div>
@@ -481,7 +481,7 @@ function DiffCell({
   return (
     <>
       {lineNumbers && <span className="diff-gutter">{number ?? ''}</span>}
-      <div className={cx('diff-line', line ? `diff-line-${line.kind}` : 'diff-line-absent')}>
+      <div className={cn('diff-line', line ? `diff-line-${line.kind}` : 'diff-line-absent')}>
         {line ? <DiffText line={line} colours={colours} /> : ' '}
       </div>
     </>

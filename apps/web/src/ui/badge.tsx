@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 /**
  * The small, shared vocabulary a badge can carry. It is about where something
@@ -24,7 +24,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 /** A tone worn as a word rather than a control: a status, a size, a gap. */
 export function Badge({ tone = 'muted', className, children, ...rest }: BadgeProps) {
   return (
-    <span className={cx('badge', TONE[tone], className)} {...rest}>
+    <span className={cn('badge', TONE[tone], className)} {...rest}>
       {children}
     </span>
   )

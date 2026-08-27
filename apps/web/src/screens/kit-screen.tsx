@@ -11,7 +11,7 @@ import {
   Chip,
   Console,
   ConsoleField,
-  cx,
+  cn,
   Diff,
   Dot,
   Drawer,
@@ -56,11 +56,11 @@ import {
 
 const BUTTONS: readonly ButtonVariant[] = [
   'primary',
-  'attention',
-  'danger',
+  'warning',
+  'destructive',
   'secondary',
   'ghost',
-  'ghost-danger',
+  'ghost-destructive',
 ]
 
 const BADGES: readonly BadgeTone[] = ['active', 'parked', 'failed', 'done', 'muted', 'warning']
@@ -241,7 +241,7 @@ export function KitScreen() {
                   live={signalBreathes(signal)}
                   halo={signal === 'asking'}
                 />
-                <span className={cx('font-mono text-[0.72rem]', signalText(signal))}>{signal}</span>
+                <span className={cn('font-mono text-[0.72rem]', signalText(signal))}>{signal}</span>
               </span>
             ))}
           </Row>
@@ -483,9 +483,9 @@ export function KitScreen() {
             />
           </div>
           <div className="flex items-center gap-1 px-4 pb-3 pt-1">
-            <Button variant="ghost-danger">■ Stop</Button>
+            <Button variant="ghost-destructive">■ Stop</Button>
             <span className="flex-1" />
-            <Button variant="attention" type="submit" className="min-h-9 py-1.5">
+            <Button variant="warning" type="submit" className="min-h-9 py-1.5">
               Answer
             </Button>
           </div>

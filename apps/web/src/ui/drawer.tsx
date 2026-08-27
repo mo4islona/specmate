@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Button } from './button.tsx'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { Icon } from './icon.tsx'
 import { MicroLabel } from './note.tsx'
 
@@ -77,7 +77,7 @@ export function Drawer({
         aria-modal="true"
         aria-label={label}
         style={{ width }}
-        className={cx('drawer relative flex h-full min-w-0 flex-col', className)}
+        className={cn('drawer relative flex h-full min-w-0 flex-col', className)}
       >
         <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3 sm:px-6">
           <div className="min-w-0">

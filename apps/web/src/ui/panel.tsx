@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Link } from 'wouter'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 import { MicroLabel, Note, type Tone } from './note.tsx'
 
 interface PanelProps extends HTMLAttributes<HTMLElement> {
@@ -18,7 +18,7 @@ export function Panel({
   ...rest
 }: PanelProps) {
   return (
-    <Tag className={cx('panel', flush && 'panel-flush', className)} {...rest}>
+    <Tag className={cn('panel', flush && 'panel-flush', className)} {...rest}>
       {children}
     </Tag>
   )
@@ -33,7 +33,7 @@ interface PanelLinkProps {
 /** A panel that is somewhere to go — an inbox card, a summary that opens. */
 export function PanelLink({ href, className, children }: PanelLinkProps) {
   return (
-    <Link href={href} className={cx('panel', className)}>
+    <Link href={href} className={cn('panel', className)}>
       {children}
     </Link>
   )
@@ -46,7 +46,7 @@ interface SubpanelProps extends HTMLAttributes<HTMLElement> {
 /** One step in from a panel — a waiver, a repository, a question. */
 export function Subpanel({ as: Tag = 'div', className, children, ...rest }: SubpanelProps) {
   return (
-    <Tag className={cx('subpanel', className)} {...rest}>
+    <Tag className={cn('subpanel', className)} {...rest}>
       {children}
     </Tag>
   )
@@ -78,12 +78,12 @@ export function Section({
   children,
 }: SectionProps) {
   return (
-    <Panel className={cx('space-y-5', className)}>
+    <Panel className={cn('space-y-5', className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           {eyebrow && <MicroLabel tone={eyebrowTone}>{eyebrow}</MicroLabel>}
 
-          <h2 className={cx('text-lg font-semibold', eyebrow ? 'mt-2' : undefined)}>{title}</h2>
+          <h2 className={cn('text-lg font-semibold', eyebrow ? 'mt-2' : undefined)}>{title}</h2>
 
           {description && <Note className="mt-2">{description}</Note>}
         </div>
@@ -117,13 +117,13 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <header
-      className={cx('flex flex-col justify-between gap-4 sm:flex-row sm:items-end', className)}
+      className={cn('flex flex-col justify-between gap-4 sm:flex-row sm:items-end', className)}
     >
       <div className="min-w-0">
         {eyebrow && <MicroLabel tone={eyebrowTone}>{eyebrow}</MicroLabel>}
 
         <h1
-          className={cx(
+          className={cn(
             'text-3xl font-semibold tracking-tight sm:text-4xl',
             eyebrow ? 'mt-2' : undefined,
           )}

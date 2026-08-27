@@ -1,5 +1,5 @@
 import { Link } from 'wouter'
-import { cx } from '../ui/index.ts'
+import { cn } from '../ui/index.ts'
 
 export type TaskSurface = 'thread' | 'files' | 'docs'
 
@@ -54,7 +54,7 @@ function SurfaceLink({ entry, active }: { entry: SurfaceEntry; active: boolean }
     <Link
       href={entry.href}
       aria-current={active ? 'page' : undefined}
-      className={cx(
+      className={cn(
         'flex items-baseline gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-mono text-[0.72rem] transition-colors',
         active
           ? 'bg-foreground/[0.09] font-semibold text-foreground'

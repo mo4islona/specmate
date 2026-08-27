@@ -34,7 +34,7 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
         label="Confirm stop"
         trigger={
           <Button
-            variant="ghost-danger"
+            variant="ghost-destructive"
             disabled={stopping}
             aria-expanded={confirming}
             onClick={() => setConfirming(!confirming)}
@@ -53,7 +53,7 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
           <Button variant="ghost" disabled={stopping} onClick={() => setConfirming(false)}>
             Keep running
           </Button>
-          <Button variant="danger" disabled={stopping} onClick={onStop}>
+          <Button variant="destructive" disabled={stopping} onClick={onStop}>
             Confirm stop
           </Button>
         </div>

@@ -1,6 +1,6 @@
 import { THEMES, type ThemeId } from '../theme/themes.ts'
 import { useTheme } from '../theme/use-theme.tsx'
-import { cx, Section } from '../ui/index.ts'
+import { cn, Section } from '../ui/index.ts'
 
 /**
  * A swatch is drawn in the theme it offers: the tile carries `data-theme`, so
@@ -47,7 +47,7 @@ export function ThemeSection() {
           return (
             <label
               key={theme.id}
-              className={cx(
+              className={cn(
                 'cursor-pointer rounded-xl border p-1.5 transition-colors',
                 chosen ? 'border-foreground' : 'border-border hover:border-border-strong',
               )}
@@ -65,7 +65,7 @@ export function ThemeSection() {
 
               <span className="flex items-baseline justify-between gap-2 px-1.5 pt-2 pb-0.5">
                 <span
-                  className={cx(
+                  className={cn(
                     'font-mono text-[0.75rem]',
                     chosen ? 'font-medium text-foreground' : 'text-foreground',
                   )}

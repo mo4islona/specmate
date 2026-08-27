@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Button, buttonClass, cx, ErrorNote, Icon, Popover, Select } from '../ui/index.ts'
+import { Button, buttonVariants, cn, ErrorNote, Icon, Popover, Select } from '../ui/index.ts'
 
 interface GateVerbsProps {
   readonly gateKey: string
@@ -63,7 +63,7 @@ export function GateVerbs({
               <Icon
                 name="chevron-down"
                 size="xs"
-                className={cx('transition-transform', reworking && 'rotate-180')}
+                className={cn('transition-transform', reworking && 'rotate-180')}
               />
             </Button>
           }
@@ -87,7 +87,7 @@ export function GateVerbs({
           </Select>
 
           <Button
-            variant="danger"
+            variant="destructive"
             className="mt-2.5 w-full"
             disabled={!comment.trim() || !reworkTarget || busy}
             onClick={onRework}
@@ -102,7 +102,7 @@ export function GateVerbs({
           // A span rather than a disabled button: nothing happens here, and what
           // it reports — the cap, and that it is used up — is a status.
           <span
-            className={`${buttonClass('ghost')} cursor-not-allowed opacity-45`}
+            className={cn(buttonVariants({ variant: 'ghost' }), 'cursor-not-allowed opacity-45')}
             title={`${redirect.used} of ${redirect.limit} ${redirect.cap.replaceAll('_', ' ')} used`}
             role="status"
           >

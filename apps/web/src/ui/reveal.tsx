@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 interface RevealProps {
   /**
@@ -19,7 +19,7 @@ interface RevealProps {
 export function Reveal({ refreshing = false, className, children }: RevealProps) {
   return (
     <div
-      className={cx('reveal', refreshing && 'reveal-stale', className)}
+      className={cn('reveal', refreshing && 'reveal-stale', className)}
       aria-busy={refreshing || undefined}
     >
       {children}

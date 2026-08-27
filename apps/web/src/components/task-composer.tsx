@@ -4,7 +4,7 @@ import {
   Button,
   Console,
   ConsoleField,
-  cx,
+  cn,
   ErrorNote,
   type ConsoleTone as SlabTone,
 } from '../ui/index.ts'
@@ -118,7 +118,7 @@ export function TaskComposer({
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 pt-3">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-mono text-[0.72rem] leading-5">
             <Mark tone={destination.tone} />
-            <span className={cx('min-w-0', signalText('asking'))}>
+            <span className={cn('min-w-0', signalText('asking'))}>
               {question.label} · question {question.index + 1} of {question.total}
             </span>
 
@@ -205,7 +205,7 @@ export function TaskComposer({
         <span className="flex-1" />
 
         <Button
-          variant={urgent ? 'attention' : 'primary'}
+          variant={urgent ? 'warning' : 'primary'}
           className="min-h-9 shrink-0 py-1.5"
           type="submit"
           disabled={disabled || !value.trim()}
@@ -222,7 +222,7 @@ export function TaskComposer({
 /** The console's mood in one character — breathing while a node runs. */
 function Mark({ tone }: { tone: ConsoleTone }) {
   return (
-    <span className={cx('shrink-0 leading-none', markClass(tone))} aria-hidden="true">
+    <span className={cn('shrink-0 leading-none', markClass(tone))} aria-hidden="true">
       ●
     </span>
   )
@@ -259,7 +259,7 @@ function Pager({
           aria-label={`Question ${step + 1}`}
           aria-current={step === index ? 'true' : undefined}
           disabled={disabled}
-          className={cx(
+          className={cn(
             'grid h-5 w-5 place-items-center rounded-md text-[0.62rem] transition-colors',
             step === index
               ? 'bg-foreground/15 font-semibold text-foreground'

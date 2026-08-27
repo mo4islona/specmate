@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useState } from 'react'
 import { type ArtifactSummary, getArtifact } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
-import { cx, Icon, MicroLabel, QuietLink, TextButton } from '../ui/index.ts'
+import { cn, Icon, MicroLabel, QuietLink, TextButton } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { KickoffBrief } from './kickoff-brief.tsx'
 
@@ -85,7 +85,7 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                 type="button"
                 aria-expanded={selected}
                 onClick={() => setPicked(selected ? null : document.id)}
-                className={cx(
+                className={cn(
                   'flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left transition-colors',
                   selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
                 )}
@@ -140,7 +140,7 @@ function DocumentReader({
       {content === null ? (
         <p className="pt-2 font-mono text-[0.68rem] text-muted-foreground">Reading the document…</p>
       ) : (
-        <div className={cx('relative pt-2', long && !whole && 'max-h-96 overflow-hidden')}>
+        <div className={cn('relative pt-2', long && !whole && 'max-h-96 overflow-hidden')}>
           {document.kind === 'proposal' ? (
             <KickoffBrief content={content} />
           ) : (

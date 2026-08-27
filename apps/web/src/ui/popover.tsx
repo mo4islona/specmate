@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 export type PopoverSide = 'top' | 'bottom'
 
@@ -93,7 +93,7 @@ export function Popover({
         <div
           {...aria}
           style={{ width }}
-          className={cx('popover absolute left-0 z-30', SIDE[side], PADDING[padding])}
+          className={cn('popover absolute left-0 z-30', SIDE[side], PADDING[padding])}
         >
           {children}
         </div>

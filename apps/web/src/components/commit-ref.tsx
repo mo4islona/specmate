@@ -1,5 +1,5 @@
 import { commitUrl, shortCommit } from '../lib/repo-link.ts'
-import { cx } from '../ui/index.ts'
+import { cn } from '../ui/index.ts'
 
 interface CommitRefProps {
   readonly sha: string
@@ -14,7 +14,7 @@ interface CommitRefProps {
  */
 export function CommitRef({ sha, repoUrl, className = '' }: CommitRefProps) {
   const href = commitUrl(repoUrl, sha)
-  const classes = cx('font-mono text-[0.68rem] text-muted-foreground', className)
+  const classes = cn('font-mono text-[0.68rem] text-muted-foreground', className)
 
   if (!href) {
     return (
@@ -26,7 +26,7 @@ export function CommitRef({ sha, repoUrl, className = '' }: CommitRefProps) {
 
   return (
     <a
-      className={cx(
+      className={cn(
         classes,
         'underline decoration-border-strong underline-offset-2 hover:text-foreground',
       )}

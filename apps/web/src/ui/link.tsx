@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'wouter'
-import { cx } from './cx.ts'
+import { cn } from './cn.ts'
 
 interface QuietLinkProps {
   readonly href: string
@@ -15,7 +15,7 @@ interface QuietLinkProps {
  */
 export function QuietLink({ href, className, children }: QuietLinkProps) {
   return (
-    <Link href={href} className={cx('link-quiet', className)}>
+    <Link href={href} className={cn('link-quiet', className)}>
       {children}
     </Link>
   )
@@ -37,7 +37,7 @@ export function InlineLink({ href, className, children }: InlineLinkProps) {
   return (
     <Link
       href={href}
-      className={cx(
+      className={cn(
         'underline decoration-border-strong underline-offset-4 hover:decoration-current',
         className,
       )}

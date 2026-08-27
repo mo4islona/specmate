@@ -98,7 +98,7 @@ function literalsIn(source: string): string[] {
 
 /**
  * Every class list the file hands to an element: the quoted form, and whatever
- * strings are inside an expression container — a `cx(…)`, a ternary, a lookup
+ * strings are inside an expression container — a `cn(…)`, a ternary, a lookup
  * in a tone map spelled inline.
  *
  * Reading `className` rather than every string in the file is what keeps a
@@ -338,8 +338,8 @@ describe('kit discipline', () => {
     const parts = definedClasses()
 
     expect(parts.has('panel')).toBe(true)
-    expect(parts.has('button-primary')).toBe(true)
-    expect(paletteRoles().has('accent')).toBe(true)
+    expect(parts.has('chip')).toBe(true)
+    expect(paletteRoles().has('primary')).toBe(true)
     // The class four Settings fields asked for and never had.
     expect(parts.has('input')).toBe(false)
   })
@@ -347,7 +347,7 @@ describe('kit discipline', () => {
   it('reads a class list out of both attribute forms', () => {
     const source = [
       'const a = <p className="panel space-y-5" />',
-      "const b = <p className={cx('subpanel', open && 'chip')} />",
+      "const b = <p className={cn('subpanel', open && 'chip')} />",
       'const c = <Specimen name="chip" />',
     ].join('\n')
 

@@ -2,7 +2,7 @@ import { useNow } from '../hooks/use-now.ts'
 import type { PipelineNodeView } from '../lib/task-pipeline.ts'
 import { nodeSpend } from '../lib/task-pipeline.ts'
 import { formatDuration } from '../lib/task-thread.ts'
-import { Button, cx, Dot, HoverHint, Icon } from '../ui/index.ts'
+import { Button, cn, Dot, HoverHint, Icon } from '../ui/index.ts'
 import { CommitRef } from './commit-ref.tsx'
 import { NodeHint } from './node-hint.tsx'
 import { nodeDot, nodeName, nodeSignal, signalBreathes, signalDot, signalText } from './tone.ts'
@@ -69,7 +69,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
           live={!current && signalBreathes(nodeSignal(node.state))}
         />
         <span
-          className={cx(
+          className={cn(
             'truncate text-[0.95rem]',
             current ? signalText('settled') : nodeName(node.state),
           )}
@@ -80,7 +80,7 @@ export function StepHeader({ node, repoUrl, current, notice = null }: StepHeader
 
       {notice && (
         <p
-          className={cx(
+          className={cn(
             'min-w-0 font-mono text-[0.66rem]',
             notice.tone === 'danger' ? signalText('stopped') : 'text-muted-foreground',
           )}

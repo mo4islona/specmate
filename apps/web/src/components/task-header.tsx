@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { TaskStateSentence } from '../lib/task-state.ts'
-import { cx, Dot } from '../ui/index.ts'
+import { cn, Dot } from '../ui/index.ts'
 import { signalBreathes, signalDot, signalText, stateSignal } from './tone.ts'
 
 interface TaskHeaderProps {
@@ -24,9 +24,9 @@ export function TaskHeader({ title, state, badges }: TaskHeaderProps) {
     <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
       <h1 className="min-w-0 break-words text-lg font-semibold tracking-tight">{title}</h1>
 
-      <p className={cx('flex min-w-0 items-baseline gap-1.5 text-[0.82rem]', signalText(signal))}>
+      <p className={cn('flex min-w-0 items-baseline gap-1.5 text-[0.82rem]', signalText(signal))}>
         <Dot
-          className={cx('translate-y-[-0.1rem]', signalDot(signal))}
+          className={cn('translate-y-[-0.1rem]', signalDot(signal))}
           live={signalBreathes(signal)}
         />
         <span className="min-w-0">
