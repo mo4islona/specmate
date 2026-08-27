@@ -39,7 +39,7 @@ describe('AttentionScreen', () => {
     const cards = container.querySelectorAll('li')
     expect(cards).toHaveLength(2)
     for (const card of cards) {
-      expect.soft(card.querySelector('.dot-live[data-halo]')).not.toBeNull()
+      expect.soft(card.querySelector('.animate-breath[data-halo]')).not.toBeNull()
     }
   })
 
@@ -47,6 +47,6 @@ describe('AttentionScreen', () => {
     const { container } = draw([])
 
     expect(await screen.findByText('Nothing needs the owner')).not.toBeNull()
-    expect(container.querySelector('.dot-live')).toBeNull()
+    expect(container.querySelector('.animate-breath')).toBeNull()
   })
 })

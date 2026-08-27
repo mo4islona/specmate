@@ -1,3 +1,4 @@
+import * as ProgressPrimitive from '@radix-ui/react-progress'
 import { cn } from './cn.ts'
 
 interface MeterProps {
@@ -11,21 +12,30 @@ interface MeterProps {
  * A count as a length. The fraction beside it is the exact answer; this is the
  * one a reader takes in without reading — which is the whole point of a pass
  * having a bar rather than only a number.
+ *
+ * The maximum is floored at one because a pass with nothing in it still renders:
+ * Radix reads a zero maximum as a mistake and says so, and an empty bar is not
+ * a mistake, it is a pass that has not been given any work yet.
  */
 export function Meter({ done, total, label, className }: MeterProps) {
-  const filled = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0
+  const max = Math.max(1, total)
+  const value = Math.min(max, Math.max(0, done))
 
   return (
-    <div
-      className={cn('meter', className)}
-      role="progressbar"
+    <ProgressPrimitive.Root
+      value={value}
+      max={max}
       aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
+      className={cn(
+        'h-[0.3rem] w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-foreground)_9%,transparent)]',
+        className,
+      )}
     >
-      <div className="meter-fill" style={{ width: `${filled * 100}%` }} />
-    </div>
+      <ProgressPrimitive.Indicator
+        className="h-full rounded-[inherit] bg-success transition-[width] duration-[180ms] ease-out"
+        style={{ width: `${(value / max) * 100}%` }}
+      />
+    </ProgressPrimitive.Root>
   )
 }
 
@@ -56,12 +66,16 @@ function blocks(additions: number, deletions: number): { added: number; removed:
   return { added, removed: BLOCKS - added }
 }
 
+/** Five blocks for a file's weight, so a stack of them compares at a glance. */
+const BLOCK = 'h-[0.3rem] w-[0.3rem] rounded-[1.5px]'
+const BLOCK_EMPTY = 'bg-[color-mix(in_srgb,var(--color-foreground)_16%,transparent)]'
+
 export function StatBar({ additions, deletions, className }: StatBarProps) {
   const { added, removed } = blocks(additions, deletions)
 
   return (
     <span
-      className={cn('stat-bar', className)}
+      className={cn('inline-flex gap-[2px]', className)}
       aria-hidden="true"
       title={`+${additions} −${deletions}`}
     >
@@ -71,9 +85,10 @@ export function StatBar({ additions, deletions, className }: StatBarProps) {
           // biome-ignore lint/suspicious/noArrayIndexKey: static list, no reordering
           key={index}
           className={cn(
-            'stat-block',
-            index < added && 'stat-block-add',
-            index >= added && index < added + removed && 'stat-block-remove',
+            BLOCK,
+            index < added && 'bg-success',
+            index >= added && index < added + removed && 'bg-destructive',
+            index >= added + removed && BLOCK_EMPTY,
           )}
         />
       ))}

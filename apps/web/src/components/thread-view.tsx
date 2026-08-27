@@ -92,7 +92,10 @@ function LiveLine({ live }: { live: LiveActivity }) {
       aria-live="polite"
       className="flex items-baseline gap-2 py-[0.12rem] font-mono text-[0.72rem] leading-5"
     >
-      <span className={cn('dot-live shrink-0 leading-none', signalText('live'))} aria-hidden="true">
+      <span
+        className={cn('animate-breath shrink-0 leading-none', signalText('live'))}
+        aria-hidden="true"
+      >
         +
       </span>
 
@@ -138,7 +141,7 @@ const RunLine = memo(function RunLine({
         <span
           className={cn(
             'shrink-0 leading-none',
-            entry.live ? `dot-live ${signalText('live')}` : BULLET_TONE[entry.tone],
+            entry.live ? `animate-breath ${signalText('live')}` : BULLET_TONE[entry.tone],
           )}
           aria-hidden="true"
         >

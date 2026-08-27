@@ -114,7 +114,7 @@ interface DotProps {
  * over the dot, and 30% of a colour over 100% of it is it.
  */
 const HALO =
-  "relative before:absolute before:-inset-[0.2rem] before:rounded-[inherit] before:bg-inherit before:opacity-30 before:content-['']"
+  'relative before:absolute before:-inset-[0.2rem] before:rounded-[inherit] before:bg-inherit before:opacity-30'
 
 /** A state as a mark rather than a word. One size, everywhere it appears. */
 export function Dot({ className, live = false, halo = false }: DotProps) {
@@ -127,7 +127,7 @@ export function Dot({ className, live = false, halo = false }: DotProps) {
       data-halo={halo || undefined}
       className={cn(
         'h-1.5 w-1.5 shrink-0 rounded-full',
-        live && 'dot-live',
+        live && 'animate-breath',
         halo && HALO,
         className,
       )}

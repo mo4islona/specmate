@@ -69,7 +69,7 @@ describe('TaskNavigation', () => {
 
     const rows = await screen.findAllByRole('link')
     const marks = rows.map((row) => ({
-      breathes: row.querySelector('.dot-live') !== null,
+      breathes: row.querySelector('.animate-breath') !== null,
       halo: row.querySelector('[data-halo]') !== null,
     }))
 

@@ -95,7 +95,7 @@ describe('Working', () => {
     const { container } = render(<Working>loading the whole edit…</Working>)
 
     expect.soft(container.textContent).toBe('loading the whole edit...')
-    expect.soft(container.querySelectorAll('.working-dot')).toHaveLength(3)
+    expect.soft(container.querySelectorAll('.animate-working')).toHaveLength(3)
   })
 })
 

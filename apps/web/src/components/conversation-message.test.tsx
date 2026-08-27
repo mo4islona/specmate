@@ -34,7 +34,7 @@ describe('conversation message item', () => {
     // The one device that says something is happening: a breathing mark beside
     // the line that says what. The ring that used to breathe around the whole
     // row said it a second time, in the form the owner found hardest to ignore.
-    expect(rendered).toContain('dot-live')
+    expect(rendered).toContain('animate-breath')
     expect(rendered).not.toContain('attention-pulse')
   })
 
