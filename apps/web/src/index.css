@@ -278,98 +278,24 @@ body {
   }
 }
 
-/* ── The parts ─────────────────────────────────────────────────────────────
-   In Tailwind's `components` layer, and that placement is load-bearing: layered
-   rules lose to unlayered ones no matter how specific either is, so a class
-   defined outside every layer quietly beat every utility a caller wrote beside
-   it. `panel border-destructive/35` drew a plain border. `chip py-2` kept the chip's
-   own. `subpanel bg-destructive/10` came out grey. Inside the layer, a utility
-   written next to one of these means what it says. */
+/* ── What is left in CSS ───────────────────────────────────────────────────
+   The parts moved to `src/ui`, where a variant table and `cn` decide what a
+   class list comes out as. What stays here is what a utility cannot say: a
+   selector that reaches into markup nobody in this app writes.
+
+   A diff line is coloured by the shape of a line rather than by anything the
+   caller knows — `.diff-document > .diff-line` sizes every tinted row to the
+   file rather than to the window onto it, and the split reading gives its rows
+   a grid. The syntax hues land on spans Prism emits. `.artifact-document` is a
+   stylesheet for rendered markdown, which arrives as HTML. `.scroll-thin` draws
+   a scrollbar, and a scrollbar is a pseudo-element. `.mark-reach` animates the
+   paths inside an SVG.
+
+   The layer still matters for all of them: layered rules lose to unlayered ones
+   no matter how specific either is, so one of these defined outside every layer
+   would quietly beat a utility written beside it. Inside the layer, a utility
+   written next to one means what it says. */
 @layer components {
-  /* ── The console ───────────────────────────────────────────────────────────
-     Where the owner speaks. It wears the material and the corner of the balloon
-     their words become in the thread, so sending reads as one thing moving
-     rather than two widgets exchanging text.
-
-     Depth carries what a frame used to carry, and the state's colour appears in
-     two places only — the mark that opens the block, and the button that acts.
-     The rail down the left side said the same thing a third time. */
-  .console {
-    /* Neutral until the state has something to say. A console that glowed the
-       accent whenever it held the caret was the loudest thing on a screen where
-       nothing was happening. */
-    --console-tone: var(--color-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: 1rem;
-    background: var(--color-popover);
-    transition:
-      border-color 140ms ease,
-      box-shadow 140ms ease;
-  }
-
-  .console:focus-within {
-    border-color: color-mix(in srgb, var(--console-tone) 22%, var(--color-border));
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--console-tone) 6%, transparent);
-  }
-
-  .console-asking {
-    --console-tone: var(--color-warning);
-  }
-
-  .console-stopped {
-    --console-tone: var(--color-destructive);
-  }
-
-  .console-spent {
-    --console-tone: var(--color-muted-foreground);
-  }
-
-  /* The thread has no floor. Its last lines dissolve into the console rather
-     than stopping at a rule: reading and writing are one column. */
-  .console-dock {
-    position: relative;
-  }
-
-  /* Shorter than the padding the thread reserves under its last line, so the
-     fade lands on empty space. At 2rem against no reserve it was washing out
-     the bottom half of whatever line the record ended on. */
-  .console-dock::before {
-    content: "";
-    position: absolute;
-    right: 0;
-    bottom: 100%;
-    left: 0;
-    height: 1.5rem;
-    background: linear-gradient(to top, var(--color-background), transparent);
-    pointer-events: none;
-  }
-
-  .console-field {
-    display: block;
-    width: 100%;
-    min-height: 2.4rem;
-    max-height: 38vh;
-    overflow-y: auto;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    color: var(--color-foreground);
-    font-size: 0.9rem;
-    line-height: 1.65;
-    /* Its height is what is in it. A fixed box with a drag handle in the corner
-       is furniture, and nobody drags it. */
-    resize: none;
-  }
-
-  .console-field::placeholder {
-    color: var(--color-muted-foreground);
-  }
-
-  .console-field:disabled {
-    cursor: not-allowed;
-    color: var(--color-muted-foreground);
-  }
-
   /* Scroll panes inside the page (thread, rail) — visible, but not furniture.
      This class is where the app says "this box scrolls", so it is also where the
      box is made a containing block. `overflow` only clips a descendant whose
