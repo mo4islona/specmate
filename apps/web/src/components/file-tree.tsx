@@ -18,9 +18,9 @@ export function FileList({ groups, selected, viewed, onSelect }: FileListProps) 
   return (
     <div className="min-w-0">
       {groups.map((group) => (
-        <section key={group.directory} className="mt-2 min-w-0 first:mt-1">
+        <section key={group.directory} className="mt-3 min-w-0 first:mt-2">
           {group.directory !== '' && (
-            <FolderName className="truncate ps-0.5" title={group.directory}>
+            <FolderName className="mb-0.5 truncate" title={group.directory}>
               {shortDirectory(group.directory)}
             </FolderName>
           )}
@@ -32,15 +32,20 @@ export function FileList({ groups, selected, viewed, onSelect }: FileListProps) 
                   active={selected === file.path}
                   onClick={() => onSelect(file)}
                   title={file.path}
-                  className="flex min-w-0 items-center justify-between gap-2"
+                  className="flex min-w-0 items-center gap-2"
                 >
-                  <span className="flex min-w-0 items-center gap-1.5 ps-2">
+                  {/* The tick keeps its room whether or not it is drawn. Put in
+                      the line only once it is earned, it shifted the name beside
+                      it a character to the right the moment the file was read,
+                      and the column lost its edge one row at a time. */}
+                  <span className="flex w-3 shrink-0 justify-center">
                     {viewed.has(file.path) && (
                       <Icon name="check" size="xs" label="viewed" className="text-muted" />
                     )}
-                    <span className="min-w-0 truncate font-mono text-xs">
-                      {fileName(file.path)}
-                    </span>
+                  </span>
+
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    {fileName(file.path)}
                   </span>
 
                   <StatCounts file={file} />
