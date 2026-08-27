@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import {
   ConversationResult,
   checkDecisionsPresent,
@@ -23,6 +23,40 @@ describe('RESULT.json contract', () => {
     expect(parsed.value.artifacts_changed).toEqual([])
     expect(parsed.value.decisions_needed).toEqual([])
     expect(parsed.value.notes_md).toBe('')
+  })
+
+  it('drops a manifest line whose kind is not an artifact kind', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        artifacts_changed: [
+          { path: 'openspec/changes/x/proposal.md', kind: 'proposal', op: 'created' },
+          { path: 'packages/react/src/chart.test.tsx', kind: 'test', op: 'modified' },
+        ],
+      }),
+    )
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.artifacts_changed).toEqual([
+      { path: 'openspec/changes/x/proposal.md', kind: 'proposal', op: 'created' },
+    ])
+  })
+
+  it('a bad manifest line does not cost a checking role its verdict', () => {
+    const parsed = parseStageResult(
+      JSON.stringify({
+        ...minimal,
+        role: 'validator',
+        verdict: 'approve',
+        artifacts_changed: [{ path: 'chart.test.tsx', kind: 'test', op: 'modified' }],
+      }),
+    )
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.verdict).toBe('approve')
+    expect(parsed.value.artifacts_changed).toEqual([])
   })
 
   test('rejects malformed JSON with a readable error', () => {
