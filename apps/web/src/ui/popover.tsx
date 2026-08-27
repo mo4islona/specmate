@@ -1,12 +1,8 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import * as PopoverPrimitive from '@radix-ui/react-popover'
+import type { ReactNode } from 'react'
 import { cn } from './cn.ts'
 
 export type PopoverSide = 'top' | 'bottom'
-
-const SIDE: Record<PopoverSide, string> = {
-  top: 'bottom-full mb-2',
-  bottom: 'top-full mt-2',
-}
 
 const PADDING = {
   /** Prose and a verb under it — a confirmation, a rework target. */
@@ -30,15 +26,19 @@ interface PopoverProps {
 }
 
 /**
- * Something opened over the page, and the two ways out of it that every one of
- * them needs: click past it, or press Escape. Three of these were written by
- * hand at three widths, two z-indexes and two paddings, and only one of the
- * three could be dismissed without answering it.
+ * Anything that opens over the page — a rework target, a confirmation, a menu.
+ * One surface for all of them, and the lifted one: a popover is by definition
+ * above whatever it covers, and half of them cover the console, which already
+ * sits on that surface.
  *
- * It is deliberately not a positioning engine. Every popover in this app opens
- * off a control in normal flow, so the anchor is the wrapper and the only
- * choice is which side of it — above, where a console's control row sits at the
- * foot of the screen, or below, where a picker sits at the top of a form.
+ * The two ways out that every one of them needs — click past it, or press
+ * Escape — are Radix's now. Three of these were written by hand at three widths,
+ * two z-indexes and two paddings, and only one of the three could be dismissed
+ * without answering it.
+ *
+ * The trigger is an `Anchor` rather than a `Trigger`: every call site already
+ * owns the open state and toggles it on its own control, and a `Trigger` would
+ * toggle it a second time on the same click.
  */
 export function Popover({
   open,
@@ -54,50 +54,37 @@ export function Popover({
   // The role and the name it needs travel together: a bare `aria-label` on a
   // `div` with no role names nothing.
   const aria = role ? { role, 'aria-label': label } : {}
-  const root = useRef<HTMLDivElement | null>(null)
-  // The listeners are bound once per open, not once per render: `onDismiss` is
-  // rebuilt by every parent render, and binding on its identity re-subscribes
-  // the document on each one.
-  const dismiss = useRef(onDismiss)
-
-  useEffect(() => {
-    dismiss.current = onDismiss
-  })
-
-  useEffect(() => {
-    if (!open) return
-
-    function onPointerDown(event: PointerEvent): void {
-      if (!root.current?.contains(event.target as Node)) dismiss.current()
-    }
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') dismiss.current()
-    }
-
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
 
   return (
-    <div ref={root} className="relative">
-      {trigger}
+    <PopoverPrimitive.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onDismiss()
+      }}
+    >
+      <PopoverPrimitive.Anchor className="relative">{trigger}</PopoverPrimitive.Anchor>
 
-      {open && (
-        // Above the sticky headers, which sit at 20 — a popover that opens
-        // behind the bar it was opened from is a popover nobody can read.
-        <div
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
           {...aria}
+          side={side}
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
           style={{ width }}
-          className={cn('popover absolute left-0 z-30', SIDE[side], PADDING[padding])}
+          // Radix returns the focus to the anchor on close, which is what a
+          // keyboard needs; it also focuses the content on open, which for a
+          // menu of rows is right and for a confirmation is where the verb is.
+          className={cn(
+            'z-50 rounded-xl border border-border-strong bg-popover shadow-[var(--shadow-popover)]',
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+            PADDING[padding],
+          )}
         >
           {children}
-        </div>
-      )}
-    </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }
