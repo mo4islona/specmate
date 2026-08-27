@@ -70,7 +70,7 @@ describe('TaskNavigation', () => {
     const rows = await screen.findAllByRole('link')
     const marks = rows.map((row) => ({
       breathes: row.querySelector('.dot-live') !== null,
-      halo: row.querySelector('.dot-halo') !== null,
+      halo: row.querySelector('[data-halo]') !== null,
     }))
 
     // Needs input, Active, Complete — in the order the rail draws its groups.

@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Button, buttonVariants, cn, ErrorNote, Icon, Popover, Select, SelectOption } from '../ui/index.ts'
+import {
+  Button,
+  buttonVariants,
+  cn,
+  ErrorNote,
+  Icon,
+  Popover,
+  Select,
+  SelectOption,
+} from '../ui/index.ts'
 
 interface GateVerbsProps {
   readonly gateKey: string

@@ -13,15 +13,7 @@ const CSS = readFileSync(join(SRC, 'index.css'), 'utf8')
  * assembles. The diff face was the other one until it grew a variant and a
  * second caller, which is what made it a part: it is `Diff` now.
  */
-const LAYOUT_CLASSES = new Set([
-  'shell-main',
-  'shell-column',
-  'rail-inset',
-  'scroll-thin',
-  'dot-live',
-  'mark-reach',
-  'artifact-document',
-])
+const LAYOUT_CLASSES = new Set(['scroll-thin', 'dot-live', 'mark-reach', 'artifact-document'])
 
 /** Utility prefixes whose value is a colour, and so must resolve to a theme role. */
 const COLOUR_PREFIXES = new Set([
@@ -188,10 +180,22 @@ function bareUtility(token: string): string {
   return (token.split(':').at(-1) ?? token).replace(/^!/, '')
 }
 
-/** `bg-primary/[0.09]`, `text-destructive`, `border-primary/40` — the role, or null. */
+/**
+ * The sides a border or a divider can name before it names a colour, as in
+ * `border-b-foreground`. Without this the side reads as the first half of the
+ * role and every one-sided rule in the app looks like a colour that does not
+ * exist.
+ */
+const SIDES = new Set(['t', 'r', 'b', 'l', 'x', 'y', 's', 'e'])
+
+/** `bg-primary/[0.09]`, `text-destructive`, `border-b-foreground` — the role, or null. */
 function roleOf(token: string): string | null {
   const [prefix, ...rest] = bareUtility(token).split('-')
   if (!prefix || !COLOUR_PREFIXES.has(prefix)) return null
+
+  // `border-b` on its own is a width, and its role is the empty string; only
+  // drop the side when something follows it.
+  if (rest.length > 1 && SIDES.has(rest[0] as string)) rest.shift()
 
   return rest.join('-').split('/')[0] ?? null
 }
@@ -241,14 +245,14 @@ describe('kit discipline', () => {
       const tokens = classLists(readFileSync(path, 'utf8')).flatMap((list) => list.split(/\s+/))
 
       for (const token of new Set(tokens)) {
-        const [prefix, ...rest] = bareUtility(token).split('-')
-        const value = rest.join('-')
+        const role = roleOf(token)
 
-        if (!prefix || !COLOUR_PREFIXES.has(prefix)) continue
-        // A digit, a slash or a bracket makes it a size, an opacity or an
-        // arbitrary value rather than a role.
-        if (!/^[a-z]+(-[a-z]+)*$/.test(value)) continue
-        if (NOT_A_COLOUR.has(value) || palette.has(value)) continue
+        if (role === null) continue
+        // A digit or a bracket makes it a size or an arbitrary value rather
+        // than a role. An opacity is not one of those any more: `roleOf` drops
+        // it, so `bg-primary/40` is checked as `primary` rather than skipped.
+        if (!/^[a-z]+(-[a-z]+)*$/.test(role)) continue
+        if (NOT_A_COLOUR.has(role) || palette.has(role)) continue
 
         offences.push(`${relative(path)} writes ${token}`)
       }
@@ -337,8 +341,8 @@ describe('kit discipline', () => {
   it('reads the stylesheet it is checking against', () => {
     const parts = definedClasses()
 
-    expect(parts.has('panel')).toBe(true)
-    expect(parts.has('chip')).toBe(true)
+    expect(parts.has('diff-document')).toBe(true)
+    expect(parts.has('syntax-keyword')).toBe(true)
     expect(paletteRoles().has('primary')).toBe(true)
     // The class four Settings fields asked for and never had.
     expect(parts.has('input')).toBe(false)

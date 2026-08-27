@@ -123,7 +123,9 @@ describe('theme palettes', () => {
 
     // The label on a filled control, against the fill it labels.
     expect.soft(ratio('--color-primary-foreground', '--color-primary')).toBeGreaterThanOrEqual(4.5)
-    expect.soft(ratio('--color-primary-foreground', '--color-destructive')).toBeGreaterThanOrEqual(4.5)
+    expect
+      .soft(ratio('--color-primary-foreground', '--color-destructive'))
+      .toBeGreaterThanOrEqual(4.5)
     expect(ratio('--color-warning-foreground', '--color-warning')).toBeGreaterThanOrEqual(4.5)
   })
 

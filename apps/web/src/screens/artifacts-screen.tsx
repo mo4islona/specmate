@@ -71,7 +71,10 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                           active={open}
                           className="flex min-w-0 items-center gap-2.5"
                         >
-                          <Icon name="file" className={open ? 'text-foreground' : 'text-muted-foreground'} />
+                          <Icon
+                            name="file"
+                            className={open ? 'text-foreground' : 'text-muted-foreground'}
+                          />
                           <span className="min-w-0 flex-1">
                             <span
                               className={cn(

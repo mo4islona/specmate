@@ -39,7 +39,7 @@ describe('AttentionScreen', () => {
     const cards = container.querySelectorAll('li')
     expect(cards).toHaveLength(2)
     for (const card of cards) {
-      expect.soft(card.querySelector('.dot-live.dot-halo')).not.toBeNull()
+      expect.soft(card.querySelector('.dot-live[data-halo]')).not.toBeNull()
     }
   })
 

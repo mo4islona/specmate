@@ -22,8 +22,8 @@
 export { Badge, type BadgeTone } from './badge.tsx'
 export { Button, ButtonLink, type ButtonVariant, buttonVariants, IconButton } from './button.tsx'
 export { Chip } from './chip.tsx'
-export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.tsx'
 export { cn } from './cn.ts'
+export { Console, ConsoleDock, ConsoleField, type ConsoleTone } from './console.tsx'
 export { Diff, type DiffView } from './diff.tsx'
 export { Drawer } from './drawer.tsx'
 export {

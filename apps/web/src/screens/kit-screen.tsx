@@ -395,7 +395,9 @@ export function KitScreen() {
         <ul className="space-y-3">
           <ListRow
             primary={
-              <p className="break-all font-mono text-xs text-muted-foreground">github.com/example/api</p>
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                github.com/example/api
+              </p>
             }
             secondary={
               <Note size="xs" className="mt-1">
@@ -406,7 +408,7 @@ export function KitScreen() {
           />
         </ul>
 
-        <div className="rail-inset rounded-xl border border-border">
+        <div className="p-[var(--rail-gutter)] rounded-xl border border-border">
           <NavRow href="/kit" active className="flex items-center gap-2.5">
             <Dot className="bg-status-active" />
             <span className="text-[0.82rem]">selected row</span>
@@ -632,7 +634,7 @@ export function KitScreen() {
         </Specimen>
 
         <Specimen name="SkeletonRows · mark, as the sidebar waits">
-          <div className="rail-inset rounded-xl border border-border">
+          <div className="p-[var(--rail-gutter)] rounded-xl border border-border">
             <SkeletonRows rows={3} mark />
           </div>
         </Specimen>

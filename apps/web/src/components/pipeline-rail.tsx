@@ -57,7 +57,9 @@ export function PipelineRail({ nodes, selectedKey, onSelect }: PipelineRailProps
                     // the ✕ beside it contradicts.
                     className={cn(
                       box,
-                      selectedKey === node.key ? 'bg-foreground/[0.09]' : 'hover:bg-foreground/[0.05]',
+                      selectedKey === node.key
+                        ? 'bg-foreground/[0.09]'
+                        : 'hover:bg-foreground/[0.05]',
                     )}
                   >
                     {row}
