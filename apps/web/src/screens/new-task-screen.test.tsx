@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -186,20 +185,31 @@ describe('the rail beside the request — AC-1910', () => {
     )
 
     const field = screen.getByLabelText('Request') as HTMLTextAreaElement
-    await userEvent.type(field, `fix the redirect in ${SPECMATE}`)
+
+    // Put the request in rather than typing it. What is under test is where the
+    // caret is when the answer lands, not the typing that got it there — and
+    // fifty keystrokes through a controlled field that re-measures its own
+    // height on every one of them is what made this the suite's flakiest test.
+    field.focus()
+    fireEvent.change(field, { target: { value: `fix the redirect in ${SPECMATE}` } })
     field.setSelectionRange(4, 4)
 
-    settle?.({
-      repository: {
-        resolved: true,
-        repoUrl: SPECMATE,
-        id: 'id-specmate',
-        via: 'request-url',
-        known: false,
-        candidates: [],
-      },
-      references: [],
-    } as unknown as Preview)
+    // Inside `act`, because resolving this is a React state update: left outside
+    // it, the re-render it causes races the assertions below.
+    await act(async () => {
+      settle?.({
+        repository: {
+          resolved: true,
+          repoUrl: SPECMATE,
+          id: 'id-specmate',
+          via: 'request-url',
+          known: false,
+          candidates: [],
+        },
+        references: [],
+      } as unknown as Preview)
+    })
+
     await screen.findByText('example/specmate')
 
     expect(document.activeElement).toBe(field)

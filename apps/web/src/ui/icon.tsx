@@ -4,11 +4,15 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
+  Circle,
+  CircleHelp,
+  CircleSmall,
   File,
   GitPullRequest,
   Info,
   type LucideIcon,
   Maximize2,
+  Minus,
   Settings,
   X,
 } from 'lucide-react'
@@ -41,6 +45,15 @@ const GLYPHS = {
   repo: BookMarked,
   settings: Settings,
   unfold: ChevronsUpDown,
+
+  // The six a pipeline node wears. They were typed characters until now — a `✓`
+  // and a `○` set in the rail's mono face, which is exactly what the rule at the
+  // foot of this file is about: the tick sat off the box it was meant to fill
+  // and the ring was a hairline beside a solid dot.
+  waiting: CircleHelp,
+  running: CircleSmall,
+  skipped: Minus,
+  pending: Circle,
 } satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof GLYPHS
