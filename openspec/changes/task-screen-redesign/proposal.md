@@ -124,16 +124,21 @@ clocks — a step is read as a sequence, and the width that column took is the w
 
 ### Pass 6 — permanent deletion stays out of the thread
 
-An archived or cancelled task can be finished in the product and still remain in the task index
-forever. Permanent deletion is a rare administrative action, not part of reading or steering a
-task, so it does not gain a place in the task header or beside the console. The task row exposes
-an overflow menu; its last, separated action opens a confirmation that requires the task title
-before SpecMate removes the task and its subordinate records.
+A task can be finished, abandoned, or simply wrong from the first line, and still remain in the
+task index forever. Permanent deletion is a rare administrative action, not part of reading or
+steering a task, so it does not gain a place in the task header or beside the console. The task
+row exposes an overflow menu; its last, separated action opens a confirmation that requires a
+typed word before SpecMate removes the task and its subordinate records.
+
+Restricting deletion to a task that had already stopped left no way to clear the ones most worth
+clearing — a run that went wrong at the first node, a task parked on a question nobody will
+answer. So the state is not a gate: a task that is still live is cancelled on the way out, which
+is the same stop the owner would otherwise have to perform first.
 
 - `operator-ui` gains REQ-1800: permanent deletion is reachable through a task row's overflow
   menu without becoming a standing control on the task, and the confirmation states its scope.
-- `task-surface` gains REQ-1023: an archived or cancelled task can be deleted over REST after its
-  workspace is released; an active or failed task is rejected without mutation.
+- `task-surface` gains REQ-1023: any task can be deleted over REST after its workspace is
+  released, a live one being cancelled first.
 - `persistence` REQ-310 already defines the subordinate records removed with a task, so this pass
   needs no schema change.
 
@@ -150,19 +155,19 @@ before SpecMate removes the task and its subordinate records.
   living spec in a shape the same change then deletes. The task index also gains the concealed,
   confirmed permanent-delete action in REQ-1800.
 - `task-surface`: the feedback endpoint learns the one destination that reaches an agent, and
-  REQ-1023 adds deletion of an archived or cancelled task.
+  REQ-1023 adds deletion of a task in any state.
 - `agent-contracts`: confirmed guidance survives an unaccepted run.
 
 ## Impact
 
 - `apps/web` — the task screen, its rail, its thread, its console, and the two screens that
   become tabs. Routes gain `/tasks/:id/files` and `/tasks/:id/docs`; `/tasks/:id/artifacts` and
-  `/tasks/:id/diff` stop being screens. A task row gains a quiet overflow action and a typed-title
+  `/tasks/:id/diff` stop being screens. A task row gains a quiet overflow action and a typed-word
   confirmation for permanent deletion.
 - `apps/api` — the feedback endpoint writes an intervention where there is a node to target, and
   emits an event either way so the text appears in the thread it was typed into. The task detail
-  endpoint carries the task's pull request, which the header links. A delete endpoint releases
-  the workspace and removes an archived or cancelled task.
+  endpoint carries the task's pull request, which the header links. A delete endpoint cancels a
+  live task, releases the workspace, and removes the record.
 - `apps/orchestrator` — a stage that ends any way but accepted releases the guidance it claimed.
 - No schema change: the target and the claim are columns that already exist, and task-owned rows
   already cascade under persistence REQ-310.

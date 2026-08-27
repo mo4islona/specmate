@@ -1,30 +1,31 @@
 ## ADDED Requirements
 
-### Requirement: REQ-1023 — Archived and cancelled tasks can be deleted permanently
+### Requirement: REQ-1023 — A task can be deleted permanently from any state
 
-The API SHALL expose permanent deletion of a task and SHALL accept it only while the stored task
-is archived or cancelled. Eligibility MUST be decided from the stored state when deletion is
-attempted, never from a state supplied by the caller. An active or failed task SHALL be rejected
-as a conflict and MUST remain unchanged. Before removing the database record, the service SHALL
-release the task's workspace under REQ-710; if release fails, deletion SHALL fail and the task
-record MUST remain. Removing the task SHALL remove its subordinate records under REQ-310 and
-SHALL NOT rewrite commits, branches, or pull requests in the remote repository. A successful
-deletion SHALL return with no body; every later task-list or task-detail read SHALL behave as if
-that task does not exist.
+The API SHALL expose permanent deletion of a task and SHALL accept it whatever the stored task's
+state. The state MUST be read from the record when deletion is attempted, never taken from the
+caller. A task that has not reached a terminal state SHALL be cancelled first, so that its run
+stops, the questions it left open are dismissed, and the tasks blocked on it are freed before its
+record goes; a task already terminal SHALL be deleted as it stands. Before removing the database
+record, the service SHALL release the task's workspace under REQ-710; if release fails, deletion
+SHALL fail and the task record MUST remain. Removing the task SHALL remove its subordinate records
+under REQ-310 and SHALL NOT rewrite commits, branches, or pull requests in the remote repository.
+A successful deletion SHALL return with no body; every later task-list or task-detail read SHALL
+behave as if that task does not exist.
 
 #### Scenario: AC-1081 — Archived task is deleted
 
 - **WHEN** permanent deletion is requested for an archived task and its workspace release succeeds
 - **THEN** the task and its subordinate records SHALL be removed and the response SHALL succeed with no body
 
-#### Scenario: AC-1082 — Recoverable task is rejected
+#### Scenario: AC-1082 — Live task is cancelled on the way out
 
-- **WHEN** permanent deletion is requested for an active or failed task
-- **THEN** the API SHALL return a conflict and SHALL leave the task and its subordinate records unchanged
+- **WHEN** permanent deletion is requested for a task that has not reached a terminal state
+- **THEN** the task SHALL be cancelled before its record and subordinate records are removed, and the response SHALL succeed with no body
 
 #### Scenario: AC-1083 — Workspace release fails before deletion
 
-- **WHEN** permanent deletion is requested for an eligible task but its workspace cannot be released
+- **WHEN** permanent deletion is requested for a task but its workspace cannot be released
 - **THEN** the request SHALL fail and the task record SHALL remain readable
 
 #### Scenario: AC-1084 — Deleted task is absent from reads

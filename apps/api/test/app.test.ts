@@ -587,19 +587,29 @@ describeDb('api', () => {
     expect(response.status).toBe(204)
   })
 
-  it('rejects active and failed tasks before workspace release — AC-1082', async () => {
-    const guardedApp = appWithRelease(() => Promise.reject(new Error('release must not run')))
-    for (const status of ['planning', 'failed'] as const) {
-      const task = await createDeletionTask(status)
-      const response = await guardedApp.request(`/api/v1/tasks/${task.id}`, {
-        method: 'DELETE',
-        headers: auth,
-      })
+  it('cancels a live task on the way out — AC-1082', async () => {
+    const task = await createDeletionTask('planning')
+    await db.insert(runGraphs).values({ taskId: task.id, dag: EMPTY_DAG })
 
-      expect(response.status).toBe(409)
-      expect(await response.json()).toMatchObject({ code: 'conflict' })
-      expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(1)
-    }
+    const response = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })
+
+    expect(response.status).toBe(204)
+    expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(0)
+  })
+
+  it('also deletes a failed task — AC-1082', async () => {
+    const task = await createDeletionTask('failed')
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })
+
+    expect(response.status).toBe(204)
+    expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(0)
   })
 
   it('keeps the task when workspace release fails — AC-1083', async () => {

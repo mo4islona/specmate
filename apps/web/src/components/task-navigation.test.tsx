@@ -102,7 +102,7 @@ describe('TaskNavigation', () => {
     expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, 'page'])
   })
 
-  it('keeps permanent deletion behind terminal rows only — AC-1805, AC-1806', async () => {
+  it('keeps permanent deletion behind every row’s overflow menu — AC-1805, AC-1806', async () => {
     draw([
       task('archived', 'archived'),
       task('cancelled', 'cancelled'),
@@ -112,21 +112,32 @@ describe('TaskNavigation', () => {
 
     const actions = await screen.findAllByRole('button', { name: /More actions for/ })
     expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'More actions for active title',
       'More actions for archived title',
       'More actions for cancelled title',
+      'More actions for failed title',
     ])
 
     await userEvent.click(actions[0] as HTMLElement)
-    const menu = await screen.findByRole('menu', { name: 'Actions for archived title' })
+    const menu = await screen.findByRole('menu', { name: 'Actions for active title' })
     const items = within(menu).getAllByRole('menuitem')
 
     expect(within(menu).getByRole('separator')).toBeTruthy()
     expect(items.at(-1)?.textContent).toBe('Delete task permanently…')
-    expect(screen.queryByRole('button', { name: /More actions for failed/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /More actions for active/ })).toBeNull()
   })
 
-  it('requires the exact title, prevents a second request, clears caches, and leaves the deleted route — AC-1807, AC-1808', async () => {
+  it('warns that deleting a live task cancels its run first — AC-1806', async () => {
+    draw([task('active', 'implement')])
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'More actions for active title' }),
+    )
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete task permanently…' }))
+
+    expect(await screen.findByText(/^This cancels the run, then removes the task/)).toBeTruthy()
+  })
+
+  it('requires the confirmation word, prevents a second request, clears caches, and leaves the deleted route — AC-1807, AC-1808', async () => {
     const pending = Promise.withResolvers<void>()
     deleteTask.mockReturnValue(pending.promise)
     const { client, history } = draw(
@@ -144,13 +155,14 @@ describe('TaskNavigation', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Delete Remove old task permanently',
     })
-    const confirmation = within(dialog).getByLabelText('Type “Remove old task” to confirm')
+    const confirmation = within(dialog).getByLabelText('Type “delete” to confirm')
     const submit = within(dialog).getByRole('button', { name: 'Delete permanently' })
+    expect(within(dialog).getByText(/^This removes the task/)).toBeTruthy()
     expect(submit.hasAttribute('disabled')).toBe(true)
 
-    await userEvent.type(confirmation, 'Remove old')
+    await userEvent.type(confirmation, 'del')
     expect(submit.hasAttribute('disabled')).toBe(true)
-    await userEvent.type(confirmation, ' task')
+    await userEvent.type(confirmation, 'ete')
     await userEvent.click(submit)
 
     expect(deleteTask).toHaveBeenCalledTimes(1)
@@ -176,10 +188,7 @@ describe('TaskNavigation', () => {
       await screen.findByRole('button', { name: 'More actions for Keep on failure' }),
     )
     await userEvent.click(screen.getByRole('menuitem', { name: 'Delete task permanently…' }))
-    await userEvent.type(
-      await screen.findByLabelText('Type “Keep on failure” to confirm'),
-      'Keep on failure',
-    )
+    await userEvent.type(await screen.findByLabelText('Type “delete” to confirm'), 'Delete ')
     await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }))
 
     expect(await screen.findByText('Task deletion failed')).toBeTruthy()

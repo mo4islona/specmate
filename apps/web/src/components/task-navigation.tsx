@@ -73,15 +73,14 @@ export function TaskNavigation() {
             <ul className="mt-2 space-y-0.5">
               {rows.map((task) => {
                 const current = location.startsWith(`/tasks/${task.id}`)
-                const deletable = task.status === 'archived' || task.status === 'cancelled'
 
                 return (
-                  <li key={task.id} className={cn(deletable && 'group relative')}>
+                  <li key={task.id} className="group relative">
                     <NavRow
                       href={`/tasks/${task.id}`}
                       active={current}
                       title={task.title}
-                      className={cn('flex gap-2.5', deletable && 'pr-10')}
+                      className="flex gap-2.5 pr-10"
                     >
                       <Dot
                         className={`mt-[0.42rem] ${toneDot(statusTone(task.status))}`}
@@ -98,11 +97,9 @@ export function TaskNavigation() {
                       </span>
                     </NavRow>
 
-                    {deletable && (
-                      <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2">
-                        <TaskActions task={task} current={current} />
-                      </div>
-                    )}
+                    <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2">
+                      <TaskActions task={task} current={current} />
+                    </div>
                   </li>
                 )
               })}
