@@ -235,11 +235,23 @@ describe('Drawer', () => {
     )
   }
 
-  it('names itself as a modal layer, so what it covers is not what is being read', () => {
+  /**
+   * The guarantee, not the attribute that used to stand for it. `aria-modal` is
+   * a claim a layer makes about itself and screen readers honour unevenly;
+   * hiding everything the layer is not is the thing that actually happens, and
+   * it is what Radix does instead. The drawer is the one branch of the body
+   * still readable.
+   */
+  it('takes the page it covers out of what is being read', () => {
     render(<Sheet onDismiss={vi.fn()} />)
     const drawer = screen.getByRole('dialog', { name: 'File diff' })
 
-    expect(drawer.getAttribute('aria-modal')).toBe('true')
+    const exposed = [...document.body.children].filter(
+      (branch) => branch.getAttribute('aria-hidden') !== 'true',
+    )
+
+    expect(exposed).toHaveLength(1)
+    expect(exposed[0]?.contains(drawer)).toBe(true)
   })
 
   // The same two ways out as a popover, at the scale of the viewport. The scrim

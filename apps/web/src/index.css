@@ -397,32 +397,6 @@ body {
     color: var(--color-muted-foreground);
   }
 
-  /* Anything that opens over the page — a rework target, a confirmation, a menu,
-     a hint. One surface for all of them, and the lifted one: a popover is by
-     definition above whatever it covers, and half of them cover the console,
-     which already sits on that surface. */
-  .popover {
-    border: 1px solid var(--color-border-strong);
-    border-radius: 0.75rem;
-    background: var(--color-popover);
-    box-shadow: var(--shadow-popover);
-  }
-
-  /* A drawer is a popover's own surface at the scale of the viewport: lifted
-     above whatever it covers, and carrying its edge on the side it opens from. */
-  .drawer {
-    border-left: 1px solid var(--color-border-strong);
-    background: var(--color-card);
-    box-shadow: var(--shadow-popover);
-  }
-
-  /* Dims what the drawer covers without hiding it: the surface underneath is
-     what the drawer is about, and reading the two together is the point. */
-  .drawer-scrim {
-    background: color-mix(in srgb, var(--color-background) 75%, transparent);
-    backdrop-filter: blur(1px);
-  }
-
   /* Scroll panes inside the page (thread, rail) — visible, but not furniture.
      This class is where the app says "this box scrolls", so it is also where the
      box is made a containing block. `overflow` only clips a descendant whose
