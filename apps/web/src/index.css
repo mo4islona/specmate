@@ -328,35 +328,40 @@ body {
      The children, not the box: a scroll container that ignores pointer events
      also stops answering the wheel, and the gesture dies halfway down. */
   [data-thread][data-scrolling] > * {
-    /* ── The mark as the connection light ──────────────────────────────────────
+    pointer-events: none;
+  }
+
+  /* ── The mark as the connection light ──────────────────────────────────────
      The three chevrons stepping out of the spec's brackets already ramp from
      faint to solid, which is the shape of a signal. So the mark carries the state
      of the event stream: reaching, and reached. It is the only place in the app
      that says so, which is why the word travels with it rather than sitting in
      the corner of whatever screen happens to be open. */
-    .mark-reach path {
-      animation: mark-reach 1.5s ease-in-out infinite;
-    }
+  .mark-reach path {
+    animation: mark-reach 1.5s ease-in-out infinite;
+  }
 
-    .mark-reach path:nth-child(2) {
-      animation-delay: 0.18s;
-    }
+  .mark-reach path:nth-child(2) {
+    animation-delay: 0.18s;
+  }
 
-    .mark-reach path:nth-child(3) {
-      animation-delay: 0.36s;
-    }
+  .mark-reach path:nth-child(3) {
+    animation-delay: 0.36s;
+  }
 
-    @keyframes mark-reach {
-      0%,
-      70%,
-      100% {
-        opacity: 0.16;
-      }
-      22% {
-        opacity: 1;
-      }
+  @keyframes mark-reach {
+    0%,
+    70%,
+    100% {
+      opacity: 0.16;
     }
+    22% {
+      opacity: 1;
+    }
+  }
 
+  .artifact-document {
+    color: var(--color-foreground);
     font-size: 0.95rem;
     line-height: 1.75;
   }

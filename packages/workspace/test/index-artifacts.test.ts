@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { artifacts, createDb, type Database, tasks } from '@specmate/db'
+import { artifacts, createDb, type Database, findOrCreateRepository, tasks } from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
-import { type StageRef, WorkspaceBusyError, WorkspaceService } from '../src/index.ts'
+import { mirrorKey, type StageRef, WorkspaceBusyError, WorkspaceService } from '../src/index.ts'
 import {
   cleanupTempDirs,
   makeManager,
@@ -12,6 +12,13 @@ import {
   resolveTestEnvironment,
   writeFiles,
 } from './fixtures.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000003',
@@ -53,6 +60,7 @@ describeDb('artifact index', () => {
         title: 'workspace index fixture',
         type: 'bugfix',
         repoUrl: origin.url,
+        repositoryId: await repositoryIdFor(db, origin.url),
         baseBranch: 'main',
       })
       .returning()

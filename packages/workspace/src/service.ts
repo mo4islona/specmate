@@ -6,7 +6,7 @@ import {
   type SpecConvention,
   type TaskState,
 } from '@specmate/core'
-import { type Database, events, getSpecConvention, tasks } from '@specmate/db'
+import { type Database, events, getSpecConvention, repositories, tasks } from '@specmate/db'
 import { and, eq, isNull } from 'drizzle-orm'
 import { resolveTaskDiffRange, type TaskDiffFiles, taskFileDiff, taskFilesChanged } from './diff.ts'
 import { Git } from './git.ts'
@@ -19,14 +19,18 @@ import type {
   Workspace,
   WorkspaceManager,
 } from './manager.ts'
-import { changeDir } from './paths.ts'
+import { changeDir, type MirrorKey, recordedMirrorKey } from './paths.ts'
 import { readSpecConventionTree } from './spec-conventions.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
 export const BASE_BRANCH_PINNED_EVENT = 'task.base_branch_pinned'
 export const ENVIRONMENT_REPINNED_EVENT = 'task.environment_repinned'
 
-export interface TaskProvisionRequest extends ProvisionRequest {
+/**
+ * The mirror key is not the caller's to supply: the service reads it off the
+ * task's repository record, which is the only place it is authoritative (D1).
+ */
+export interface TaskProvisionRequest extends Omit<ProvisionRequest, 'mirrorKey'> {
   readonly taskId: string
   readonly image: string
 }
@@ -39,6 +43,8 @@ export type EnvironmentResolver = (
 export interface DiffTaskRef {
   readonly slug: string
   readonly repoUrl: string
+  /** The diff reads the shared mirror, and which mirror is the record's answer (D1). */
+  readonly repositoryId: string
   /** Null until provisioning pinned it — a task with no branch has no diff either. */
   readonly baseBranch: string | null
   /** Null until planning named the change; the folder then stands under the slug. */
@@ -91,7 +97,11 @@ export class WorkspaceService {
     // The folder's name is the task's, not the caller's: a dispatcher holding a
     // snapshot from before planning declared one would re-provision under the
     // provisional name and split the task's work across two folders.
-    const workspace = await this.manager.provision({ ...request, changeName: task.changeName })
+    const workspace = await this.manager.provision({
+      ...request,
+      mirrorKey: await this.mirrorKeyFor(task),
+      changeName: task.changeName,
+    })
     // What a task with no base of its own actually ran against, pinned on first
     // provision so publish and the diff read a branch rather than a convention.
     if (task.baseBranch === null) {
@@ -162,8 +172,8 @@ export class WorkspaceService {
     return this.manager.countSpecScenarios(workspace)
   }
 
-  releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
-    return this.manager.releaseConversation(slug, repoUrl, key)
+  releaseConversation(slug: string, mirrorKey: string, key: string): Promise<void> {
+    return this.manager.releaseConversation(slug, recordedMirrorKey(mirrorKey), key)
   }
 
   discard(workspace: Workspace, commit?: string): Promise<void> {
@@ -190,14 +200,20 @@ export class WorkspaceService {
    * re-fetches while browsing files.
    */
   async diffFiles(task: DiffTaskRef): Promise<TaskDiffFiles> {
-    const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
+    const range = await resolveTaskDiffRange(this.git, this.manager.config, {
+      ...task,
+      mirrorKey: await this.mirrorKeyFor(task),
+    })
     const files = await taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
 
     return { tip: range.tip, files }
   }
 
   async diffFile(task: DiffTaskRef, path: string, context?: number): Promise<string> {
-    const range = await resolveTaskDiffRange(this.git, this.manager.config, task)
+    const range = await resolveTaskDiffRange(this.git, this.manager.config, {
+      ...task,
+      mirrorKey: await this.mirrorKeyFor(task),
+    })
 
     return taskFileDiff(this.git, range, path, context)
   }
@@ -206,7 +222,7 @@ export class WorkspaceService {
     const task = await this.loadTask(taskId)
     if (!isTerminal(task.status)) throw new WorkspaceBusyError(taskId, task.status)
 
-    await this.manager.release(task.slug, task.repoUrl)
+    await this.manager.release(task.slug, await this.mirrorKeyFor(task))
   }
 
   /**
@@ -283,6 +299,22 @@ export class WorkspaceService {
         payload: { environment },
       })
     })
+  }
+
+  /**
+   * The name this task's repository is filed under. Read off the record rather
+   * than derived from `task.repoUrl` (D1): the task holds the spelling its own
+   * launch used, and two spellings must not become two mirrors.
+   */
+  private async mirrorKeyFor(task: { repositoryId: string }): Promise<MirrorKey> {
+    const [row] = await this.db
+      .select({ mirrorKey: repositories.mirrorKey })
+      .from(repositories)
+      .where(eq(repositories.id, task.repositoryId))
+      .limit(1)
+    if (!row) throw new Error(`task names a repository that has no record: ${task.repositoryId}`)
+
+    return recordedMirrorKey(row.mirrorKey)
   }
 
   private async loadTask(taskId: string) {

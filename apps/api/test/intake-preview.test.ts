@@ -1,11 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import assert from 'node:assert/strict'
-import { createDb, type Database, events, tasks } from '@specmate/db'
+import { createDb, type Database, events, findOrCreateRepository, tasks } from '@specmate/db'
 import { Engine } from '@specmate/orchestrator/engine'
 import { mirrorKey } from '@specmate/workspace'
 import { count, inArray } from 'drizzle-orm'
 import { createApp, type ReferenceReads, type WorkspaceDiffOperations } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -82,6 +89,7 @@ describeDb('intake preview', () => {
           title: `fixture for ${repoUrl}`,
           type: 'feature',
           repoUrl,
+          repositoryId: await repositoryIdFor(db, repoUrl),
           baseBranch: 'trunk',
           status: 'specify',
         })
@@ -240,6 +248,7 @@ describeDb('one repository, and what the system holds about it', () => {
         title: 'a task that already ran here',
         type: 'feature',
         repoUrl: REPO,
+        repositoryId: await repositoryIdFor(db, REPO),
         baseBranch: 'trunk',
         status: 'archived',
       })
@@ -290,6 +299,7 @@ describeDb('one repository, and what the system holds about it', () => {
         title: 'a task that resolved its convention',
         type: 'feature',
         repoUrl: withConvention,
+        repositoryId: await repositoryIdFor(db, withConvention),
         status: 'archived',
         specConvention: {
           profile: 'openspec',

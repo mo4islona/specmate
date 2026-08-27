@@ -10,6 +10,7 @@ import {
   changeDir,
   conversationWorktreePath,
   DECISION_LOG_FILE,
+  type MirrorKey,
   mirrorPath,
   SCHEMA_MARKER,
   taskBranch,
@@ -19,6 +20,8 @@ import {
 export interface ProvisionRequest {
   readonly slug: string
   readonly repoUrl: string
+  /** The name this repository's cache is filed under, read off its record (D1). */
+  readonly mirrorKey: MirrorKey
   /** Absent means the repository's default branch, resolved here (REQ-703). */
   readonly baseBranch?: string
   /** What planning called the change; absent leaves the folder under the slug (REQ-705). */
@@ -28,6 +31,7 @@ export interface ProvisionRequest {
 export interface Workspace {
   readonly slug: string
   readonly repoUrl: string
+  readonly mirrorKey: MirrorKey
   readonly branch: string
   /** The base branch the task branch was actually cut from. */
   readonly baseBranch: string
@@ -94,9 +98,9 @@ export class WorkspaceManager {
    * filesystem is the only bookkeeping there is.
    */
   async provision(request: ProvisionRequest): Promise<Workspace> {
-    const mirror = mirrorPath(this.config, request.repoUrl)
+    const mirror = mirrorPath(this.config, request.mirrorKey)
     return this.withMirrorLock(mirror, async () => {
-      await ensureMirror(this.git, this.config, request.repoUrl)
+      await ensureMirror(this.git, this.config, request)
       const baseBranch =
         request.baseBranch ?? (await resolveDefaultBranch(this.git, mirror, request.repoUrl))
 
@@ -110,6 +114,7 @@ export class WorkspaceManager {
       return {
         slug: request.slug,
         repoUrl: request.repoUrl,
+        mirrorKey: request.mirrorKey,
         branch,
         baseBranch,
         path,
@@ -157,10 +162,10 @@ export class WorkspaceManager {
   }
 
   /** Removes a disposable conversation checkout and commits reachable only from it. */
-  async releaseConversation(slug: string, repoUrl: string, key: string): Promise<void> {
+  async releaseConversation(slug: string, mirrorKey: MirrorKey, key: string): Promise<void> {
     assertConversationWorkspaceKey(key)
     const path = conversationWorktreePath(this.config, slug, key)
-    const mirror = mirrorPath(this.config, repoUrl)
+    const mirror = mirrorPath(this.config, mirrorKey)
 
     await this.withMirrorLock(mirror, async () => {
       await this.removeWorktree(mirror, path)
@@ -267,8 +272,8 @@ export class WorkspaceManager {
   }
 
   /** Removes the working tree; the branch and its commits stay in the cache. */
-  async release(slug: string, repoUrl: string): Promise<void> {
-    const mirror = mirrorPath(this.config, repoUrl)
+  async release(slug: string, mirrorKey: MirrorKey): Promise<void> {
+    const mirror = mirrorPath(this.config, mirrorKey)
     const path = worktreePath(this.config, slug)
     await this.withMirrorLock(mirror, async () => {
       if (await pathExists(path)) {

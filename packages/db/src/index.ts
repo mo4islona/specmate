@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import * as schema from './schema.ts'
 
 export * from './conversation-store.ts'
+export * from './repository-store.ts'
 export * from './schema.ts'
 export * from './settings-store.ts'
 export { schema }

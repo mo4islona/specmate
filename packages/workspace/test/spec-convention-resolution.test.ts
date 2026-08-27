@@ -1,9 +1,23 @@
 import { randomUUID } from 'node:crypto'
-import { createDb, type Database, setSpecConvention, tasks } from '@specmate/db'
+import {
+  createDb,
+  type Database,
+  findOrCreateRepository,
+  setSpecConvention,
+  tasks,
+} from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mirrorKey } from '../src/index.ts'
 import { WorkspaceService } from '../src/service.ts'
 import { cleanupTempDirs, makeManager, makeOrigin, resolveTestEnvironment } from './fixtures.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -35,7 +49,7 @@ describeDb('spec convention resolved at provisioning', () => {
 
   afterAll(async () => {
     for (const repoUrl of touchedRepos) {
-      await setSpecConvention(db, repoUrl, null)
+      await setSpecConvention(db, { repoUrl: repoUrl, mirrorKey: mirrorKey(repoUrl) }, null)
     }
     if (createdTaskIds.length > 0) {
       await db.delete(tasks).where(inArray(tasks.id, createdTaskIds))
@@ -55,6 +69,7 @@ describeDb('spec convention resolved at provisioning', () => {
         title: 'spec convention fixture',
         type: 'feature',
         repoUrl: origin.url,
+        repositoryId: await repositoryIdFor(db, origin.url),
         baseBranch: 'main',
       })
       .returning()
@@ -88,6 +103,52 @@ describeDb('spec convention resolved at provisioning', () => {
     }
   }
 
+  /**
+   * D1. The two spellings hash to different `mirrorKey` values, so before the
+   * record existed each one cloned its own cache of the same repository.
+   */
+  it('two spellings of one remote provision into one mirror', async () => {
+    const origin = await makeOrigin(OPENSPEC_TREE)
+    const { manager } = await makeManager()
+    const service = new WorkspaceService(manager, db, resolveTestEnvironment)
+    // `file://` remotes have no second spelling, so the record is what makes the
+    // two agree: a second task minted against a differently-spelled remote must
+    // still be handed the first record's key.
+    const other = `${origin.url}/`
+
+    const provisioned = []
+    for (const [index, repoUrl] of [origin.url, other].entries()) {
+      const slug = `one-mirror-${randomUUID().slice(0, 8)}`
+      const [task] = await db
+        .insert(tasks)
+        .values({
+          slug,
+          title: `spelling ${index}`,
+          type: 'feature',
+          repoUrl,
+          repositoryId: await repositoryIdFor(db, repoUrl),
+          baseBranch: 'main',
+        })
+        .returning()
+      if (!task) throw new Error('task insert returned no row')
+
+      createdTaskIds.push(task.id)
+      touchedRepos.push(repoUrl)
+      provisioned.push(
+        await service.provision({
+          taskId: task.id,
+          slug,
+          repoUrl,
+          baseBranch: 'main',
+          image: IMAGE,
+        }),
+      )
+    }
+
+    expect(mirrorKey(origin.url)).not.toBe(mirrorKey(other))
+    expect(provisioned[1]?.mirrorPath).toBe(provisioned[0]?.mirrorPath)
+  })
+
   it('a repository with a living OpenSpec suite resolves to openspec', async () => {
     const fixture = await provisionAgainst(OPENSPEC_TREE)
 
@@ -118,11 +179,15 @@ describeDb('spec convention resolved at provisioning', () => {
 
     expect((await fixture.provision())?.profile).toBe('none')
 
-    await setSpecConvention(db, fixture.origin.url, {
-      profile: 'custom',
-      suitePath: 'docs/spec',
-      conventionNote: 'One file per subsystem.',
-    })
+    await setSpecConvention(
+      db,
+      { repoUrl: fixture.origin.url, mirrorKey: mirrorKey(fixture.origin.url) },
+      {
+        profile: 'custom',
+        suitePath: 'docs/spec',
+        conventionNote: 'One file per subsystem.',
+      },
+    )
 
     expect(await fixture.provision()).toEqual({
       profile: 'custom',
@@ -135,10 +200,14 @@ describeDb('spec convention resolved at provisioning', () => {
   // AC-1702: the task proceeds, and the path that was looked for survives.
   it('a configured suite the tree does not hold resolves to none and names the path', async () => {
     const fixture = await provisionAgainst({ 'README.md': '# origin\n' })
-    await setSpecConvention(db, fixture.origin.url, {
-      profile: 'custom',
-      suitePath: 'docs/spec',
-    })
+    await setSpecConvention(
+      db,
+      { repoUrl: fixture.origin.url, mirrorKey: mirrorKey(fixture.origin.url) },
+      {
+        profile: 'custom',
+        suitePath: 'docs/spec',
+      },
+    )
 
     const convention = await fixture.provision()
 

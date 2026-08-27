@@ -1,16 +1,32 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { normalizeRemote } from '@specmate/core'
 import { eq, sql } from 'drizzle-orm'
 import {
   conversationMessages,
   conversations,
   createDb,
   type Database,
+  findOrCreateRepository,
   runGraphs,
   stages,
   tasks,
 } from '../src/index.ts'
+
+/**
+ * Every task needs a repository record now (REQ-316). The mirror key is the
+ * workspace layer's to mint and this package must not depend on it, so these
+ * tests use a stable stand-in — nothing here reads a path.
+ */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, {
+    repoUrl,
+    mirrorKey: `test-${normalizeRemote(repoUrl).replaceAll(/[^a-z0-9]+/g, '-')}`,
+  })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -28,6 +44,7 @@ describeDb('conversation persistence', () => {
         title: 'Conversation fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/conversation',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/conversation'),
       })
       .returning()
     assert(task)
@@ -86,6 +103,7 @@ describeDb('conversation persistence', () => {
         title: 'Cascade fixture',
         type: 'feature',
         repoUrl: 'https://github.com/example/conversation-cascade',
+        repositoryId: await repositoryIdFor(db, 'https://github.com/example/conversation-cascade'),
       })
       .returning()
     assert(task)

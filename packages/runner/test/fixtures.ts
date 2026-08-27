@@ -1,7 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { Git, resolveWorkspaceConfig, type Workspace, WorkspaceManager } from '@specmate/workspace'
+import {
+  Git,
+  mirrorKey,
+  resolveWorkspaceConfig,
+  type Workspace,
+  WorkspaceManager,
+} from '@specmate/workspace'
 import { type RunnerConfig, type RunnerOptions, resolveRunnerConfig } from '../src/config.ts'
 
 export const STUB = join(import.meta.dir, 'stub-provider.ts')
@@ -98,6 +104,7 @@ export async function makeHarness(
   const workspace = await manager.provision({
     slug,
     repoUrl: `file://${originDir}`,
+    mirrorKey: mirrorKey(`file://${originDir}`),
     baseBranch: 'main',
   })
   const git = new Git(manager.config)

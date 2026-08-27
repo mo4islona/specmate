@@ -1,7 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Git, InvalidConversationWorkspaceKeyError, type StageRef } from '../src/index.ts'
+import {
+  Git,
+  InvalidConversationWorkspaceKeyError,
+  mirrorKey,
+  type StageRef,
+} from '../src/index.ts'
 import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
 
 const STAGE: StageRef = {
@@ -24,6 +29,7 @@ describe('conversation workspaces', () => {
     const primary = await manager.provision({
       slug: 'conversation-snapshot',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await manager.commitStage(primary, STAGE)
@@ -47,7 +53,7 @@ describe('conversation workspaces', () => {
     expect(branch.stdout.trim()).toBe('HEAD')
     expect(status.stdout.trim()).toBe('')
     expect(await exists(join(restarted.path, '.specmate'))).toBe(false)
-    await manager.releaseConversation(primary.slug, primary.repoUrl, restarted.key)
+    await manager.releaseConversation(primary.slug, primary.mirrorKey, restarted.key)
   })
 
   test('destroying a snapshot removes response edits and commits without moving the task branch', async () => {
@@ -56,6 +62,7 @@ describe('conversation workspaces', () => {
     const primary = await manager.provision({
       slug: 'conversation-disposal',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     await manager.commitStage(primary, STAGE)
@@ -79,8 +86,8 @@ describe('conversation workspaces', () => {
     expect((await git.run(['rev-parse', 'HEAD'], { cwd: primary.path })).stdout.trim()).toBe(before)
     expect(await readFile(join(primary.path, 'src/app.ts'), 'utf8')).toBe('export const a = 1\n')
 
-    await manager.releaseConversation(primary.slug, primary.repoUrl, conversation.key)
-    await manager.releaseConversation(primary.slug, primary.repoUrl, conversation.key)
+    await manager.releaseConversation(primary.slug, primary.mirrorKey, conversation.key)
+    await manager.releaseConversation(primary.slug, primary.mirrorKey, conversation.key)
 
     expect(await exists(conversation.path)).toBe(false)
     expect(
@@ -98,6 +105,7 @@ describe('conversation workspaces', () => {
     const primary = await manager.provision({
       slug: 'conversation-key',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 

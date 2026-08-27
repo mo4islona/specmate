@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import type { WorkspaceConfig } from './config.ts'
 import { isDirectory } from './fs.ts'
 import type { Git } from './git.ts'
-import { mirrorPath, RESULT_FILE, SCRATCH_DIR } from './paths.ts'
+import { mirrorPath, RESULT_FILE, type RepositoryRef, SCRATCH_DIR } from './paths.ts'
 
 export class BaseBranchMissingError extends Error {
   constructor(
@@ -35,9 +35,10 @@ const EXCLUDE_MARKER = '# specmate: runner scratch'
 export async function ensureMirror(
   git: Git,
   config: WorkspaceConfig,
-  repoUrl: string,
+  repository: RepositoryRef,
 ): Promise<string> {
-  const path = mirrorPath(config, repoUrl)
+  const { repoUrl } = repository
+  const path = mirrorPath(config, repository.mirrorKey)
   const auth = await git.authEnv(repoUrl)
   if (await isDirectory(join(path, 'objects'))) {
     await git.inMirror(path, ['remote', 'set-url', 'origin', repoUrl])

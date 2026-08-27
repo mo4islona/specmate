@@ -1,17 +1,27 @@
 import {
   getDefaultRepository,
   getModelDefaults,
-  getSpecConventions,
+  listSpecConventions,
   SuitePathRequiredError,
   setDefaultRepository,
   setSpecConvention,
   updateModelDefaults,
 } from '@specmate/db'
+import { mirrorKey } from '@specmate/workspace'
 import { Hono } from 'hono'
 import { validator } from 'hono/validator'
 import type { RouteContext } from './context.ts'
 import { UpdateDefaultRepository, UpdateModelDefaults, UpdateSpecConvention } from './schemas.ts'
 import { validateJson } from './validation.ts'
+
+/**
+ * What a new record needs beyond its remote: the key its files will live under.
+ * Minted here rather than in the store, because where a repository's files go is
+ * the workspace layer's answer and not the database's (D1).
+ */
+function repositoryMint(repoUrl: string) {
+  return { repoUrl, mirrorKey: mirrorKey(repoUrl) }
+}
 
 /** The settings that outlive any one task: model defaults, the default repository, spec conventions. */
 export function settingsRoutes(ctx: RouteContext) {
@@ -34,8 +44,8 @@ export function settingsRoutes(ctx: RouteContext) {
     )
 
     .get('/settings/default-repository', async (c) => {
-      const repoUrl = await getDefaultRepository(db)
-      return c.json({ defaultRepository: repoUrl })
+      const repository = await getDefaultRepository(db)
+      return c.json({ defaultRepository: repository?.repoUrl ?? null })
     })
 
     .put(
@@ -43,13 +53,15 @@ export function settingsRoutes(ctx: RouteContext) {
       validator('json', validateJson(UpdateDefaultRepository)),
       async (c) => {
         const { repoUrl } = c.req.valid('json')
-        const stored = await setDefaultRepository(db, repoUrl)
-        return c.json({ defaultRepository: stored })
+        // Naming a repository nothing has run against is the point of the setting
+        // (AC-347), so this is one of the two places a record is minted.
+        const stored = await setDefaultRepository(db, repoUrl ? repositoryMint(repoUrl) : null)
+        return c.json({ defaultRepository: stored?.repoUrl ?? null })
       },
     )
 
     .get('/settings/spec-conventions', async (c) => {
-      const specConventions = await getSpecConventions(db)
+      const specConventions = await listSpecConventions(db)
       return c.json({ specConventions })
     })
 
@@ -59,8 +71,8 @@ export function settingsRoutes(ctx: RouteContext) {
       async (c) => {
         const { repoUrl, setting } = c.req.valid('json')
         try {
-          const specConventions = await setSpecConvention(db, repoUrl, setting)
-          return c.json({ specConventions })
+          await setSpecConvention(db, repositoryMint(repoUrl), setting)
+          return c.json({ specConventions: await listSpecConventions(db) })
         } catch (error) {
           // AC-977: the screen has to be able to say what is missing, which a 500 cannot.
           if (error instanceof SuitePathRequiredError) {
@@ -71,12 +83,4 @@ export function settingsRoutes(ctx: RouteContext) {
         }
       },
     )
-
-  /**
-   * The repositories this system works with — derived from the tasks that
-   * name them, since a repository has no row of its own — each carrying the
-   * coverage waiver in force for it, if any (REQ-1015). `mirrorKey` is the
-   * identity: the same path-safe digest the workspace layer already names a
-   * repository's mirror by, so one repository is one id everywhere.
-   */
 }

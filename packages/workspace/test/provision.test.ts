@@ -7,6 +7,7 @@ import {
   DefaultBranchUnknownError,
   Git,
   type GitSpawn,
+  mirrorKey,
   mirrorPath,
   resolveWorkspaceConfig,
   type StageRef,
@@ -48,6 +49,7 @@ describe('provisioning', () => {
     const workspace = await manager.provision({
       slug: 'fix-reorg',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -65,8 +67,18 @@ describe('provisioning', () => {
     const base = await origin.head()
     const { manager } = await makeManager()
 
-    const a = await manager.provision({ slug: 'task-a', repoUrl: origin.url, baseBranch: 'main' })
-    const b = await manager.provision({ slug: 'task-b', repoUrl: origin.url, baseBranch: 'main' })
+    const a = await manager.provision({
+      slug: 'task-a',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
+    const b = await manager.provision({
+      slug: 'task-b',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
     await writeFiles(a.path, { 'openspec/changes/task-a/proposal.md': '# a\n' })
     await manager.commitStage(a, STAGE)
 
@@ -80,7 +92,12 @@ describe('provisioning', () => {
   it('returns the same workspace on a second request, commits intact', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'again', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'again',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
 
     const first = await manager.provision(request)
     await writeFiles(first.path, { 'openspec/changes/again/proposal.md': '# draft\n' })
@@ -105,6 +122,7 @@ describe('provisioning', () => {
     const failure = manager.provision({
       slug: 'wrong-base',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'develop',
     })
 
@@ -116,7 +134,11 @@ describe('provisioning', () => {
     const origin = await makeOrigin({ 'README.md': '# origin\n' }, 'master')
     const { manager } = await makeManager()
 
-    const workspace = await manager.provision({ slug: 'no-base', repoUrl: origin.url })
+    const workspace = await manager.provision({
+      slug: 'no-base',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+    })
 
     expect(workspace.baseBranch).toBe('master')
     expect(await headOf(manager, workspace.path)).toBe(await origin.head('master'))
@@ -127,7 +149,12 @@ describe('provisioning', () => {
     await new Git(resolveWorkspaceConfig({ root: empty })).run(['init', '--bare', '--quiet', empty])
     const { manager } = await makeManager()
 
-    const failure = manager.provision({ slug: 'headless', repoUrl: `file://${empty}` })
+    const repoUrl = `file://${empty}`
+    const failure = manager.provision({
+      slug: 'headless',
+      repoUrl,
+      mirrorKey: mirrorKey(repoUrl),
+    })
 
     await expect(failure).rejects.toThrow(DefaultBranchUnknownError)
   })
@@ -137,11 +164,21 @@ describe('the shared local copy', () => {
   it('is reused by the next task rather than copied again', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    await manager.provision({ slug: 'first', repoUrl: origin.url, baseBranch: 'main' })
+    await manager.provision({
+      slug: 'first',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
 
-    const sentinel = join(mirrorPath(manager.config, origin.url), 'sentinel')
+    const sentinel = join(mirrorPath(manager.config, mirrorKey(origin.url)), 'sentinel')
     await writeFile(sentinel, 'kept')
-    await manager.provision({ slug: 'second', repoUrl: origin.url, baseBranch: 'main' })
+    await manager.provision({
+      slug: 'second',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
 
     expect(await readFile(sentinel, 'utf8')).toBe('kept')
   })
@@ -149,7 +186,7 @@ describe('the shared local copy', () => {
   it('never appears half-made, and leftovers are swept', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const mirror = mirrorPath(manager.config, origin.url)
+    const mirror = mirrorPath(manager.config, mirrorKey(origin.url))
     const abandoned = `${mirror}.tmp-dead`
     await mkdir(abandoned, { recursive: true })
     await writeFile(join(abandoned, 'junk'), 'half a clone')
@@ -157,6 +194,7 @@ describe('the shared local copy', () => {
     const workspace = await manager.provision({
       slug: 'after-crash',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -180,8 +218,18 @@ describe('the shared local copy', () => {
     })
 
     const [a, b] = await Promise.all([
-      manager.provision({ slug: 'cold-a', repoUrl: origin.url, baseBranch: 'main' }),
-      manager.provision({ slug: 'cold-b', repoUrl: origin.url, baseBranch: 'main' }),
+      manager.provision({
+        slug: 'cold-a',
+        repoUrl: origin.url,
+        mirrorKey: mirrorKey(origin.url),
+        baseBranch: 'main',
+      }),
+      manager.provision({
+        slug: 'cold-b',
+        repoUrl: origin.url,
+        mirrorKey: mirrorKey(origin.url),
+        baseBranch: 'main',
+      }),
     ])
 
     expect(clones).toBe(1)
@@ -197,6 +245,7 @@ describe('a task branch stands still', () => {
     const early = await manager.provision({
       slug: 'early',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     const earlyHead = await headOf(manager, early.path)
@@ -205,11 +254,13 @@ describe('a task branch stands still', () => {
     const later = await manager.provision({
       slug: 'later',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
     const reprovisioned = await manager.provision({
       slug: 'early',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -222,7 +273,12 @@ describe('repair', () => {
   it('recreates a working tree that was lost, keeping the branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'lost-tree', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'lost-tree',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
     const workspace = await manager.provision(request)
     await writeFiles(workspace.path, { 'openspec/changes/lost-tree/proposal.md': '# work\n' })
     await manager.commitStage(workspace, STAGE)
@@ -240,7 +296,12 @@ describe('repair', () => {
   it('restores a path that is no longer a checkout of the task branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'broken-tree', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'broken-tree',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
     const workspace = await manager.provision(request)
     await writeFiles(workspace.path, { 'openspec/changes/broken-tree/proposal.md': '# work\n' })
     await manager.commitStage(workspace, STAGE)
@@ -263,6 +324,7 @@ describe('scratch exclusions', () => {
     const workspace = await manager.provision({
       slug: 'scratchy',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -289,7 +351,12 @@ describe('change folder scaffolding', () => {
   it('creates the folder with its schema marker and preserves existing artifacts', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'scaffold', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'scaffold',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
     const workspace = await manager.provision(request)
 
     const marker = join(workspace.path, 'openspec/changes/scaffold/.openspec.yaml')
@@ -311,6 +378,7 @@ describe('change folder scaffolding', () => {
     const workspace = await manager.provision({
       slug: 'named-task-a1b2c3d4',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
       changeName: 'pie-chart-axis-fade',
     })
@@ -327,6 +395,7 @@ describe('change folder scaffolding', () => {
     const workspace = await manager.provision({
       slug: 'unnamed-task',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -336,7 +405,12 @@ describe('change folder scaffolding', () => {
   it('moves the work with the folder rather than leaving it behind — AC-741', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'moving-task', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'moving-task',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
     const workspace = await manager.provision(request)
     await writeFiles(workspace.path, { 'openspec/changes/moving-task/proposal.md': '# brief\n' })
 
@@ -352,7 +426,12 @@ describe('change folder scaffolding', () => {
   it('leaves a folder that is already in the history where it is — AC-741', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const request = { slug: 'committed-task', repoUrl: origin.url, baseBranch: 'main' }
+    const request = {
+      slug: 'committed-task',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
     const workspace = await manager.provision(request)
     await writeFiles(workspace.path, { 'openspec/changes/committed-task/proposal.md': '# brief\n' })
     await manager.commitStage(workspace, STAGE)
@@ -370,6 +449,7 @@ describe('change folder scaffolding', () => {
     const workspace = await manager.provision({
       slug: 'colliding-task-9f8e7d6c',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 
@@ -390,6 +470,7 @@ describe('change folder scaffolding', () => {
     const workspace = await manager.provision({
       slug: 'foreign',
       repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
       baseBranch: 'main',
     })
 

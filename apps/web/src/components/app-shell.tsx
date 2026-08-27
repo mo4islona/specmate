@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation } from 'wouter'
 import type { StreamConnectionState } from '../lib/event-stream.ts'
 import { useStreamStatus } from '../lib/stream-status.ts'
-import { ButtonLink, cn, Icon, NavRow } from '../ui/index.ts'
+import { ButtonLink, cn, Icon, NavRow, Working } from '../ui/index.ts'
 import { SpecMateMark } from './mark.tsx'
 import { TaskNavigation } from './task-navigation.tsx'
 import { signalText, streamSignal } from './tone.ts'
@@ -12,9 +12,9 @@ import { signalText, streamSignal } from './tone.ts'
  * screen told the owner nothing they could act on; these two are the states
  * where what they are reading may be behind what is happening.
  */
-const STREAM_TROUBLE: Partial<Record<StreamConnectionState, { label: string; tone: string }>> = {
-  connecting: { label: 'reconnecting', tone: signalText(streamSignal('connecting')) },
-  stale: { label: 'stream stalled', tone: signalText(streamSignal('stale')) },
+const STREAM_TROUBLE: Partial<Record<StreamConnectionState, string>> = {
+  connecting: 'reconnecting',
+  stale: 'stream stalled',
 }
 
 interface LockupProps {
@@ -31,29 +31,41 @@ interface LockupProps {
  * the machine, not a property of whichever task is open.
  */
 function Lockup({ stream, compact = false }: LockupProps) {
-  const trouble = stream ? STREAM_TROUBLE[stream] : undefined
+  const label = stream ? STREAM_TROUBLE[stream] : undefined
 
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2.5">
       <SpecMateMark stream={stream} className={cn('shrink-0', compact ? 'h-6 w-6' : 'h-7 w-7')} />
-      <span
-        className={cn(
-          'font-mono font-semibold tracking-[0.02em] text-foreground',
-          compact ? 'text-sm' : 'text-base',
-        )}
-      >
-        SPECMATE
-      </span>
 
-      {trouble && (
+      {/* Baseline, not centre: the state is an annotation on the name, and a
+          tiny word centred against a 28px mark floats beside the lockup rather
+          than belonging to it. */}
+      <span className="flex min-w-0 items-baseline gap-2">
         <span
-          className={cn('min-w-0 truncate font-mono text-[0.62rem]', trouble.tone)}
-          role="status"
-          title={`event stream ${stream}`}
+          className={cn(
+            'font-mono font-semibold tracking-[0.02em] text-foreground',
+            compact ? 'text-sm' : 'text-base',
+          )}
         >
-          {trouble.label}
+          SPECMATE
         </span>
-      )}
+
+        {label && stream && (
+          <span
+            className={cn(
+              'min-w-0 truncate font-mono text-[0.62rem] tracking-[0.1em]',
+              signalText(streamSignal(stream)),
+            )}
+            role="status"
+            title={`event stream ${stream}`}
+          >
+            {/* Reaching, at the word's scale: the mark's chevrons chase the
+                stream and the ellipsis keeps the same time. A stall is not a
+                wait in progress, so it says so and holds still. */}
+            {stream === 'connecting' ? <Working>{label}</Working> : label}
+          </span>
+        )}
+      </span>
     </Link>
   )
 }

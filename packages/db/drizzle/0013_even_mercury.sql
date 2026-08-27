@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "plan_size_override" "plan_size";

@@ -41,6 +41,7 @@ import {
   type Decision,
   decisions,
   events,
+  findOrCreateRepository,
   getModelDefaults,
   iterations,
   runGraphs,
@@ -49,6 +50,7 @@ import {
   type Task,
   tasks,
 } from '@specmate/db'
+import { mirrorKey } from '@specmate/workspace'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 
 export class UnknownTaskTypeError extends Error {
@@ -153,6 +155,14 @@ export async function createTaskInTx(
   // reflect the model-defaults row as of this create, not a stale snapshot.
   const currentDefaults = await getModelDefaults(db)
 
+  // Minted here rather than asked of the caller: every path that creates a task —
+  // the launch screen, a plan's split — has to land on the same record, and a
+  // spelling the system has not seen before is a new one (AC-346).
+  const repository = await findOrCreateRepository(db, {
+    repoUrl: input.repoUrl,
+    mirrorKey: mirrorKey(input.repoUrl),
+  })
+
   const [task] = await db
     .insert(tasks)
     .values({
@@ -161,6 +171,7 @@ export async function createTaskInTx(
       description: input.description,
       type: input.type as TaskType,
       repoUrl: input.repoUrl,
+      repositoryId: repository.id,
       baseBranch: input.baseBranch ?? null,
       planSize: input.planSize ?? null,
       // `draft` is a reserved state the poll never dispatches, so a task
@@ -758,7 +769,7 @@ export async function recordPlanOutcome(
   // adequate classification ends it rather than leaving it to shadow a
   // repository that has since grown a harness.
   if (assessment?.classification === 'adequate') {
-    await revokeCoverageWaiverInForce(db, task.repoUrl)
+    await revokeCoverageWaiverInForce(db, task.repositoryId)
   }
 
   const inherited =
@@ -802,7 +813,7 @@ async function inheritCoverageWaiver(
   stageId: string,
   assessment: HarnessCoverageAssessment,
 ): Promise<boolean> {
-  const waiver = await coverageWaiverInForce(db, task.repoUrl)
+  const waiver = await coverageWaiverInForce(db, task.repositoryId)
   if (!waiver) return false
 
   await db
@@ -907,12 +918,12 @@ export async function dismissCoverageDecision(
  */
 export async function coverageWaiverInForce(
   db: DbClient,
-  repoUrl: string,
+  repositoryId: string,
 ): Promise<CoverageWaiver | null> {
   const [waiver] = await db
     .select()
     .from(coverageWaivers)
-    .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
+    .where(and(eq(coverageWaivers.repositoryId, repositoryId), isNull(coverageWaivers.revokedAt)))
     .limit(1)
 
   return waiver ?? null
@@ -925,11 +936,15 @@ export async function coverageWaiverInForce(
  */
 export async function recordCoverageWaiver(
   db: DbClient,
-  input: { repoUrl: string; originTaskId?: string },
+  input: { repositoryId: string; repoUrl: string; originTaskId?: string },
 ): Promise<CoverageWaiver | null> {
   const [waiver] = await db
     .insert(coverageWaivers)
-    .values({ repoUrl: input.repoUrl, originTaskId: input.originTaskId ?? null })
+    .values({
+      repositoryId: input.repositoryId,
+      repoUrl: input.repoUrl,
+      originTaskId: input.originTaskId ?? null,
+    })
     .onConflictDoNothing()
     .returning()
 
@@ -938,17 +953,17 @@ export async function recordCoverageWaiver(
 
 /**
  * Revoking marks the waiver; what was accepted and when it ended both stay
- * readable. Addressed by repository rather than by record id — at most one is
- * ever in force, so the repository is the whole identity a caller needs.
+ * readable. Addressed by the repository record rather than by record id — at most
+ * one is ever in force, so the repository is the whole identity a caller needs.
  */
 export async function revokeCoverageWaiverInForce(
   db: DbClient,
-  repoUrl: string,
+  repositoryId: string,
 ): Promise<CoverageWaiver | null> {
   const [revoked] = await db
     .update(coverageWaivers)
     .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(coverageWaivers.repoUrl, repoUrl), isNull(coverageWaivers.revokedAt)))
+    .where(and(eq(coverageWaivers.repositoryId, repositoryId), isNull(coverageWaivers.revokedAt)))
     .returning()
 
   return revoked ?? null

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { artifacts, createDb, type Database, tasks } from '@specmate/db'
+import { artifacts, createDb, type Database, findOrCreateRepository, tasks } from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
-import { Git, type StageRef, WorkspaceManager, WorkspaceService } from '../src/index.ts'
+import { Git, mirrorKey, type StageRef, WorkspaceManager, WorkspaceService } from '../src/index.ts'
 import {
   cleanupTempDirs,
   FAST_LOCKS,
@@ -13,6 +13,13 @@ import {
   tempDir,
   writeFiles,
 } from './fixtures.ts'
+
+/** Every task needs a repository record now (REQ-316); tests seed one the way a launch would. */
+async function repositoryIdFor(db: Database, repoUrl: string): Promise<string> {
+  const repository = await findOrCreateRepository(db, { repoUrl, mirrorKey: mirrorKey(repoUrl) })
+
+  return repository.id
+}
 
 const url = process.env.DATABASE_URL
 const describeDb = url ? describe : describe.skip
@@ -50,6 +57,7 @@ describeDb('a task from provisioning to release', () => {
         title: 'walk the workspace end to end',
         type: 'bugfix',
         repoUrl: origin.url,
+        repositoryId: await repositoryIdFor(db, origin.url),
         baseBranch: 'main',
       })
       .returning()
