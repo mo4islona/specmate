@@ -16,9 +16,9 @@ interface RepoRefProps {
 }
 
 const PR_TONE: Record<string, string> = {
-  open: 'text-text',
-  merged: 'text-muted',
-  closed: 'text-muted',
+  open: 'text-foreground',
+  merged: 'text-muted-foreground',
+  closed: 'text-muted-foreground',
 }
 
 /**
@@ -34,7 +34,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
   const number = pullRequest ? (pullRequestNumber(pullRequest.url) ?? 'pull request') : null
 
   return (
-    <p className="flex min-w-0 items-center gap-x-2 pb-2 font-mono text-[0.62rem] text-muted">
+    <p className="flex min-w-0 items-center gap-x-2 pb-2 font-mono text-[0.62rem] text-muted-foreground">
       <span className="flex min-w-0 items-center gap-1.5">
         <Icon name="repo" size="xs" className="opacity-70" />
 
@@ -43,7 +43,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="truncate text-muted hover:text-text hover:underline"
+            className="truncate text-muted-foreground hover:text-foreground hover:underline"
           >
             {label}
           </a>
@@ -51,7 +51,7 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
           <span className="truncate">{label}</span>
         )}
 
-        <span className="shrink-0 text-muted">· {ref}</span>
+        <span className="shrink-0 text-muted-foreground">· {ref}</span>
       </span>
 
       {pullRequest && number && (
@@ -63,8 +63,8 @@ export function RepoRef({ repoUrl, ref, pullRequest = null }: RepoRefProps) {
             pullRequest.checksState ? `, checks ${pullRequest.checksState}` : ''
           }`}
           className={cx(
-            'flex shrink-0 items-center gap-1 rounded-md bg-text/[0.06] px-1.5 py-[0.1rem] hover:bg-text/10',
-            PR_TONE[pullRequest.state] ?? 'text-muted',
+            'flex shrink-0 items-center gap-1 rounded-md bg-foreground/[0.06] px-1.5 py-[0.1rem] hover:bg-foreground/10',
+            PR_TONE[pullRequest.state] ?? 'text-muted-foreground',
           )}
         >
           <Icon name="pull-request" size="xs" />

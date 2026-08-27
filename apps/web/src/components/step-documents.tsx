@@ -87,14 +87,14 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                 onClick={() => setPicked(selected ? null : document.id)}
                 className={cx(
                   'flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                  selected ? 'bg-text/[0.07]' : 'hover:bg-text/[0.04]',
+                  selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
                 )}
               >
-                <Icon name="file" className={selected ? 'text-text' : 'text-muted'} />
-                <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-text">
+                <Icon name="file" className={selected ? 'text-foreground' : 'text-muted-foreground'} />
+                <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-foreground">
                   {fileName(document.path)}
                 </span>
-                <span className="shrink-0 font-mono text-[0.62rem] text-muted">
+                <span className="shrink-0 font-mono text-[0.62rem] text-muted-foreground">
                   {sizeFact(contents[index]?.data?.artifact.content ?? null)}
                 </span>
               </button>
@@ -128,9 +128,9 @@ function DocumentReader({
   const long = content !== null && content.trim().split('\n').length > 24
 
   return (
-    <div data-document-open="" className="mt-3 rounded-xl bg-elevated/45 px-4 py-3">
+    <div data-document-open="" className="mt-3 rounded-xl bg-popover/45 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="min-w-0 truncate font-mono text-[0.62rem] text-muted">{document.path}</p>
+        <p className="min-w-0 truncate font-mono text-[0.62rem] text-muted-foreground">{document.path}</p>
 
         <QuietLink href={`/tasks/${taskId}/docs/${document.id}`} className="shrink-0">
           open on Docs ↗
@@ -138,7 +138,7 @@ function DocumentReader({
       </div>
 
       {content === null ? (
-        <p className="pt-2 font-mono text-[0.68rem] text-muted">Reading the document…</p>
+        <p className="pt-2 font-mono text-[0.68rem] text-muted-foreground">Reading the document…</p>
       ) : (
         <div className={cx('relative pt-2', long && !whole && 'max-h-96 overflow-hidden')}>
           {document.kind === 'proposal' ? (
@@ -150,7 +150,7 @@ function DocumentReader({
           )}
 
           {long && !whole && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-elevated to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-popover to-transparent" />
           )}
         </div>
       )}

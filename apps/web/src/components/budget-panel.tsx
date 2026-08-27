@@ -56,9 +56,9 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
           return (
             <div key={row.label}>
               <div className="flex items-baseline justify-between gap-2 font-mono text-[0.7rem]">
-                <dt className="text-muted">{row.label}</dt>
+                <dt className="text-muted-foreground">{row.label}</dt>
                 <dd
-                  className={near ? signalText('asking') : 'text-text'}
+                  className={near ? signalText('asking') : 'text-foreground'}
                   title={row.incomplete ? 'incomplete — some runs reported no cost' : undefined}
                 >
                   {row.incomplete && (
@@ -75,7 +75,7 @@ export function BudgetPanel({ budgets, spend }: { budgets: Budgets; spend: Spend
                   as an underline, which is what a spend row must not look like. */}
               <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-border/70">
                 <div
-                  className={cx('h-full rounded-full', near ? signalDot('asking') : 'bg-text/25')}
+                  className={cx('h-full rounded-full', near ? signalDot('asking') : 'bg-foreground/25')}
                   style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
                 />
               </div>

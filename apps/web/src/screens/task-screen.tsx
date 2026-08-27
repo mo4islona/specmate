@@ -699,7 +699,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
               {actions.map((action) => (
                 <li
                   key={action.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-text/[0.05] py-1.5 pl-3.5 pr-1.5"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-foreground/[0.05] py-1.5 pl-3.5 pr-1.5"
                 >
                   <span className={cx('font-mono text-[0.72rem]', signalText('asking'))}>
                     {action.kind}
@@ -716,7 +716,7 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
                       Confirm
                     </Button>
                   ) : (
-                    <span className="px-2.5 font-mono text-[0.68rem] text-muted">
+                    <span className="px-2.5 font-mono text-[0.68rem] text-muted-foreground">
                       {action.status}
                     </span>
                   )}
@@ -819,8 +819,8 @@ export function TaskScreen({ taskId }: TaskScreenProps) {
           scrollable overflow — clipped flush against the duration, and 8px of
           horizontal scroll nobody asked for. */}
       <aside className="scroll-thin order-first min-h-0 xl:order-none xl:overflow-y-auto xl:border-l xl:border-border xl:pr-2 xl:pl-6">
-        <details className="rounded-xl bg-elevated/55 px-3.5 py-2.5 xl:hidden">
-          <summary className="cursor-pointer font-mono text-[0.72rem] text-muted">
+        <details className="rounded-xl bg-popover/55 px-3.5 py-2.5 xl:hidden">
+          <summary className="cursor-pointer font-mono text-[0.72rem] text-muted-foreground">
             Pipeline · {stepKey ? nodeLabel(stepKey).toLowerCase() : task.status}
           </summary>
           <div className="pt-4">

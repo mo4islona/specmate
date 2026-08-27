@@ -7,8 +7,8 @@ import { MicroLabel, StatBar, type Tone } from '../ui/index.ts'
  * noise down a stack of files, repeating what the numbers beside it just said.
  */
 const NAMED_STATUS: Partial<Record<DiffFileSummary['status'], { label: string; tone: Tone }>> = {
-  deleted: { label: 'deleted', tone: 'danger' },
-  'type-changed': { label: 'type changed', tone: 'attention' },
+  deleted: { label: 'deleted', tone: 'destructive' },
+  'type-changed': { label: 'type changed', tone: 'warning' },
 }
 
 /** What happened to a file, where that is not already on the row. */
@@ -36,7 +36,7 @@ export function StatCounts({
   readonly bar?: boolean
 }) {
   if (file.additions === null || file.deletions === null) {
-    return <span className="font-mono text-[0.65rem] text-muted">binary</span>
+    return <span className="font-mono text-[0.65rem] text-muted-foreground">binary</span>
   }
 
   return (
@@ -45,10 +45,10 @@ export function StatCounts({
           added file carries a `−0`, and in danger red a stack of them read as a
           column of losses down a rail where nothing had been lost. */}
       <span className="whitespace-nowrap">
-        <span className={file.additions > 0 ? 'text-success' : 'text-muted'}>
+        <span className={file.additions > 0 ? 'text-success' : 'text-muted-foreground'}>
           +{file.additions}
         </span>{' '}
-        <span className={file.deletions > 0 ? 'text-danger' : 'text-muted'}>−{file.deletions}</span>
+        <span className={file.deletions > 0 ? 'text-destructive' : 'text-muted-foreground'}>−{file.deletions}</span>
       </span>
       {bar && <StatBar additions={file.additions} deletions={file.deletions} />}
     </span>

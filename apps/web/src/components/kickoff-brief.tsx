@@ -28,7 +28,7 @@ export function KickoffBrief({ content }: { content: string }) {
             // biome-ignore lint/suspicious/noArrayIndexKey: sections are recomputed fresh from `content` every render; the index only disambiguates a heading a brief repeats.
             key={`${section.heading}-${index}`}
             data-brief-accent={accented ? '' : undefined}
-            className={accented ? 'rounded-xl bg-text/[0.05] px-4 py-3' : ''}
+            className={accented ? 'rounded-xl bg-foreground/[0.05] px-4 py-3' : ''}
           >
             <div className="artifact-document text-sm">
               <ArtifactMarkdown

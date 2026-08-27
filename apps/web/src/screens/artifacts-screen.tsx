@@ -71,17 +71,17 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
                           active={open}
                           className="flex min-w-0 items-center gap-2.5"
                         >
-                          <Icon name="file" className={open ? 'text-text' : 'text-muted'} />
+                          <Icon name="file" className={open ? 'text-foreground' : 'text-muted-foreground'} />
                           <span className="min-w-0 flex-1">
                             <span
                               className={cx(
                                 'block truncate font-mono text-[0.74rem]',
-                                open ? 'text-text' : 'text-muted',
+                                open ? 'text-foreground' : 'text-muted-foreground',
                               )}
                             >
                               {row.path.split('/').at(-1)}
                             </span>
-                            <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-muted">
+                            <span className="mt-0.5 block truncate font-mono text-[0.62rem] text-muted-foreground">
                               {row.path}
                             </span>
                           </span>
@@ -98,11 +98,11 @@ export function ArtifactsScreen({ taskId, artifactId }: ArtifactsScreenProps) {
       >
         {artifact.data && (
           <>
-            <header className="sticky top-0 z-10 bg-elevated px-4 py-3 sm:px-6">
-              <p className="break-all font-mono text-xs text-muted">
+            <header className="sticky top-0 z-10 bg-popover px-4 py-3 sm:px-6">
+              <p className="break-all font-mono text-xs text-muted-foreground">
                 {artifact.data.artifact.path}
               </p>
-              <p className="mt-1 font-mono text-[0.62rem] text-muted">
+              <p className="mt-1 font-mono text-[0.62rem] text-muted-foreground">
                 snapshot updated {formatTimestamp(artifact.data.artifact.updatedAt)}
               </p>
             </header>

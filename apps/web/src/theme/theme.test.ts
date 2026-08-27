@@ -13,16 +13,16 @@ const css = readFileSync(join(process.cwd(), 'src/theme/theme.css'), 'utf8')
  * up with a dark theme's borders and nobody notices until a screenshot.
  */
 const TOKENS = [
-  '--color-ground',
-  '--color-surface',
-  '--color-elevated',
+  '--color-background',
+  '--color-card',
+  '--color-popover',
   '--color-border',
-  '--color-border-bright',
-  '--color-text',
-  '--color-muted',
-  '--color-accent',
-  '--color-attention',
-  '--color-danger',
+  '--color-border-strong',
+  '--color-foreground',
+  '--color-muted-foreground',
+  '--color-primary',
+  '--color-warning',
+  '--color-destructive',
   '--color-info',
   '--color-success',
   '--color-syntax-comment',
@@ -30,8 +30,8 @@ const TOKENS = [
   '--color-syntax-keyword',
   '--color-syntax-number',
   '--color-syntax-name',
-  '--color-on-accent',
-  '--color-on-attention',
+  '--color-primary-foreground',
+  '--color-warning-foreground',
   '--color-hover-tint',
   '--shadow-popover',
   '--font-mono',
@@ -68,17 +68,17 @@ function contrast(left: string, right: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
-const SURFACES = ['--color-ground', '--color-surface', '--color-elevated']
+const SURFACES = ['--color-background', '--color-card', '--color-popover']
 const ROLES = [
-  '--color-muted',
-  '--color-accent',
-  '--color-attention',
-  '--color-danger',
+  '--color-muted-foreground',
+  '--color-primary',
+  '--color-warning',
+  '--color-destructive',
   '--color-info',
   '--color-success',
   // Code is read for minutes at a time, so its five hues hold the same floor
   // every other colour here does — on the diff's ground, which is a few per
-  // cent off `--color-ground` and is measured as it.
+  // cent off `--color-background` and is measured as it.
   '--color-syntax-comment',
   '--color-syntax-string',
   '--color-syntax-keyword',
@@ -114,7 +114,7 @@ describe('theme palettes', () => {
     }
 
     for (const surface of SURFACES) {
-      expect.soft(ratio('--color-text', surface)).toBeGreaterThanOrEqual(7)
+      expect.soft(ratio('--color-foreground', surface)).toBeGreaterThanOrEqual(7)
 
       for (const role of ROLES) {
         expect.soft(ratio(role, surface)).toBeGreaterThanOrEqual(4.5)
@@ -122,9 +122,9 @@ describe('theme palettes', () => {
     }
 
     // The label on a filled control, against the fill it labels.
-    expect.soft(ratio('--color-on-accent', '--color-accent')).toBeGreaterThanOrEqual(4.5)
-    expect.soft(ratio('--color-on-accent', '--color-danger')).toBeGreaterThanOrEqual(4.5)
-    expect(ratio('--color-on-attention', '--color-attention')).toBeGreaterThanOrEqual(4.5)
+    expect.soft(ratio('--color-primary-foreground', '--color-primary')).toBeGreaterThanOrEqual(4.5)
+    expect.soft(ratio('--color-primary-foreground', '--color-destructive')).toBeGreaterThanOrEqual(4.5)
+    expect(ratio('--color-warning-foreground', '--color-warning')).toBeGreaterThanOrEqual(4.5)
   })
 
   it('offers nothing the stylesheet cannot paint, and paints nothing it does not offer', () => {

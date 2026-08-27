@@ -85,7 +85,7 @@ export function TaskNavigation() {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[0.82rem] leading-5">{task.title}</span>
-                      <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted">
+                      <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted-foreground">
                         {nodeLabel(task.status)}
                       </span>
                     </span>

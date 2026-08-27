@@ -114,7 +114,7 @@ export function App() {
 
             <Route>
               <Panel className="text-center">
-                <MicroLabel tone="danger">404 / no route</MicroLabel>
+                <MicroLabel tone="destructive">404 / no route</MicroLabel>
                 <h1 className="mt-3 text-2xl font-semibold">Channel not found</h1>
               </Panel>
             </Route>

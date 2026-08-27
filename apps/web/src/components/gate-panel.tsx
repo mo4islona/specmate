@@ -68,7 +68,7 @@ export function GateVerbs({
             </Button>
           }
         >
-          <p className="text-[0.78rem] leading-6 text-muted">
+          <p className="text-[0.78rem] leading-6 text-muted-foreground">
             {nodeLabel(gateKey)} · rework needs the comment you are typing.
           </p>
 

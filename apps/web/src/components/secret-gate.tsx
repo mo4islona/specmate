@@ -28,7 +28,7 @@ export function SecretGate({ children }: SecretGateProps) {
   }
 
   return (
-    <main className="grid min-h-full place-items-center bg-ground p-5 text-text">
+    <main className="grid min-h-full place-items-center bg-background p-5 text-foreground">
       <Panel className="w-full max-w-md">
         <MicroLabel>Owner channel</MicroLabel>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Authenticate SpecMate</h1>

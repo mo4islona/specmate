@@ -125,7 +125,7 @@ export function Checkbox({
   return (
     <label
       className={cx(
-        'flex cursor-pointer items-center gap-1.5 text-muted text-xs',
+        'flex cursor-pointer items-center gap-1.5 text-muted-foreground text-xs',
         // The word goes quiet with the box. A live label beside a dead tick
         // reads as a checkbox you may still click.
         'has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-[0.38]',
@@ -137,7 +137,7 @@ export function Checkbox({
         <Icon
           name="check"
           size="xs"
-          className="pointer-events-none absolute inset-0 m-auto text-ground opacity-0 peer-checked:opacity-100"
+          className="pointer-events-none absolute inset-0 m-auto text-background opacity-0 peer-checked:opacity-100"
         />
       </span>
       {label}
@@ -170,7 +170,7 @@ export function Select({
 
       <Icon
         name="chevron-down"
-        className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-muted"
+        className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
       />
     </span>
   )

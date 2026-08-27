@@ -42,8 +42,8 @@ export function FolderName({ className, children, ...rest }: HTMLAttributes<HTML
 const ROW_BASE = 'rail-row rounded-lg py-2 transition-colors'
 // Where you are, not how the thing is going. A tinted wash under a row claimed a
 // state the row's own dot was busy contradicting.
-const ROW_ON = 'bg-text/[0.09] text-text'
-const ROW_OFF = 'text-muted hover:bg-text/[0.05] hover:text-text'
+const ROW_ON = 'bg-foreground/[0.09] text-foreground'
+const ROW_OFF = 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground'
 
 interface NavRowProps {
   /** A link when the row goes somewhere addressable, a button when it only selects. */

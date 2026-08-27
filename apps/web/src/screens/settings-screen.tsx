@@ -86,7 +86,7 @@ function ModelDefaultsSection() {
                 }
               />
               {savingRole === role && (
-                <p className="mt-1 font-mono text-[0.62rem] text-muted">Saving…</p>
+                <p className="mt-1 font-mono text-[0.62rem] text-muted-foreground">Saving…</p>
               )}
               {failedRole === role && <RequestError error={save.error} fallback="Save failed" />}
             </>

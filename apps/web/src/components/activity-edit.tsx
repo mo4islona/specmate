@@ -41,7 +41,7 @@ export const ActivityEditBlock = memo(function ActivityEditBlock({
 
   return (
     <div className="min-w-0 pl-2">
-      <p className="flex items-baseline gap-2 text-muted">
+      <p className="flex items-baseline gap-2 text-muted-foreground">
         <span className="shrink-0" aria-hidden="true">
           └
         </span>
@@ -121,5 +121,5 @@ function WholeEditNote({
 
   const note = said()
 
-  return note === null ? null : <p className="mt-1 ml-4 text-[0.68rem] text-muted">{note}</p>
+  return note === null ? null : <p className="mt-1 ml-4 text-[0.68rem] text-muted-foreground">{note}</p>
 }

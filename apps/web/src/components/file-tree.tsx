@@ -40,7 +40,7 @@ export function FileList({ groups, selected, viewed, onSelect }: FileListProps) 
                       and the column lost its edge one row at a time. */}
                   <span className="flex w-3 shrink-0 justify-center">
                     {viewed.has(file.path) && (
-                      <Icon name="check" size="xs" label="viewed" className="text-muted" />
+                      <Icon name="check" size="xs" label="viewed" className="text-muted-foreground" />
                     )}
                   </span>
 
