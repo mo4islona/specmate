@@ -347,13 +347,20 @@ describe('kit discipline', () => {
    * fill, and both go into the element's accessible name — `open a menu ⌄` was
    * the button's whole name until this rule.
    *
-   * `tone.ts` is the deliberate exception and is not JSX: its marks are a set
-   * of six that includes `●`, `○` and `–`, aligned on the rail's baseline grid
-   * rather than boxed like an icon. Six glyphs that agree beat five icons and
-   * a dash.
+   * The set used to be eleven characters, and four marks walked straight past
+   * it: a `■` on the Stop verb, a `▶` and a `›` on two disclosures, and a `●`
+   * standing in for the record's bullet. Each one sat off the line of the word
+   * beside it, which is what the rule exists to prevent — the rule was just
+   * spelled as a list of the glyphs that had been caught so far.
+   *
+   * It is ranges now. Geometric shapes and the tick-and-cross dingbats are marks
+   * whatever they are used for; the single guillemets are here because this app
+   * only ever used them as chevrons. Box drawing is deliberately not on the
+   * list: `└` joins a record's branch to its parent, and a line that draws a
+   * structure is not a mark standing for a thing.
    */
   it('no mark is typed as a glyph', () => {
-    const GLYPHS = /[⌄⌃▾▴▸◂✓✔✕✖✗]/gu
+    const GLYPHS = /[■-◿✓-✗⌃⌄‹›]/gu
     const offences: string[] = []
 
     for (const path of ALL_FILES.filter((path) => path.endsWith('.tsx'))) {

@@ -85,10 +85,13 @@ function NodeRow({ node, now }: { node: PipelineNodeView; now: number }): ReactN
   return (
     <span className="block text-[0.79rem]">
       <span className="grid grid-cols-[0.85rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
-        {/* Boxed rather than set: a mark on the baseline grid drifts with the
-            face around it, and these sit in a 0.85rem column beside a name. */}
+        {/* Centred on the row rather than sat on its baseline. The row aligns by
+            baseline because a name and a duration have to share one, but a box
+            holding an SVG has no text baseline for the browser to use — it falls
+            back to the bottom edge, which hangs the mark above the word it
+            belongs to. `self-center` opts this one cell out of that. */}
         <span
-          className={cn('flex h-[0.79rem] items-center justify-center', nodeMarkClass(node.state))}
+          className={cn('flex items-center justify-center self-center', nodeMarkClass(node.state))}
           title={mark.label}
         >
           <Icon name={mark.icon} size="xs" />

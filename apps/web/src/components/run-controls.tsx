@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { nodeLabel } from '../lib/task-thread.ts'
-import { Button, ErrorNote, Popover } from '../ui/index.ts'
+import { Button, ErrorNote, Icon, Popover } from '../ui/index.ts'
 
 interface StopControlProps {
   readonly nodeKey: string
@@ -39,7 +39,14 @@ export function StopControl({ nodeKey, attempt, onStop, stopping, error }: StopC
             aria-expanded={confirming}
             onClick={() => setConfirming(!confirming)}
           >
-            {stopping ? 'Stopping…' : '■ Stop'}
+            {stopping ? (
+              'Stopping…'
+            ) : (
+              <>
+                <Icon name="stop" size="xs" className="fill-current" />
+                Stop
+              </>
+            )}
           </Button>
         }
       >

@@ -8,21 +8,25 @@ import type {
   LiveActivity,
   TurnEntry,
 } from '../lib/task-thread.ts'
-import { cn, TextButton } from '../ui/index.ts'
+import { cn, Dot, TextButton } from '../ui/index.ts'
 import { ActivityEditBlock } from './activity-edit.tsx'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
-import { signalText } from './tone.ts'
+import { signalDot, signalText } from './tone.ts'
 
 const AUTHOR_TONE: Record<Exclude<FeedAuthor, 'owner'>, string> = {
   guide: 'text-muted-foreground',
   task: 'text-muted-foreground',
 }
 
-/** The bullet carries the colour; the words stay in the reading tone. */
+/**
+ * The bullet carries the colour; the words stay in the reading tone. It is a
+ * `Dot`, which fills rather than colours its text, so these are `bg-*` where the
+ * rest of this file's tones are `text-*`.
+ */
 const BULLET_TONE: Record<LineTone, string> = {
-  boundary: 'text-border-strong',
-  trouble: signalText('stopped'),
-  plain: 'text-muted-foreground',
+  boundary: 'bg-border-strong',
+  trouble: signalDot('stopped'),
+  plain: 'bg-muted-foreground',
 }
 
 /**
@@ -138,15 +142,10 @@ const RunLine = memo(function RunLine({
       </time>
 
       <p className="flex items-baseline gap-2">
-        <span
-          className={cn(
-            'shrink-0 leading-none',
-            entry.live ? `animate-breath ${signalText('live')}` : BULLET_TONE[entry.tone],
-          )}
-          aria-hidden="true"
-        >
-          ●
-        </span>
+        <Dot
+          live={entry.live}
+          className={cn('self-center', entry.live ? signalDot('live') : BULLET_TONE[entry.tone])}
+        />
 
         {call ? (
           <span className="min-w-0 break-all">

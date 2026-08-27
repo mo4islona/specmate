@@ -5,11 +5,13 @@ import {
   Console,
   ConsoleField,
   cn,
+  Dot,
   ErrorNote,
+  Icon,
   type ConsoleTone as SlabTone,
 } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
-import { consoleSignal, signalText } from './tone.ts'
+import { consoleSignal, signalDot, signalText } from './tone.ts'
 
 /** The one open question the console is answering, and its siblings as a pager. */
 export interface OpenQuestion {
@@ -54,10 +56,9 @@ const TONE_SLAB: Record<ConsoleTone, SlabTone> = {
   plain: 'plain',
 }
 
-function markClass(tone: ConsoleTone): string {
-  const live = tone === 'running' ? 'animate-breath ' : ''
-
-  return `${live}${signalText(consoleSignal(tone))}`
+/** `Dot` fills rather than colours, so the mood comes back as a `bg-*`. */
+function markDot(tone: ConsoleTone): string {
+  return signalDot(consoleSignal(tone))
 }
 
 /**
@@ -219,13 +220,9 @@ export function TaskComposer({
   )
 }
 
-/** The console's mood in one character — breathing while a node runs. */
+/** The console's mood in one mark — breathing while a node runs. */
 function Mark({ tone }: { tone: ConsoleTone }) {
-  return (
-    <span className={cn('shrink-0 leading-none', markClass(tone))} aria-hidden="true">
-      ●
-    </span>
-  )
+  return <Dot live={tone === 'running'} className={cn('self-center', markDot(tone))} />
 }
 
 function Pager({
@@ -250,7 +247,7 @@ function Pager({
         disabled={disabled || index === 0}
         onClick={() => onPage(index - 1)}
       >
-        ‹
+        <Icon name="chevron-left" size="xs" />
       </button>
       {steps.map((step) => (
         <button
@@ -277,7 +274,7 @@ function Pager({
         disabled={disabled || index === total - 1}
         onClick={() => onPage(index + 1)}
       >
-        ›
+        <Icon name="chevron-right" size="xs" />
       </button>
     </div>
   )
