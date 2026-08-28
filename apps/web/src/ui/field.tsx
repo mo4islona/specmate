@@ -209,6 +209,12 @@ interface SelectProps extends ControlProps {
   readonly onValueChange?: (value: string) => void
   readonly disabled?: boolean
   readonly placeholder?: string
+  /**
+   * What the trigger shows in place of the chosen option's own words, for a
+   * list whose rows are not the whole of what a value looks like — a model
+   * under its vendor's mark, where the mark is on the group and not the row.
+   */
+  readonly display?: ReactNode
   readonly id?: string
   readonly className?: string
   readonly children: ReactNode
@@ -231,6 +237,7 @@ export function Select({
   onValueChange,
   disabled,
   placeholder,
+  display,
   id,
   className,
   children,
@@ -262,7 +269,7 @@ export function Select({
         {/* Truncated on the value rather than the box: a model id is longer than
             the column it sits in, and the chevron is not something to overrun. */}
         <span className="min-w-0 truncate">
-          <SelectPrimitive.Value placeholder={placeholder} />
+          <SelectPrimitive.Value placeholder={placeholder}>{display}</SelectPrimitive.Value>
         </span>
         <SelectPrimitive.Icon asChild>
           <Icon name="chevron-down" className="shrink-0 text-muted-foreground" />
@@ -286,6 +293,31 @@ export function Select({
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>
     </SelectPrimitive.Root>
+  )
+}
+
+interface SelectGroupProps {
+  readonly label: ReactNode
+  /** Stands in the tick's gutter, so the heading's words line up with the rows under it. */
+  readonly mark?: ReactNode
+  readonly children: ReactNode
+}
+
+/**
+ * A heading over a run of options, for a list whose rows only make sense under
+ * one — the models of a vendor, where the vendor is the heading and the row is
+ * just the model. The mark is the group's, not the row's: a logo repeated down
+ * every line says the same thing four times and reads as noise.
+ */
+export function SelectGroup({ label, mark, children }: SelectGroupProps) {
+  return (
+    <SelectPrimitive.Group className="not-first:mt-1">
+      <SelectPrimitive.Label className="relative flex items-center py-1.5 pe-2 ps-7 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
+        {mark && <span className="absolute start-1.5 flex items-center">{mark}</span>}
+        {label}
+      </SelectPrimitive.Label>
+      {children}
+    </SelectPrimitive.Group>
   )
 }
 

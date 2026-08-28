@@ -39,6 +39,7 @@ export {
   FieldLabel,
   Input,
   Select,
+  SelectGroup,
   SelectOption,
   Textarea,
 } from './field.tsx'

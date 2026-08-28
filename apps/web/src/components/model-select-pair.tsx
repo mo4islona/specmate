@@ -2,25 +2,19 @@ import {
   type ModelId,
   modelsFor,
   type ProviderId,
+  providerForModel,
   REASONING_EFFORTS,
   type ReasoningEffort,
 } from '@specmate/core'
 import { shortModel } from '../lib/task-pipeline.ts'
-import { Select, SelectOption } from '../ui/index.ts'
+import { AGENT_LABELS, AgentAvatar, Select, SelectGroup, SelectOption } from '../ui/index.ts'
 
 interface ModelSelectPairProps {
   role: string
   /** Providers this deployment runs — the only ones a binding may name (REQ-1014). */
   providers: readonly ProviderId[]
-  providerValue: ProviderId | ''
   modelValue: ModelId | ''
   reasoningEffortValue: ReasoningEffort | ''
-  /**
-   * The provider in force where this control names none, so the models offered
-   * are still the ones the role will actually run under.
-   */
-  defaultProvider: ProviderId
-  onProviderChange: (value: ProviderId | '') => void
   onModelChange: (value: ModelId | '') => void
   onReasoningEffortChange: (value: ReasoningEffort | '') => void
   disabled?: boolean
@@ -29,63 +23,71 @@ interface ModelSelectPairProps {
 }
 
 /**
- * The per-role provider + model + reasoning-effort row shared by the Settings
- * screen and the task-creation override form.
+ * The per-role model + reasoning-effort row shared by the Settings screen and
+ * the task-creation override form.
  *
- * The three are not the same size and are not given the same width: a model
- * name needs room, a provider name a little less, and an effort is one short
- * word. Equal thirds is what clipped `claude-sonnet-5` down to `claude-sonnet-!`.
- * The names are the ones the rest of the app says out loud — the task screen has
- * never called it `claude-haiku-4-5-20251001` either.
+ * There is no provider control, because there was never a provider to choose:
+ * a model belongs to exactly one provider (`providerForModel`), so naming both
+ * was one fact asked for twice — and the only way to state a pair the API
+ * rejects (REQ-112). The provider is the heading its models sit under, wearing
+ * the vendor's own mark, and the trigger carries that mark beside the model.
  *
- * A model belongs to a provider, so the models offered are that provider's and
- * no others: a pair the API rejects (REQ-112) is one this must never present.
+ * The names are the ones the rest of the app says out loud — the task screen
+ * has never called it `claude-haiku-4-5-20251001` either.
  */
 export function ModelSelectPair({
   role,
   providers,
-  providerValue,
   modelValue,
   reasoningEffortValue,
-  defaultProvider,
-  onProviderChange,
   onModelChange,
   onReasoningEffortChange,
   disabled = false,
   includeUseDefault = false,
 }: ModelSelectPairProps) {
   const suffix = includeUseDefault ? ' override' : ''
-  const models = modelsFor(providerValue || defaultProvider)
+  const chosen = providerForModel(modelValue || undefined)
+
+  // A binding written while another provider was configured still has to show
+  // what it says; refusing the save is the API's job (REQ-1014), and a trigger
+  // gone blank explains none of it.
+  const listed = chosen && !providers.includes(chosen) ? [chosen, ...providers] : providers
+  const groups = listed
+    .map((provider) => ({ provider, models: modelsFor(provider) }))
+    .filter((group) => group.models.length > 0)
+
+  const display = chosen ? (
+    <span className="flex min-w-0 items-center gap-2">
+      <AgentAvatar name={chosen} lit label={AGENT_LABELS[chosen]} />
+      <span className="truncate">{shortModel(modelValue)}</span>
+    </span>
+  ) : (
+    'Use default'
+  )
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2 sm:grid-cols-[7.5rem_10.5rem_7rem]">
-      <Select
-        aria-label={`${role} provider${suffix}`}
-        mono
-        className="col-span-2 sm:col-span-1"
-        value={providerValue}
-        disabled={disabled}
-        onValueChange={(value) => onProviderChange(value as ProviderId | '')}
-      >
-        {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
-        {providers.map((provider) => (
-          <SelectOption key={provider} value={provider}>
-            {provider}
-          </SelectOption>
-        ))}
-      </Select>
+    <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2 sm:grid-cols-[13rem_7rem]">
       <Select
         aria-label={`${role} model${suffix}`}
         mono
+        display={display}
         value={modelValue}
         disabled={disabled}
         onValueChange={(value) => onModelChange(value as ModelId | '')}
       >
         {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
-        {models.map((model) => (
-          <SelectOption key={model} value={model}>
-            {shortModel(model)}
-          </SelectOption>
+        {groups.map((group) => (
+          <SelectGroup
+            key={group.provider}
+            label={AGENT_LABELS[group.provider]}
+            mark={<AgentAvatar name={group.provider} lit />}
+          >
+            {group.models.map((model) => (
+              <SelectOption key={model} value={model}>
+                {shortModel(model)}
+              </SelectOption>
+            ))}
+          </SelectGroup>
         ))}
       </Select>
       <Select

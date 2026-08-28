@@ -1,9 +1,8 @@
 import {
   type AgentRole,
-  DEFAULT_MODEL_BINDINGS,
   type ModelBinding,
   type ModelId,
-  type ProviderId,
+  providerForModel,
   type ReasoningEffort,
 } from '@specmate/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -92,6 +91,21 @@ export function setOverrideField<K extends keyof ModelBinding>(
   }
 
   return next
+}
+
+/**
+ * The two fields a chosen model settles, written together: the provider is the
+ * one that model belongs to, and "Use default" drops both rather than leaving a
+ * provider behind for a model that is no longer there.
+ */
+export function setModelOverride(
+  modelBindings: CreateTaskInput['modelBindings'],
+  role: AgentRole,
+  model: ModelId | undefined,
+): CreateTaskInput['modelBindings'] {
+  const withProvider = setOverrideField(modelBindings, role, 'provider', providerForModel(model))
+
+  return setOverrideField(withProvider, role, 'model', model)
 }
 
 interface RepositoryChoiceProps {
@@ -300,34 +314,14 @@ export function NewTaskScreen() {
                         role={role}
                         includeUseDefault
                         providers={availableProviders}
-                        providerValue={form.modelBindings?.[role]?.provider ?? ''}
-                        defaultProvider={
-                          defaults.data?.modelDefaults[role]?.provider ??
-                          DEFAULT_MODEL_BINDINGS[role].provider
-                        }
                         modelValue={form.modelBindings?.[role]?.model ?? ''}
                         reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
-                        // The model goes with the provider it belonged to: keeping
-                        // it would submit a pair the API rejects (REQ-112), and
-                        // absent resolves to one the new provider runs (AC-137).
-                        onProviderChange={(value) =>
-                          setForm({
-                            ...form,
-                            modelBindings: setOverrideField(
-                              setOverrideField(form.modelBindings, role, 'model', undefined),
-                              role,
-                              'provider',
-                              (value || undefined) as ProviderId | undefined,
-                            ),
-                          })
-                        }
                         onModelChange={(value) =>
                           setForm({
                             ...form,
-                            modelBindings: setOverrideField(
+                            modelBindings: setModelOverride(
                               form.modelBindings,
                               role,
-                              'model',
                               (value || undefined) as ModelId | undefined,
                             ),
                           })
