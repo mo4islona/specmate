@@ -1,5 +1,8 @@
 export * from './backend.ts'
 export * from './claude.ts'
+// Named rather than star: this module and `claude.ts` each parse their own
+// CLI's stream, so several helpers share a name and only the providers differ.
+export { CodexProvider, type CodexProviderDeps } from './codex.ts'
 export * from './config.ts'
 export * from './conversation-executor.ts'
 export * from './docker-backend.ts'
@@ -7,6 +10,7 @@ export * from './executor.ts'
 export * from './ledger.ts'
 export * from './local-backend.ts'
 export * from './prompt.ts'
+export * from './provider-run.ts'
 export * from './scope.ts'
 export * from './toolchains.ts'
 export * from './truncate.ts'

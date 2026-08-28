@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { ExecutionEnvironment } from '@specmate/core'
+import type { ExecutionEnvironment, ProviderId } from '@specmate/core'
 import type { BackendId } from './config.ts'
 
 export interface ExecLimits {
@@ -15,6 +15,12 @@ export interface ExecSpec {
   readonly workspacePath: string
   /** The only environment the process gets; the caller's is never inherited. */
   readonly env: Readonly<Record<string, string>>
+  /**
+   * Whose CLI this is. It selects the stored session the run is given and the
+   * names forwarded into it, so a stage reaches one provider's credential and no
+   * other (REQ-203, AC-520).
+   */
+  readonly provider: ProviderId
   readonly timeoutMs: number
   readonly limits: ExecLimits
   /** Whether the stage's role needs to start containers of its own. */
@@ -53,8 +59,9 @@ export interface ExecBackend {
   run(spec: ExecSpec): Promise<ExecResult>
   resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment>
   /**
-   * Asserts at startup that this backend can actually execute a stage. A
-   * process that cannot run one can only fail every task it picks up.
+   * Asserts at startup that this backend can actually execute a stage, under
+   * every configured provider. A process that cannot run one can only fail
+   * every task it picks up.
    */
   preflight(workspaceRoot: string): Promise<string>
 }

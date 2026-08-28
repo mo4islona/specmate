@@ -14,7 +14,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   backendFor,
-  providerFor,
+  providersFor,
   RunnerEnv,
   runnerConfigFrom,
   taskRunnerEnvironment,
@@ -74,7 +74,7 @@ if (!provisionedTask) {
 
 const executor = new StageExecutor({
   config,
-  provider: providerFor(config, backend),
+  providers: providersFor(config, backend),
   git: new Git(manager.config),
   workspaces,
   ledger: (id) => renderLedgerForTask(db, config, id),
@@ -86,6 +86,7 @@ const execution = await executor.execute({
   taskId: task.id,
   stageId: crypto.randomUUID(),
   role: role.data,
+  provider: binding.provider,
   model: binding.model,
   reasoningEffort: binding.reasoningEffort,
   workspace,

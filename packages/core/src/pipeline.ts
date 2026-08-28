@@ -821,17 +821,21 @@ export function canTransition(graph: PinnedGraph, from: TaskState, to: TaskState
 // ─── provider binding ─────────────────────────────────────────────────────────
 
 /**
- * The role's default when it is available, the first configured provider when
- * it is not — and for review stages, never the writer while an alternative
- * exists (`pickReviewProvider` falls back to the writer when it is the only
- * provider configured).
+ * The task's bound provider for the role when it is configured, the first
+ * configured provider when it is not — and for review stages, never the writer
+ * while an alternative exists (`pickReviewProvider` falls back to the writer
+ * when it is the only provider configured).
+ *
+ * `bound` is the task's own binding; the role catalog's default is what the
+ * binding was seeded from and is only reached for a caller that has no task.
  */
 export function bindStageProvider(
   node: StageNode,
   writer: ProviderId | undefined,
   available: readonly ProviderId[],
+  bound?: ProviderId,
 ): ProviderId {
-  const preferred = ROLE_CONTRACTS[node.role].defaultProvider
+  const preferred = bound ?? ROLE_CONTRACTS[node.role].defaultProvider
   const base = available.includes(preferred) ? preferred : (available[0] ?? preferred)
   if (node.binding !== 'cross_review' || !writer) return base
 

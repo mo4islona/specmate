@@ -603,7 +603,7 @@ export class Engine {
       const dispatchable = await Promise.all(
         runnable.map(async (candidate) => ({
           ...candidate,
-          provider: await this.resolveProvider(candidate.graph, candidate.node),
+          provider: await this.resolveProvider(candidate.task, candidate.graph, candidate.node),
         })),
       )
 
@@ -691,7 +691,7 @@ export class Engine {
       // this or any later candidate on the paused task can claim a slot.
       if (await this.pauseIfBudgetExhausted(candidate.task, 'a conversation response')) continue
 
-      const provider = this.resolveAnswerProvider()
+      const provider = this.resolveAnswerProvider(candidate.task)
       const claimed = await this.claimResponse(candidate.response, provider)
       if (!claimed || !conversationDispatcher) continue
       const [ownerMessage] = await db
@@ -984,7 +984,11 @@ export class Engine {
    * review: the provider recorded on the last successful run of the loop
    * edge's target — the stage this review loops back to.
    */
-  private async resolveProvider(graph: RunGraphRow, node: StageNode): Promise<ProviderId> {
+  private async resolveProvider(
+    task: Task,
+    graph: RunGraphRow,
+    node: StageNode,
+  ): Promise<ProviderId> {
     let writer: ProviderId | undefined
     if (node.binding === 'cross_review' && node.loopEdge) {
       const [written] = await this.deps.db
@@ -1002,11 +1006,19 @@ export class Engine {
       writer = written?.provider
     }
 
-    return bindStageProvider(node, writer, this.deps.settings.availableProviders)
+    const bound = task.modelBindings[node.role]?.provider
+
+    return bindStageProvider(node, writer, this.deps.settings.availableProviders, bound)
   }
 
-  private resolveAnswerProvider(): ProviderId {
-    const preferred = ROLE_CONTRACTS.answerer.defaultProvider
+  /**
+   * The task's own binding when this deployment runs it, and the first configured
+   * provider otherwise. A conversation turn has no cross-provider rule to satisfy:
+   * it checks nobody's work.
+   */
+  private resolveAnswerProvider(task: Task): ProviderId {
+    const preferred =
+      task.modelBindings.answerer?.provider ?? ROLE_CONTRACTS.answerer.defaultProvider
     if (this.deps.settings.availableProviders.includes(preferred)) return preferred
 
     const fallback = this.deps.settings.availableProviders[0]
@@ -2387,7 +2399,7 @@ export class Engine {
     // duration instead of an unknown one.
     const startedAt = response.updatedAt
     const telemetry: ExecutionUsage = {
-      provider: this.resolveAnswerProvider(),
+      provider: this.resolveAnswerProvider(task),
       model: null,
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),

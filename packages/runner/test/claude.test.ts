@@ -8,10 +8,9 @@ import {
   parseActivityLine,
   readStageTelemetry,
   readTelemetry,
-  type StageRunError,
-  stageContainerLabels,
 } from '../src/claude.ts'
 import { LocalBackend } from '../src/local-backend.ts'
+import { type StageRunError, stageContainerLabels } from '../src/provider-run.ts'
 import {
   cleanupTempDirs,
   type Harness,
@@ -58,16 +57,18 @@ describe('provider invocation', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
     const claude = provider('ok', harness)
 
-    expect(claude.argv('researcher', 'claude-opus-5', 'high')).toContain('--disallowedTools')
-    expect(claude.argv('researcher', 'claude-opus-5', 'high')).toContain('Bash')
-    expect(claude.argv('implementer', 'claude-opus-5', 'high')).not.toContain('--disallowedTools')
+    expect(claude.argv(job(harness, { role: 'researcher' }))).toContain('--disallowedTools')
+    expect(claude.argv(job(harness, { role: 'researcher' }))).toContain('Bash')
+    expect(claude.argv(job(harness, { role: 'implementer' }))).not.toContain('--disallowedTools')
   })
 
   it('runs the model and reasoning effort it is given, not the process-level config', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
-    // The provider's config defaults to claude-opus-5; passing a different
-    // model here and seeing it win is what proves argv() isn't reading config.
-    const argv = provider('ok', harness).argv('researcher', 'claude-sonnet-5', 'xhigh')
+    // Nothing process-level names a model; passing one on the job and seeing it
+    // win is what proves argv() reads the job rather than anything else.
+    const argv = provider('ok', harness).argv(
+      job(harness, { model: 'claude-sonnet-5', reasoningEffort: 'xhigh' }),
+    )
 
     expect(argv).toContain('-p')
     expect(argv[argv.indexOf('--model') + 1]).toBe('claude-sonnet-5')
@@ -77,7 +78,7 @@ describe('provider invocation', () => {
 
   it('pairs --output-format stream-json with --verbose, which the CLI requires under -p', () => {
     const harness = { workspace: { slug: 'x' } } as Harness
-    const argv = provider('ok', harness).argv('researcher', 'claude-opus-5', 'high')
+    const argv = provider('ok', harness).argv(job(harness))
 
     expect(argv).toContain('--verbose')
   })

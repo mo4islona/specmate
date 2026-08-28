@@ -1,4 +1,4 @@
-import type { ExecutionEnvironment } from '@specmate/core'
+import { type ExecutionEnvironment, stageModel } from '@specmate/core'
 import type { ConversationExecutor, StageExecutor } from '@specmate/runner'
 import type { ConversationDispatcher, StageDispatcher } from './engine.ts'
 
@@ -31,7 +31,10 @@ export function createStageDispatcher({
       node: node.key,
       role: node.role,
       provider,
-      model: binding.model,
+      // The provider was decided first and the model follows it: a checking node
+      // runs under a provider chosen to differ from the writer's, and the
+      // binding's model then belongs to the other one's CLI (REQ-112, AC-138).
+      model: stageModel(binding, provider),
       reasoningEffort: binding.reasoningEffort,
       workspace,
       baseBranch: workspace.baseBranch,
@@ -85,7 +88,7 @@ export function createConversationDispatcher({
       contextPath,
       actionOptions,
       provider,
-      model: binding.model,
+      model: stageModel(binding, provider),
       reasoningEffort: binding.reasoningEffort,
       workspace,
       baseBranch: workspace.baseBranch,

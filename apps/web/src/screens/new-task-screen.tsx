@@ -1,12 +1,24 @@
-import type { AgentRole, ModelBinding, ModelId, ReasoningEffort } from '@specmate/core'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  type AgentRole,
+  DEFAULT_MODEL_BINDINGS,
+  type ModelBinding,
+  type ModelId,
+  type ProviderId,
+  type ReasoningEffort,
+} from '@specmate/core'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
 import { IntakeRail } from '../components/intake-rail.tsx'
 import { ModelSelectPair } from '../components/model-select-pair.tsx'
 import { RoleBindings } from '../components/role-bindings.tsx'
 import { type SizeChoice, SizePicker } from '../components/size-picker.tsx'
-import { ApiRequestError, type CreateTaskInput, createTask } from '../lib/api-client.ts'
+import {
+  ApiRequestError,
+  type CreateTaskInput,
+  createTask,
+  getModelDefaults,
+} from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
 import { repoLabel } from '../lib/repo-link.ts'
 import {
@@ -141,6 +153,13 @@ export function NewTaskScreen() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<NewTaskForm>(INITIAL_FORM)
   const request = useRef<HTMLTextAreaElement | null>(null)
+  // Only the override control reads this, and it is collapsed by default — a
+  // slow read of the defaults must not hold up the four-field form (REQ-903).
+  const defaults = useQuery({
+    queryKey: queryKeys.modelDefaults,
+    queryFn: ({ signal }) => getModelDefaults(signal),
+  })
+  const availableProviders = defaults.data?.availableProviders ?? []
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the text is the trigger, not an input — the field is measured *because* what is in it changed.
   useEffect(() => {
@@ -280,8 +299,28 @@ export function NewTaskScreen() {
                       <ModelSelectPair
                         role={role}
                         includeUseDefault
+                        providers={availableProviders}
+                        providerValue={form.modelBindings?.[role]?.provider ?? ''}
+                        defaultProvider={
+                          defaults.data?.modelDefaults[role]?.provider ??
+                          DEFAULT_MODEL_BINDINGS[role].provider
+                        }
                         modelValue={form.modelBindings?.[role]?.model ?? ''}
                         reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
+                        // The model goes with the provider it belonged to: keeping
+                        // it would submit a pair the API rejects (REQ-112), and
+                        // absent resolves to one the new provider runs (AC-137).
+                        onProviderChange={(value) =>
+                          setForm({
+                            ...form,
+                            modelBindings: setOverrideField(
+                              setOverrideField(form.modelBindings, role, 'model', undefined),
+                              role,
+                              'provider',
+                              (value || undefined) as ProviderId | undefined,
+                            ),
+                          })
+                        }
                         onModelChange={(value) =>
                           setForm({
                             ...form,

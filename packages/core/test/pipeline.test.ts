@@ -463,6 +463,24 @@ describe('provider binding', () => {
     expect(bindStageProvider(implement, undefined, ['claude-code', 'codex'])).toBe('codex')
     expect(bindStageProvider(implement, undefined, ['claude-code'])).toBe('claude-code')
   })
+
+  // REQ-213: the task's own binding is what a stage runs under; the role
+  // catalog's default is what a caller with no task falls back to.
+  test("the task's binding is preferred over the role catalog's default", () => {
+    expect(bindStageProvider(implement, undefined, ['claude-code', 'codex'], 'claude-code')).toBe(
+      'claude-code',
+    )
+  })
+
+  test('a bound provider this deployment does not run falls back to one it does', () => {
+    expect(bindStageProvider(implement, undefined, ['claude-code'], 'codex')).toBe('claude-code')
+  })
+
+  test('the cross-review rule outranks the binding, which is the point of it', () => {
+    expect(bindStageProvider(review, 'codex', ['claude-code', 'codex'], 'codex')).toBe(
+      'claude-code',
+    )
+  })
 })
 
 describe('advance', () => {

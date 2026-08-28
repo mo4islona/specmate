@@ -3,8 +3,31 @@
  * the contract rather than of the handler that happens to read it, and several
  * of these are shared between the launch path and the rail that previews it.
  */
-import { ModelBindingsOverride, PlanSize, SpecConventionSetting, TaskState } from '@specmate/core'
+import {
+  incoherentBindings,
+  ModelBindingsOverride,
+  PlanSize,
+  SpecConventionSetting,
+  TaskState,
+} from '@specmate/core'
 import { z } from 'zod'
+
+/**
+ * A provider and a model are wrong together rather than wrong alone (REQ-112),
+ * so the pair is checked after each field has parsed, and the failure is
+ * reported against the model — the field that does not belong to the provider
+ * the request chose.
+ */
+const CoherentBindings = ModelBindingsOverride.superRefine((override, ctx) => {
+  for (const field of incoherentBindings(override)) {
+    const [role, key] = field.split('.')
+    ctx.addIssue({
+      code: 'custom',
+      path: [role as string, key as string],
+      message: `${override[role as keyof typeof override]?.model} is not a model ${override[role as keyof typeof override]?.provider} runs`,
+    })
+  }
+})
 
 export const CreateTask = z.object({
   // The request is the only thing a launch must carry: everything else is
@@ -27,7 +50,7 @@ export const CreateTask = z.object({
   // The owner declaring how much process the work gets, before anyone has read
   // the code. Absent is `auto`: planning declares it instead (REQ-1306).
   planSize: PlanSize.optional(),
-  modelBindings: ModelBindingsOverride.optional(),
+  modelBindings: CoherentBindings.optional(),
 })
 
 /**
@@ -57,7 +80,7 @@ export const ReadReference = z.object({
 /** Addressed by the remote, because a repository with no history has no id to be addressed by. */
 export const ProbeRepository = z.object({ repoUrl: z.url() })
 
-export const UpdateModelDefaults = ModelBindingsOverride
+export const UpdateModelDefaults = CoherentBindings
 
 /** `null` clears it. A repository nothing has run against is a legal default (REQ-1017). */
 export const UpdateDefaultRepository = z.object({ repoUrl: z.url().nullable() })

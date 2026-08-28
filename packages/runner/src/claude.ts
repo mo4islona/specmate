@@ -1,40 +1,28 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   type AgentProvider,
   type AgentRole,
-  checkReviseHasFindings,
+  defaultModelFor,
   type ModelId,
   type ProviderStatus,
-  parseStageResult,
   type ReasoningEffort,
   ROLE_CONTRACTS,
-  type StageActivity,
   type StageJob,
   type StageOutcome,
   type StageTelemetry,
 } from '@specmate/core'
-import { RESULT_FILE, SCRATCH_DIR } from '@specmate/workspace'
 import type { ExecBackend, ExecResult } from './backend.ts'
-import type { RunnerConfig } from './config.ts'
-import { editFor, type ToolUse } from './tool-edit.ts'
-
-export type RunFailure = 'timeout' | 'provider_error' | 'no_result' | 'invalid_result'
-
-/** A run that produced no usable result. The log is the diagnosis, so it travels with the error. */
-export class StageRunError extends Error {
-  constructor(
-    readonly failure: RunFailure,
-    readonly log: string,
-    readonly exitCode: number,
-    readonly durationMs: number,
-    detail: string,
-  ) {
-    super(detail)
-    this.name = 'StageRunError'
-  }
-}
+import { providerRuntime, type RunnerConfig } from './config.ts'
+import {
+  activityTarget,
+  isRecord,
+  type ProviderCli,
+  runProviderStage,
+  tokenUsage,
+} from './provider-run.ts'
+import type { ToolUse } from './tool-edit.ts'
 
 export interface ClaudeProviderDeps {
   readonly config: RunnerConfig
@@ -47,7 +35,7 @@ export interface ClaudeProviderDeps {
  * separate on purpose, so swapping providers changes how telemetry is read and
  * leaves the role contract alone.
  */
-export class ClaudeCodeProvider implements AgentProvider {
+export class ClaudeCodeProvider implements AgentProvider, ProviderCli {
   readonly id = 'claude-code' as const
 
   constructor(private readonly deps: ClaudeProviderDeps) {}
@@ -58,15 +46,18 @@ export class ClaudeCodeProvider implements AgentProvider {
    * `--verbose` is required alongside it under `-p`/`--print`: the CLI refuses
    * to start without it, regardless of whether per-token deltas are used.
    */
-  argv(
+  argv(job: StageJob, resumeSessionId?: string): string[] {
+    return this.commandLine(job.role, job.model, job.reasoningEffort, resumeSessionId)
+  }
+
+  private commandLine(
     role: AgentRole,
     model: ModelId,
     reasoningEffort: ReasoningEffort,
     resumeSessionId?: string,
   ): string[] {
-    const { config } = this.deps
     const argv = [
-      config.cli,
+      this.cli,
       '-p',
       '--output-format',
       'stream-json',
@@ -89,127 +80,28 @@ export class ClaudeCodeProvider implements AgentProvider {
     return argv
   }
 
-  async run(job: StageJob): Promise<StageOutcome> {
-    const { config, backend } = this.deps
-    const label = stageLabel(job)
-    const scratch = join(job.workspacePath, SCRATCH_DIR, label)
-    const resultPath = join(job.workspacePath, RESULT_FILE)
+  private get cli(): string {
+    return providerRuntime(this.deps.config, this.id).cli
+  }
 
-    await mkdir(scratch, { recursive: true })
-    await writeFile(join(scratch, 'prompt.md'), job.prompt)
-    // Scratch is excluded from commits, so a previous attempt's result outlives
-    // both a crash and the discard before a retry. Reading it would answer for
-    // an attempt that never wrote anything.
-    await rm(resultPath, { force: true })
+  run(job: StageJob): Promise<StageOutcome> {
+    return runProviderStage(this.deps, job, this)
+  }
 
-    // Only the session id decides whether there is anything to fork; whether this
-    // run is a continuation at all is `job.resume`, and the two part company when
-    // the resumed node recorded no session.
-    const forkFrom = job.resume?.sessionId ?? undefined
-    let argv = this.argv(job.role, job.model, job.reasoningEffort, forkFrom)
-    let coldStartReason: string | null = null
-    const activity = activityRelay(job)
-    let run = await backend.run({
-      argv,
-      stdin: job.prompt,
-      workspacePath: job.workspacePath,
-      env: {},
-      timeoutMs: job.timeoutMs || config.stageTimeoutMs,
-      limits: { cpus: config.cpus, memory: config.memory },
-      containerRuntime: job.needsContainerRuntime ?? false,
-      environment: job.environment,
-      label,
-      labels: stageContainerLabels(job),
-      onActivityLine: activity?.onLine,
-    })
-    await activity?.drain()
+  activityParser(): (line: string) => ToolUse[] {
+    return parseActivityLine
+  }
 
-    // AC-235: the artifacts are the contract and the session is grounding, so a
-    // session the provider will not give back degrades the run rather than failing it.
-    if (forkFrom && rejectedTheSession(run)) {
-      coldStartReason = `the provider would not continue session ${forkFrom}`
-      await rm(resultPath, { force: true })
-      argv = this.argv(job.role, job.model, job.reasoningEffort)
-      run = await backend.run({
-        argv,
-        stdin: job.prompt,
-        workspacePath: job.workspacePath,
-        env: {},
-        timeoutMs: job.timeoutMs || config.stageTimeoutMs,
-        limits: { cpus: config.cpus, memory: config.memory },
-        containerRuntime: job.needsContainerRuntime ?? false,
-        environment: job.environment,
-        label,
-        labels: stageContainerLabels(job),
-        onActivityLine: activity?.onLine,
-      })
-      await activity?.drain()
-    }
+  refusedSession(run: ExecResult): boolean {
+    return rejectedTheSession(run)
+  }
 
-    // The command line that produced `run`, which after a cold start is not the
-    // one this call started with — the log is read to find out what actually ran.
-    const log = `$ ${argv.join(' ')}\n\n${run.stdout}\n${run.stderr}`
-    await writeFile(join(scratch, 'run.log'), log)
+  sessionId(run: ExecResult): string | null {
+    return readSessionId(run.stdout)
+  }
 
-    if (run.timedOut) {
-      throw new StageRunError(
-        'timeout',
-        log,
-        run.exitCode,
-        run.durationMs,
-        `no result within ${job.timeoutMs}ms`,
-      )
-    }
-
-    const raw = await Bun.file(resultPath)
-      .text()
-      .catch(() => null)
-    if (raw === null) {
-      const detail =
-        run.exitCode === 0
-          ? 'the run left no RESULT.json'
-          : `provider exited ${run.exitCode} and left no RESULT.json`
-      throw new StageRunError(
-        run.exitCode === 0 ? 'no_result' : 'provider_error',
-        log,
-        run.exitCode,
-        run.durationMs,
-        detail,
-      )
-    }
-
-    // The graph's fact, not the session's: a continuation is asked for neither a
-    // plan nor a coverage classification, and that stays true when the provider
-    // refused the session and this run started cold. A job carrying no resumption
-    // at all is held to both — the obligation is what a missing field falls back to.
-    const parsed = parseStageResult(raw, Boolean(job.resume))
-    if (!parsed.ok) {
-      throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, parsed.error)
-    }
-
-    // A corroborated role's own findings may be empty and still be honest: the
-    // executor derives scenario findings after the run and checks the merged
-    // set once it knows them (`scope.ts`'s counterpart for verifier evidence).
-    if (!ROLE_CONTRACTS[job.role].corroborated) {
-      const findingsError = checkReviseHasFindings(parsed.value)
-      if (findingsError) {
-        throw new StageRunError('invalid_result', log, run.exitCode, run.durationMs, findingsError)
-      }
-    }
-
-    const telemetry = readStageTelemetry(run.stdout)
-    const usage = { ...parsed.value.usage, ...legacyUsage(telemetry) }
-    await writeFile(join(scratch, 'telemetry.json'), JSON.stringify(usage, null, 2))
-
-    return {
-      result: { ...parsed.value, usage },
-      log,
-      exitCode: run.exitCode,
-      durationMs: run.durationMs,
-      telemetry,
-      sessionId: readSessionId(run.stdout),
-      coldStartReason,
-    }
+  telemetry(run: ExecResult): StageTelemetry | null {
+    return readStageTelemetry(run.stdout)
   }
 
   async healthcheck(): Promise<ProviderStatus> {
@@ -220,10 +112,11 @@ export class ClaudeCodeProvider implements AgentProvider {
     let run: ExecResult
     try {
       run = await backend.run({
-        argv: [config.cli, '--version'],
+        argv: [this.cli, '--version'],
         stdin: '',
         workspacePath: scratch,
         env: {},
+        provider: this.id,
         timeoutMs: 30_000,
         limits: { cpus: config.cpus, memory: config.memory },
         containerRuntime: false,
@@ -259,10 +152,18 @@ export class ClaudeCodeProvider implements AgentProvider {
     const { config, backend } = this.deps
     const run = await backend
       .run({
-        argv: [config.cli, '-p', '--output-format', 'json', '--model', config.model],
+        argv: [
+          this.cli,
+          '-p',
+          '--output-format',
+          'json',
+          '--model',
+          defaultModelFor(this.id) ?? 'claude-opus-5',
+        ],
         stdin: 'Reply with the single word: ok',
         workspacePath: scratch,
         env: {},
+        provider: this.id,
         timeoutMs: 60_000,
         limits: { cpus: config.cpus, memory: config.memory },
         containerRuntime: false,
@@ -281,25 +182,6 @@ export class ClaudeCodeProvider implements AgentProvider {
   }
 }
 
-export function stageLabel(job: StageJob): string {
-  return `${job.stageId}-${job.attempt}`
-}
-
-/** Label prefix for stage containers; the restart sweep filters on these keys. */
-export const CONTAINER_LABELS = {
-  task: 'specmate.task',
-  node: 'specmate.node',
-  attempt: 'specmate.attempt',
-} as const
-
-export function stageContainerLabels(job: StageJob): Record<string, string> {
-  return {
-    [CONTAINER_LABELS.task]: job.taskId,
-    [CONTAINER_LABELS.node]: job.node ?? job.role,
-    [CONTAINER_LABELS.attempt]: String(job.attempt),
-  }
-}
-
 /**
  * Defence in depth only. A role that may not touch product code keeps its file
  * tools — its artifacts are files — but loses the shell, which is the tool that
@@ -315,27 +197,7 @@ export function disallowedTools(role: AgentRole): string[] {
  * token map — one parse of the envelope, one place that knows its shape.
  */
 export function readTelemetry(stdout: string): Record<string, number> {
-  return legacyUsage(readStageTelemetry(stdout))
-}
-
-function legacyUsage(telemetry: StageTelemetry | null): Record<string, number> {
-  const usage: Record<string, number> = {}
-
-  const inputTokens = telemetry?.tokens?.input_tokens
-  if (typeof inputTokens === 'number') {
-    usage.input_tokens = inputTokens
-  }
-
-  const outputTokens = telemetry?.tokens?.output_tokens
-  if (typeof outputTokens === 'number') {
-    usage.output_tokens = outputTokens
-  }
-
-  if (typeof telemetry?.costUsd === 'number') {
-    usage.cost_usd = telemetry.costUsd
-  }
-
-  return usage
+  return tokenUsage(readStageTelemetry(stdout))
 }
 
 /**
@@ -400,13 +262,6 @@ function servingModel(modelUsage: Record<string, unknown>): string | null {
 }
 
 /**
- * `stream-json` output is many lines, not one document: parse each
- * independently and keep the last one shaped like the CLI's terminal result.
- * The "array whose last entry is the result" tolerance some CLI versions need
- * still applies per line, one level down from where it used to apply to the
- * whole buffer.
- */
-/**
  * The session identifier the CLI reports, from whichever streamed line carries it —
  * the init line has it before any work happens, so a run that dies mid-way still
  * leaves something a later node could continue.
@@ -441,6 +296,13 @@ function rejectedTheSession(run: ExecResult): boolean {
   )
 }
 
+/**
+ * `stream-json` output is many lines, not one document: parse each
+ * independently and keep the last one shaped like the CLI's terminal result.
+ * The "array whose last entry is the result" tolerance some CLI versions need
+ * still applies per line, one level down from where it used to apply to the
+ * whole buffer.
+ */
 function parseEnvelope(stdout: string): Record<string, unknown> | null {
   let result: Record<string, unknown> | null = null
 
@@ -461,18 +323,6 @@ function parseEnvelope(stdout: string): Record<string, unknown> | null {
 
   return result
 }
-
-/** Tool-use targets, tried in priority order — the first present string wins. */
-const ACTIVITY_TARGET_KEYS = [
-  'file_path',
-  'notebook_path',
-  'pattern',
-  'path',
-  'command',
-  'url',
-  'query',
-  'description',
-] as const
 
 /**
  * One `stream-json` line, parsed for recognized tool use. Everything else —
@@ -511,58 +361,4 @@ export function parseActivityLine(line: string): ToolUse[] {
   }
 
   return uses
-}
-
-/**
- * The activity one tool use becomes. Reconstructing an edit reads the file the
- * CLI is editing, so this is where activity stops being pure — and where every
- * failure of that read is absorbed, leaving the tool and its target standing.
- */
-export async function activityFor(use: ToolUse, workspacePath: string): Promise<StageActivity> {
-  const edit = await editFor(use, workspacePath).catch(() => null)
-
-  return edit
-    ? { tool: use.tool, target: use.target, edit }
-    : { tool: use.tool, target: use.target }
-}
-
-/**
- * Lines arrive synchronously and the edit behind one takes a file read, so the
- * work is queued rather than raced: `events.seq` is trusted to be the order the
- * tool uses happened in. `drain` is what keeps a run's last activity from
- * landing after the outcome it preceded.
- */
-function activityRelay(
-  job: StageJob,
-): { onLine: (line: string) => void; drain: () => Promise<void> } | undefined {
-  const onActivity = job.onActivity
-  if (!onActivity) return undefined
-
-  let queue: Promise<unknown> = Promise.resolve()
-
-  return {
-    onLine: (line) => {
-      for (const use of parseActivityLine(line)) {
-        queue = queue
-          .then(() => activityFor(use, job.workspacePath).then(onActivity))
-          .catch(() => {})
-      }
-    },
-    drain: () => queue.then(() => undefined),
-  }
-}
-
-function activityTarget(input: unknown): string {
-  if (!isRecord(input)) return ''
-
-  for (const key of ACTIVITY_TARGET_KEYS) {
-    const value = input[key]
-    if (typeof value === 'string' && value.length > 0) return value
-  }
-
-  return ''
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

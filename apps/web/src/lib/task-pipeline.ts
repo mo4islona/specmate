@@ -4,6 +4,7 @@ import {
   type ModelBinding,
   type ProviderId,
   ROLE_CONTRACTS,
+  stageModel,
   type TaskState,
 } from '@specmate/core'
 import type { TaskDetail, TimelineEvent } from './api-client.ts'
@@ -120,14 +121,15 @@ export function buildPipelineNodes({
     const role = node.kind === 'stage' ? node.role : null
     const skipReason = skipped.get(node.key) ?? null
     const state = nodeState({ node, latest, current, passed: currentIndex > index, skipReason })
+    const binding = role ? (modelBindings[role] ?? null) : null
 
     return {
       key: node.key,
       kind: node.kind,
       label: nodeLabel(node.key),
       role,
-      agent: nodeAgent(node, latest),
-      binding: role ? (modelBindings[role] ?? null) : null,
+      agent: nodeAgent(node, latest, binding),
+      binding,
       state,
       reason: nodeReason(state, runs, skipReason),
       current,
@@ -144,17 +146,26 @@ export function buildPipelineNodes({
  *
  * Before that it is a forecast, and one the client cannot always make well — a
  * `cross_review` node is bound against whoever wrote the artifacts under review,
- * which is not decided until the writer has run. The role's own default is the
+ * which is not decided until the writer has run. The task's own binding is the
  * closest honest guess, and the hint is where an unrun node says the guess is a
  * guess.
  */
-function nodeAgent(node: PinnedNode, latest: Stage | null): NodeAgent {
+function nodeAgent(
+  node: PinnedNode,
+  latest: Stage | null,
+  binding: ModelBinding | null,
+): NodeAgent {
   if (node.kind === 'gate') return 'human'
   if (node.kind !== 'stage') return 'specmate'
 
   if (latest?.provider) return latest.provider
 
-  return ROLE_CONTRACTS[node.role as AgentRole]?.defaultProvider ?? 'claude-code'
+  // The task's own binding is what an unrun node will dispatch under, subject to
+  // the two caveats above; the role catalog's default is what a task predating
+  // provider bindings has instead.
+  return (
+    binding?.provider ?? ROLE_CONTRACTS[node.role as AgentRole]?.defaultProvider ?? 'claude-code'
+  )
 }
 
 /**
@@ -255,6 +266,17 @@ export function nodeSpend(node: PipelineNodeView, now = Date.now()): NodeSpend {
     tokens: counted.length > 0 ? tokens : null,
     tokenTotal: counted.length > 0 ? counted.reduce((total, value) => total + value, 0) : null,
     costUsd,
-    model: node.latest?.telemetry?.model ?? node.binding?.model ?? null,
+    // What the run reported, and otherwise what it was dispatched with — which
+    // is the model resolved for the provider the stage actually ran under, not
+    // the binding's, since a checking node runs under the other one (AC-138).
+    model: node.latest?.telemetry?.model ?? boundModel(node),
   }
+}
+
+function boundModel(node: PipelineNodeView): string | null {
+  if (!node.binding) return null
+
+  const provider = node.latest?.provider ?? node.binding.provider
+
+  return stageModel(node.binding, provider)
 }

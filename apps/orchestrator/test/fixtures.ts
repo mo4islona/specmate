@@ -1,6 +1,7 @@
 import {
   type Budgets,
   type Caps,
+  type ModelBindingsOverride,
   type PlanShape,
   StageResult,
   type TaskState,
@@ -282,6 +283,7 @@ export async function seedTask(
     repoUrl?: string
     originTaskId?: string
     planDepth?: number
+    modelBindings?: ModelBindingsOverride
   } = {},
 ): Promise<SeededTask> {
   const slug = `loop-${crypto.randomUUID().slice(0, 8)}`
@@ -298,6 +300,7 @@ export async function seedTask(
     at: options.at,
     originTaskId: options.originTaskId,
     planDepth: options.planDepth,
+    modelBindings: options.modelBindings,
   })
   if (options.status) {
     await db

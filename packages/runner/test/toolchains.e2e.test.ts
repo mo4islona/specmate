@@ -5,7 +5,7 @@ import type { AgentProvider, StageJob, StageOutcome } from '@specmate/core'
 import type { WorkspaceService } from '@specmate/workspace'
 import type { ExecResult } from '../src/backend.ts'
 import { DockerBackend } from '../src/docker-backend.ts'
-import { StageExecutor } from '../src/executor.ts'
+import { providerRegistry, StageExecutor } from '../src/executor.ts'
 import { cleanupTempDirs, makeConfig, makeHarness } from './fixtures.ts'
 
 const describeDocker = process.env.SPECMATE_RUN_DOCKER_TESTS === '1' ? describe : describe.skip
@@ -32,7 +32,7 @@ describeDocker('universal runner toolchains', () => {
       const config = makeConfig({
         backend: 'docker',
         image,
-        authVolume,
+        providers: { 'claude-code': { cli: 'claude', authVolume, forwardEnv: [] } },
         toolchainsVolume,
         stageTimeoutMs: 10 * 60_000,
       })
@@ -50,7 +50,7 @@ describeDocker('universal runner toolchains', () => {
       const provider = new ToolchainProbeProvider(config)
       const executor = new StageExecutor({
         config,
-        provider,
+        providers: providerRegistry([provider]),
         git: harness.git,
         workspaces: workspaceAdapter(harness),
         ledger: async () => '',
@@ -60,6 +60,7 @@ describeDocker('universal runner toolchains', () => {
         taskId: randomUUID(),
         stageId: randomUUID(),
         role: 'implementer',
+        provider: 'claude-code',
         model: 'claude-opus-5',
         reasoningEffort: 'high',
         workspace: harness.workspace,
@@ -71,6 +72,7 @@ describeDocker('universal runner toolchains', () => {
         taskId: randomUUID(),
         stageId: randomUUID(),
         role: 'implementer',
+        provider: 'claude-code',
         model: 'claude-opus-5',
         reasoningEffort: 'high',
         workspace: harness.workspace,
@@ -96,7 +98,7 @@ describeDocker('universal runner toolchains', () => {
       const config = makeConfig({
         backend: 'docker',
         image,
-        authVolume,
+        providers: { 'claude-code': { cli: 'claude', authVolume, forwardEnv: [] } },
         toolchainsVolume,
         stageTimeoutMs: 5 * 60_000,
       })
@@ -129,6 +131,7 @@ class ToolchainProbeProvider implements AgentProvider {
       ],
       stdin: '',
       workspacePath: job.workspacePath,
+      provider: this.id,
       env: { MISE_VERBOSE: '1' },
       timeoutMs: job.timeoutMs,
       limits: { cpus: this.config.cpus, memory: this.config.memory },

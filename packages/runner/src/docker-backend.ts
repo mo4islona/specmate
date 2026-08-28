@@ -12,7 +12,7 @@ import {
   spawnBounded,
   spawnBoundedHandle,
 } from './backend.ts'
-import type { RunnerConfig } from './config.ts'
+import { configuredProviders, providerRuntime, type RunnerConfig } from './config.ts'
 import {
   exactVersion,
   isVersionRange,
@@ -52,6 +52,7 @@ export class DockerBackend implements ExecBackend {
 
   argv(spec: ExecSpec): string[] {
     const { config } = this
+    const runtime = providerRuntime(config, spec.provider)
     const argv = [
       config.dockerCli,
       'run',
@@ -75,7 +76,7 @@ export class DockerBackend implements ExecBackend {
       '--volume',
       `${spec.workspacePath}:${spec.workspacePath}`,
       '--volume',
-      `${config.authVolume}:${config.homeDir}`,
+      `${runtime.authVolume}:${config.homeDir}`,
       '--volume',
       `${config.toolchainsVolume}:${MISE_SHARED_ROOT}:ro`,
     )
@@ -84,7 +85,7 @@ export class DockerBackend implements ExecBackend {
     if (spec.containerRuntime) argv.push('--volume', `${DOCKER_SOCKET}:${DOCKER_SOCKET}`)
     // Name-only `--env` makes the runtime read the value from the client's
     // environment, so a forwarded secret never appears in the command line.
-    for (const name of config.forwardEnv) argv.push('--env', name)
+    for (const name of runtime.forwardEnv) argv.push('--env', name)
     for (const [key, value] of Object.entries(spec.env)) argv.push('--env', `${key}=${value}`)
     argv.push('--env', `HOME=${config.homeDir}`)
     argv.push(
@@ -159,18 +160,59 @@ export class DockerBackend implements ExecBackend {
       await rm(marker, { force: true })
     }
 
-    return `docker backend: runtime ${version.stdout.trim()}, image ${this.config.image}`
+    const clis = await this.probeProviderClis()
+
+    return `docker backend: runtime ${version.stdout.trim()}, image ${this.config.image}, ${clis}`
+  }
+
+  /**
+   * A configured provider whose CLI the image does not carry can only fail every
+   * stage bound to it, one stage at a time. Asked here instead (AC-518).
+   */
+  private async probeProviderClis(): Promise<string> {
+    const found: string[] = []
+    for (const provider of configuredProviders(this.config)) {
+      const { cli } = providerRuntime(this.config, provider)
+      const probe = await spawnBounded({
+        argv: [
+          this.config.dockerCli,
+          'run',
+          '--rm',
+          '--user',
+          this.config.user,
+          '--entrypoint',
+          cli,
+          this.config.image,
+          '--version',
+        ],
+        stdin: '',
+        cwd: process.cwd(),
+        env: this.clientEnv(),
+        timeoutMs: 120_000,
+        outputLimitBytes: 64 * 1024,
+      }).catch((e: Error) => ({ exitCode: -1, stdout: '', stderr: e.message }))
+      if (probe.exitCode !== 0) {
+        throw new Error(
+          `provider "${provider}" is configured but its CLI "${cli}" is not in ${this.config.image}: ${probe.stderr.trim() || `exit ${probe.exitCode}`}`,
+        )
+      }
+
+      found.push(`${provider} ${probe.stdout.trim().split('\n')[0] ?? ''}`.trim())
+    }
+
+    return found.join(', ')
   }
 
   start(spec: ExecSpec): ExecHandle {
     const name = containerName(spec.label)
+    const runtime = providerRuntime(this.config, spec.provider)
     const execution = spawnBoundedHandle({
       argv: this.argv(spec),
       stdin: spec.stdin,
       // `docker run` is a client; the working directory that matters is the
       // container's, set with --workdir above.
       cwd: process.cwd(),
-      env: this.clientEnv(),
+      env: this.clientEnv(runtime.forwardEnv),
       timeoutMs: spec.timeoutMs,
       outputLimitBytes: this.config.logBytesLimit,
       // Killing the client would leave the container running: the deadline has
@@ -302,11 +344,15 @@ export class DockerBackend implements ExecBackend {
     return result
   }
 
-  /** The client needs a socket and the names it forwards; nothing else. */
-  private clientEnv(): Record<string, string> {
+  /**
+   * The client needs a socket and the names it forwards; nothing else. The
+   * names come from the run being made rather than from the process, so a stage
+   * under one provider never carries another's credential (AC-520).
+   */
+  private clientEnv(forwardEnv: readonly string[] = []): Record<string, string> {
     const env: Record<string, string> = { PATH: process.env.PATH ?? '/usr/bin:/bin' }
     if (process.env.DOCKER_HOST) env.DOCKER_HOST = process.env.DOCKER_HOST
-    for (const name of this.config.forwardEnv) {
+    for (const name of forwardEnv) {
       const value = process.env[name]
       if (value !== undefined) env[name] = value
     }

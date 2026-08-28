@@ -8,6 +8,7 @@ import {
   type ConversationExecutorDeps,
   type ConversationRequest,
 } from '../src/conversation-executor.ts'
+import { providerRegistry } from '../src/executor.ts'
 import { LocalBackend } from '../src/local-backend.ts'
 import {
   cleanupTempDirs,
@@ -32,7 +33,7 @@ function makeExecutor(harness: Harness, mode: string, record?: string): Conversa
   const provider = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
   const deps: ConversationExecutorDeps = {
     config,
-    provider,
+    providers: providerRegistry([provider]),
     git: harness.git,
     ledger: async () => '## Task\n\n- Current state: research\n',
   }
@@ -52,6 +53,7 @@ function request(workspace: ConversationWorkspace): ConversationRequest {
     currentAnchorCommit: workspace.branch,
     currentTaskState: 'specify',
     contextPath: 'stored',
+    provider: 'claude-code',
     actionOptions: [
       {
         kind: 'instruct_next_run',

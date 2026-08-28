@@ -14,10 +14,10 @@ import {
 } from '@specmate/core'
 import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
 import { checkBriefCompleteness } from './brief.ts'
-import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
 import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
+import { type RunFailure, type StageRunError, stageLabel } from './provider-run.ts'
 import { changedPaths, checkWriteScope } from './scope.ts'
 
 /** Injected rather than a database handle: the ledger is text by the time a stage sees it. */
@@ -39,8 +39,8 @@ export interface StageRequest {
   /** Pipeline node key, when the loop dispatches; labels the container for the sweep. */
   readonly node?: string
   readonly role: AgentRole
-  /** Provider the engine bound and recorded for this stage; a mismatch is refused. */
-  readonly provider?: ProviderId
+  /** Provider the engine bound and recorded for this stage; one this process does not run is refused. */
+  readonly provider: ProviderId
   /** Resolved from the task's stored model bindings for this stage's role. */
   readonly model: ModelId
   readonly reasoningEffort: ReasoningEffort
@@ -98,9 +98,16 @@ export interface StageActivityEvent extends StageActivity {
   readonly attempt: number
 }
 
+/** Every provider this process runs, keyed by id — what a job's provider selects from. */
+export type ProviderRegistry = ReadonlyMap<ProviderId, AgentProvider>
+
+export function providerRegistry(providers: readonly AgentProvider[]): ProviderRegistry {
+  return new Map(providers.map((provider) => [provider.id, provider]))
+}
+
 export interface StageExecutorDeps {
   readonly config: RunnerConfig
-  readonly provider: AgentProvider
+  readonly providers: ProviderRegistry
   readonly git: Git
   readonly workspaces: WorkspaceService
   readonly ledger: LedgerSource
@@ -121,13 +128,15 @@ export class StageExecutor {
 
   async execute(request: StageRequest): Promise<StageExecution> {
     // The binding is recorded on the stage row and in commit trailers; quietly
-    // running a different provider would make that attribution lie.
-    if (request.provider && request.provider !== this.deps.provider.id) {
+    // running a different provider would make that attribution lie, so a stage
+    // bound to a provider this deployment does not run fails saying so (AC-242).
+    const provider = this.deps.providers.get(request.provider)
+    if (!provider) {
       return {
         status: 'failed',
         attempts: [],
         failure: 'provider_error',
-        detail: `stage is bound to provider "${request.provider}" but this executor runs "${this.deps.provider.id}"`,
+        detail: `stage is bound to provider "${request.provider}", which this deployment does not run`,
       }
     }
 
@@ -136,7 +145,7 @@ export class StageExecutor {
 
     for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
       const attempt = first + i
-      const outcome = await this.attempt(request, attempt)
+      const outcome = await this.attempt(request, attempt, provider)
       attempts.push(outcome.record)
       if (outcome.record.ok) {
         return {
@@ -173,6 +182,7 @@ export class StageExecutor {
   private async attempt(
     request: StageRequest,
     attempt: number,
+    provider: AgentProvider,
   ): Promise<{
     record: StageAttemptRecord
     result?: StageResult
@@ -182,7 +192,7 @@ export class StageExecutor {
     sessionId?: string | null
     coldStartReason?: string | null
   }> {
-    const { config, provider, git, workspaces, ledger: loadLedger, onActivity } = this.deps
+    const { config, git, workspaces, ledger: loadLedger, onActivity } = this.deps
     const ledger = await loadLedger(request.taskId)
     const prompt = await assemblePrompt(git, config, {
       role: request.role,

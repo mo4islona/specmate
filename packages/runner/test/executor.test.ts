@@ -5,12 +5,14 @@ import {
   AGENT_ROLES,
   type AgentProvider,
   type AgentRole,
+  DEFAULT_MODEL_BINDINGS,
   ROLE_CONTRACTS,
   type StageJob,
 } from '@specmate/core'
 import type { WorkspaceService } from '@specmate/workspace'
 import { ClaudeCodeProvider } from '../src/claude.ts'
 import {
+  providerRegistry,
   roleNeedsContainerRuntime,
   type StageActivityEvent,
   StageExecutor,
@@ -51,7 +53,7 @@ function makeExecutor(
 
   return new StageExecutor({
     config,
-    provider,
+    providers: providerRegistry([provider]),
     git: harness.git,
     workspaces: workspaceAdapter(harness),
     ledger: async () => '## Task\n\n- Title: a task\n',
@@ -72,6 +74,7 @@ function request(harness: Harness, overrides: Partial<StageRequest> = {}): Stage
     taskId: TASK_ID,
     stageId: '44444444-4444-4444-8444-444444444444',
     role: 'researcher',
+    provider: 'claude-code',
     model: 'claude-opus-5',
     reasoningEffort: 'high',
     workspace: harness.workspace,
@@ -188,7 +191,7 @@ describe('stage execution', () => {
     const config = makeConfig({ rolesDir })
     const executor = new StageExecutor({
       config,
-      provider,
+      providers: providerRegistry([provider]),
       git: harness.git,
       workspaces: workspaceAdapter(harness),
       ledger: async () => '',
@@ -233,7 +236,7 @@ describe('stage execution', () => {
     setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, SPECMATE_STUB_MODE: 'ok' })
     const executor = new StageExecutor({
       config,
-      provider,
+      providers: providerRegistry([provider]),
       git: harness.git,
       workspaces: workspaceAdapter(harness),
       ledger: async () => '',
@@ -252,9 +255,9 @@ describe('stage execution', () => {
     const harness = await makeHarness('task-model')
     await harness.commitAll('baseline')
     const dispatched: { model: string; reasoningEffort: string }[] = []
-    // The process-level config carries its own default model (and no effort at
-    // all) — proving the dispatched values differ from it is what shows the
-    // resolved binding wins (AC-231).
+    // Nothing process-level names a model any more; the shipped factory default
+    // is the nearest thing, and proving the dispatched values differ from it is
+    // what shows the resolved binding wins (AC-231).
     const config = makeConfig({ forwardEnv: STUB_ENV })
     const delegate = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
     const provider: AgentProvider = {
@@ -269,7 +272,7 @@ describe('stage execution', () => {
     setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, SPECMATE_STUB_MODE: 'ok' })
     const executor = new StageExecutor({
       config,
-      provider,
+      providers: providerRegistry([provider]),
       git: harness.git,
       workspaces: workspaceAdapter(harness),
       ledger: async () => '',
@@ -286,7 +289,7 @@ describe('stage execution', () => {
       { model: 'claude-sonnet-5', reasoningEffort: 'low' },
       { model: 'claude-fable-5', reasoningEffort: 'max' },
     ])
-    expect(dispatched.map((d) => d.model)).not.toContain(config.model)
+    expect(dispatched.map((d) => d.model)).not.toContain(DEFAULT_MODEL_BINDINGS.researcher.model)
   })
 
   test('commits the output of a run that stayed in scope', async () => {
@@ -345,7 +348,40 @@ describe('stage execution', () => {
     expect(await commitCount(harness)).toBe(before)
   })
 
-  test('a stage bound to a different provider is refused, not silently re-attributed', async () => {
+  // REQ-215, AC-241.
+  test('runs each stage under the provider its job names', async () => {
+    const harness = await makeHarness('two-providers')
+    await harness.commitAll('baseline')
+    const config = makeConfig({ forwardEnv: STUB_ENV })
+    setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, SPECMATE_STUB_MODE: 'ok' })
+
+    const ran: string[] = []
+    const spy = (delegate: AgentProvider, id: AgentProvider['id']): AgentProvider => ({
+      id,
+      run(job) {
+        ran.push(job.provider)
+
+        return delegate.run(job)
+      },
+      healthcheck: () => delegate.healthcheck(),
+    })
+    const delegate = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
+    const executor = new StageExecutor({
+      config,
+      providers: providerRegistry([spy(delegate, 'claude-code'), spy(delegate, 'codex')]),
+      git: harness.git,
+      workspaces: workspaceAdapter(harness),
+      ledger: async () => '',
+    })
+
+    await executor.execute(request(harness, { provider: 'codex' }))
+    await executor.execute(request(harness, { provider: 'claude-code' }))
+
+    expect(ran).toEqual(['codex', 'claude-code'])
+  })
+
+  // AC-242.
+  test('a stage bound to a provider this deployment does not run is refused', async () => {
     const harness = await makeHarness('wrong-provider')
     await harness.commitAll('baseline')
 
