@@ -82,6 +82,9 @@ const TOOL_VERBS: Record<string, ToolVerb> = {
   WebFetch: { doing: 'Fetching', did: 'Fetched', mutates: false },
   WebSearch: { doing: 'Searching', did: 'Searched', mutates: false },
   BashOutput: { doing: 'Checking', did: 'Checked', mutates: false },
+  // The harness reaching into its own catalogue for a tool's schema. It loads a
+  // definition and touches nothing in the tree, so it belongs with the reads.
+  ToolSearch: { doing: 'Looking up tools', did: 'Looked up tools', mutates: false },
   TodoWrite: { doing: 'Updating plan', did: 'Updated its plan', mutates: false },
   Task: { doing: 'Delegating to', did: 'Delegated to', mutates: false },
   Edit: { doing: 'Editing', did: 'Edited', mutates: true },

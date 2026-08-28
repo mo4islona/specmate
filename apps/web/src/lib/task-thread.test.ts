@@ -9,6 +9,7 @@ import {
   eventTitle,
   formatDuration,
   formatTokens,
+  isMutatingActivity,
   liveActivity,
   nodeLabel,
   stageActivityLabel,
@@ -187,6 +188,31 @@ describe('stage activity rendering (REQ-915)', () => {
     })
 
     expect(stageActivityLabel(event)).toBe('Updating plan')
+  })
+})
+
+describe('what earns a line in the record (REQ-915)', () => {
+  const activity = (tool: string, target = '') =>
+    timelineEvent({ type: 'stage.activity', payload: { tool, target, attempt: 0 } })
+
+  it('keeps looking around out of the record, whichever tool did the looking', () => {
+    expect(isMutatingActivity(activity('Read', 'src/foo.ts'))).toBe(false)
+    expect(isMutatingActivity(activity('Grep', 'export function'))).toBe(false)
+    // The harness's own catalogue lookup loads a schema and changes nothing.
+    expect(isMutatingActivity(activity('ToolSearch', 'select:Read,Edit'))).toBe(false)
+    expect(stageActivityLabel(activity('ToolSearch', 'select:Read,Edit'))).toBe(
+      'Looking up tools select:Read,Edit',
+    )
+  })
+
+  it('keeps every change, and anything it cannot vouch for', () => {
+    expect(isMutatingActivity(activity('Edit', 'src/foo.ts'))).toBe(true)
+    expect(isMutatingActivity(activity('CustomTool', 'thing'))).toBe(true)
+  })
+
+  it('judges a shell call by what it ran', () => {
+    expect(isMutatingActivity(activity('Bash', "sed -n '1,40p' src/foo.ts"))).toBe(false)
+    expect(isMutatingActivity(activity('Bash', 'bun test'))).toBe(true)
   })
 })
 

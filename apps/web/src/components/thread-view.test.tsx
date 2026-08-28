@@ -214,10 +214,25 @@ describe('the live line (REQ-915)', () => {
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(2)
     expect(items[1]?.getAttribute('data-feed-kind')).toBe('live')
-    expect(items[1]?.textContent).toContain('Reading…')
+    expect(items[1]?.textContent).toContain('Reading')
     expect(items[1]?.textContent).toContain('src/series/pie.ts')
     // It is now, so it carries no moment of its own.
     expect(items[1]?.getAttribute('title')).toBeNull()
+  })
+
+  it('keeps the mark and the ellipsis moving while the call is out', () => {
+    render(
+      <ThreadView
+        taskId="task-1"
+        entries={[]}
+        live={{ action: 'Reading', target: 'src/series/pie.ts', stageId: 'stage-1' }}
+      />,
+    )
+    const live = screen.getByRole('listitem')
+
+    expect(live.querySelector('.animate-turning')).toBeTruthy()
+    // The ellipsis is three marks keeping their own time, not one full stop.
+    expect(live.querySelectorAll('.animate-working')).toHaveLength(3)
   })
 
   it('a step with no run under way carries no live line', () => {

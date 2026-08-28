@@ -74,7 +74,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
 
-  /* ── The four motions ──────────────────────────────────────────────────────
+  /* ── The five motions ──────────────────────────────────────────────────────
      Named here so the part that uses one writes `animate-breath` beside its own
      classes rather than reaching for a class the app defined. The reduced-motion
      rule at the foot of this file cuts all of them.
@@ -95,6 +95,14 @@
   /* Settling, not entering: two pixels and no scale, because this runs beside a
      field somebody is typing into and anything larger reads as the page moving. */
   --animate-reveal: reveal-settle 180ms ease-out;
+
+  /* The mark on the line that is not the record yet. The record's bullet holds
+     still and this one never does, which is the whole difference between them.
+     A `+` is unchanged by a quarter turn, so it passes through four identical
+     rests and reads as one continuous motion rather than a shape being flipped;
+     the breath rides along in the opacity and a little in the scale, so the two
+     moving things on that line — the mark and its ellipsis — keep one time. */
+  --animate-turning: mark-turning 2.2s ease-in-out infinite;
 
   /* A slot sweeps rather than breathes, and the difference is the whole point.
      The breath means "this is alive"; a slot is the opposite of alive, it is an
@@ -121,6 +129,21 @@
     }
     25% {
       opacity: 1;
+    }
+  }
+
+  @keyframes mark-turning {
+    0% {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: rotate(180deg) scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: rotate(360deg) scale(1);
     }
   }
 

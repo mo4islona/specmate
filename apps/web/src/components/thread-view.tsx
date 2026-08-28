@@ -8,7 +8,7 @@ import type {
   LiveActivity,
   TurnEntry,
 } from '../lib/task-thread.ts'
-import { cn, Dot, TextButton } from '../ui/index.ts'
+import { cn, Dot, TextButton, Working } from '../ui/index.ts'
 import { ActivityEditBlock } from './activity-edit.tsx'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { signalDot, signalText } from './tone.ts'
@@ -87,7 +87,9 @@ export const ThreadView = memo(function ThreadView({
  * The one line every read collapses into. It carries no clock — it is now —
  * and leaves nothing behind: what a run looked at on the way to a change is not
  * the change. It wears a `+` rather than the record's `●` because it is not
- * part of the record yet.
+ * part of the record yet, and both the mark and the ellipsis keep moving while
+ * the call is out: a line that says `Reading…` and holds still is
+ * indistinguishable from a run that stopped mid-sentence.
  */
 function LiveLine({ live }: { live: LiveActivity }) {
   return (
@@ -97,14 +99,14 @@ function LiveLine({ live }: { live: LiveActivity }) {
       className="flex items-baseline gap-2 py-[0.12rem] font-mono text-[0.72rem] leading-5"
     >
       <span
-        className={cn('animate-breath shrink-0 leading-none', signalText('live'))}
+        className={cn('animate-turning shrink-0 leading-none', signalText('live'))}
         aria-hidden="true"
       >
         +
       </span>
 
       <span className="min-w-0 break-all">
-        <span className={signalText('live')}>{live.action}…</span>
+        <Working className={signalText('live')}>{`${live.action}…`}</Working>
         {live.target && <span className="text-muted-foreground"> {live.target}</span>}
       </span>
     </li>
