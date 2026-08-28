@@ -629,6 +629,43 @@ describeDb('api', () => {
     expect(await db.select().from(tasks).where(eq(tasks.id, task.id))).toHaveLength(1)
   })
 
+  it('renames a task, leaving its slug and its state alone', async () => {
+    const task = await createDeletionTask('planning')
+
+    const response = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: auth,
+      body: JSON.stringify({ title: '  Rename the Y-axis column  ' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      task: { id: task.id, title: 'Rename the Y-axis column', slug: task.slug, status: 'planning' },
+    })
+    const [stored] = await db.select().from(tasks).where(eq(tasks.id, task.id))
+    expect(stored?.title).toBe('Rename the Y-axis column')
+  })
+
+  it('refuses an empty rename and a rename of a task that is not there', async () => {
+    const task = await createDeletionTask('archived')
+
+    const empty = await app.request(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: auth,
+      body: JSON.stringify({ title: '   ' }),
+    })
+    expect(empty.status).toBe(400)
+    expect(await empty.json()).toMatchObject({ code: 'validation' })
+
+    const missing = await app.request(`/api/v1/tasks/${crypto.randomUUID()}`, {
+      method: 'PATCH',
+      headers: auth,
+      body: JSON.stringify({ title: 'Nobody home' }),
+    })
+    expect(missing.status).toBe(404)
+    expect((await db.select().from(tasks).where(eq(tasks.id, task.id)))[0]?.title).toBe(task.title)
+  })
+
   it('launches on the request alone, deriving the name from it — AC-1001, AC-1056', async () => {
     const created = await app.request('/api/v1/tasks', {
       method: 'POST',

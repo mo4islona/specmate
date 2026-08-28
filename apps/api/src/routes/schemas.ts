@@ -54,6 +54,13 @@ export const CreateTask = z.object({
 })
 
 /**
+ * Renaming a task. The title is all a rename may touch: the slug, the branch and
+ * the change folder were named from the title once, at creation, and a name the
+ * remote already carries is not the owner's to rewrite from a menu.
+ */
+export const RenameTask = z.object({ title: z.string().trim().min(1).max(200) })
+
+/**
  * The same text a create request carries, and nothing is required: an empty
  * request is a legal thing to ask about, and its answer is the default
  * repository (AC-1908).

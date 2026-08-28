@@ -11,9 +11,11 @@ import { TaskNavigation, taskGroup } from './task-navigation.tsx'
 const listTasks = vi.hoisted(() => vi.fn())
 const listAttention = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
+const renameTask = vi.hoisted(() => vi.fn())
 vi.mock('../lib/api-client.ts', () => ({
   ApiRequestError: class ApiRequestError extends Error {},
   deleteTask,
+  renameTask,
   listTasks,
   listAttention,
 }))
@@ -102,6 +104,64 @@ describe('TaskNavigation', () => {
     expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, 'page'])
   })
 
+  it('renames a task from the row menu, writing the new name into every cache', async () => {
+    renameTask.mockResolvedValue({ task: task('archived', 'archived', { title: 'A better name' }) })
+    const { client } = draw(
+      [task('archived', 'archived', { title: 'Remove old task' })],
+      ['archived'],
+    )
+    client.setQueryData(queryKeys.task('archived'), {
+      task: { id: 'archived', title: 'Remove old task' },
+    })
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Remove old task' }),
+    )
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Rename Remove old task' })
+    const field = within(dialog).getByLabelText('Title') as HTMLInputElement
+    const save = within(dialog).getByRole('button', { name: 'Save' })
+
+    expect(field.value).toBe('Remove old task')
+    // The name it already has is not a rename, and neither is an empty one.
+    expect(save.hasAttribute('disabled')).toBe(true)
+    await userEvent.clear(field)
+    expect(save.hasAttribute('disabled')).toBe(true)
+
+    await userEvent.type(field, '  A better name  ')
+    await userEvent.click(save)
+
+    expect(renameTask).toHaveBeenCalledWith('archived', 'A better name')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('link', { name: /A better name/ })).toBeTruthy()
+    expect(client.getQueryData(queryKeys.tasks)).toMatchObject({
+      tasks: [{ id: 'archived', title: 'A better name' }],
+    })
+    expect(client.getQueryData(queryKeys.attention)).toMatchObject({
+      items: [{ task: { id: 'archived', title: 'A better name' } }],
+    })
+    expect(client.getQueryData(queryKeys.task('archived'))).toMatchObject({
+      task: { title: 'A better name' },
+    })
+  })
+
+  it('keeps the typed name and explains a failed rename', async () => {
+    renameTask.mockRejectedValue(new Error('network down'))
+    draw([task('archived', 'archived', { title: 'Keep on failure' })])
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'More actions for Keep on failure' }),
+    )
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }))
+    await userEvent.type(await screen.findByLabelText('Title'), '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Rename failed')).toBeTruthy()
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Keep on failure!')
+    expect(screen.getByRole('link', { name: /Keep on failure/ })).toBeTruthy()
+  })
+
   it('keeps permanent deletion behind every row’s overflow menu — AC-1805, AC-1806', async () => {
     draw([
       task('archived', 'archived'),
@@ -123,7 +183,7 @@ describe('TaskNavigation', () => {
     const items = within(menu).getAllByRole('menuitem')
 
     expect(within(menu).getByRole('separator')).toBeTruthy()
-    expect(items.at(-1)?.textContent).toBe('Delete task permanently…')
+    expect(items.map((item) => item.textContent)).toEqual(['Rename…', 'Delete task permanently…'])
   })
 
   it('warns that deleting a live task cancels its run first — AC-1806', async () => {
