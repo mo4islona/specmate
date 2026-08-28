@@ -60,6 +60,17 @@
   --color-status-failed: var(--color-destructive);
   --color-status-done: var(--color-muted-foreground);
 
+  /* The one colour in this file the owner's theme does not get a say in: a
+     vendor's mark is that colour in every palette, and a Claude burst repainted
+     to match Gruvbox is not a Claude burst. It lands nowhere but on a pipeline
+     face in `ui/agent-avatar.tsx`, and only on a step that finished — see the
+     exemption in the budget below.
+
+     Only Anthropic's is here because only Anthropic's mark has a colour. The
+     OpenAI knot and the Copilot face are monochrome by design and light up in
+     the page's own text instead. */
+  --color-agent-claude: #d97757;
+
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
 
@@ -143,6 +154,20 @@
    - `info` and `success` are not interface roles at all. They survive in the two
      places colour *is* the data — a diff's added and removed lines, and the
      telemetry canvas — and nowhere else.
+   - `agent-claude` is the third place, and the only one that is a fixed hex: a
+     vendor's mark in the vendor's colour, on a pipeline face and nowhere else.
+     It is identity, not signal — it says *who* ran a step and never how the
+     step is going, which is why it can sit beside the four above without
+     spending any of them.
+
+   `agent-claude` is outside the budget rather than an addition to it: it is not
+   a role the interface paints with but a vendor's own colour, worn by that
+   vendor's logo on a pipeline face and by nothing else. It says *who* ran a
+   step and never how the step is going — which is why it can sit beside the
+   four above without spending any of them. A face wears it only once its step
+   has finished; until then the face is grey like everything ahead of it, and a
+   pipeline lighting up as it goes is the one thing this rail says in colour
+   that its words do not.
 
    `accent` is on none of those lists, and the word is a trap: in shadcn's
    vocabulary it is the wash a quiet control picks up under the pointer, not the

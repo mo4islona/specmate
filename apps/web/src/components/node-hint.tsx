@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { nodeSpend, type PipelineNodeView, shortModel } from '../lib/task-pipeline.ts'
 import { formatDuration, formatTokens, tokenSplit } from '../lib/task-thread.ts'
+import { AGENT_LABELS } from '../ui/index.ts'
 import { NODE_HELP } from './node-help.ts'
 import { NODE_MARK, nodeName } from './tone.ts'
 
@@ -21,9 +22,10 @@ interface Fact {
  * what those attempts cost in tokens and in dollars — waits here until the
  * pointer rests on it.
  *
- * Only facts that exist are drawn. A node that has not run has nothing but its
- * purpose to offer, and a column of `—` where the numbers would go is a worse
- * answer than no column.
+ * Only facts that exist are drawn, and a node that has not run has almost none
+ * of them: a column of `—` where the numbers would go is a worse answer than no
+ * column. `who` is the one it always has — the rail draws it as a face, and a
+ * face is the one thing on that row a person cannot read out loud.
  */
 export function NodeHint({ node, now }: NodeHintProps): ReactNode {
   const help = NODE_HELP[node.key] ?? null
@@ -36,7 +38,13 @@ export function NodeHint({ node, now }: NodeHintProps): ReactNode {
     spend.durationMs === null ? null : formatDuration(spend.durationMs),
   ].filter((part): part is string => part !== null)
 
-  const facts: Fact[] = []
+  // The face in the rail, in words — and told apart from a forecast, because a
+  // step that has not run is being attributed to whoever the role calls on
+  // rather than to anyone who has actually answered.
+  const forecast = node.kind === 'stage' && node.latest === null
+  const who = AGENT_LABELS[node.agent]
+
+  const facts: Fact[] = [{ key: 'who', value: forecast ? `${who} · expected` : who }]
   if (model) facts.push({ key: 'model', value: effort ? `${model} · ${effort}` : model })
   if (ran.length > 0) facts.push({ key: 'ran', value: ran.join(' · ') })
   if (spend.tokenTotal !== null) {

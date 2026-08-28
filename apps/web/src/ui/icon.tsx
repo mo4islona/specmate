@@ -71,9 +71,11 @@ export const ICON_NAMES = Object.keys(GLYPHS).sort() as readonly IconName[]
 
 /**
  * The sizes this interface actually asks for, in px. `xl` is the one that is
- * not a size but a picture — the mark an empty page is built around.
+ * not a size but a picture — the mark an empty page is built around. `2xs` is
+ * the other end: a mark that rides in the corner of something else and has to
+ * be read as a shape rather than as a drawing.
  */
-const SIZES = { xs: 12, sm: 14, md: 16, lg: 20, xl: 32 } as const
+const SIZES = { '2xs': 8, xs: 12, sm: 14, md: 16, lg: 20, xl: 32 } as const
 
 export type IconSize = keyof typeof SIZES
 

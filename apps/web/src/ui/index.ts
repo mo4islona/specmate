@@ -19,6 +19,13 @@
  *
  * Everything here is on `/kit`, in every theme, in every state.
  */
+export {
+  AGENT_LABELS,
+  AGENT_NAMES,
+  AgentAvatar,
+  type AgentAvatarSize,
+  type AgentName,
+} from './agent-avatar.tsx'
 export { Badge, type BadgeTone } from './badge.tsx'
 export { Button, ButtonLink, type ButtonVariant, buttonVariants, IconButton } from './button.tsx'
 export { Chip } from './chip.tsx'

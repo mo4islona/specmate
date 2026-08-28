@@ -10,6 +10,7 @@ function node(overrides: Partial<PipelineNodeView> = {}): PipelineNodeView {
     kind: 'stage',
     label: 'Research',
     role: 'researcher',
+    agent: 'claude-code',
     binding: null,
     state: 'pending',
     reason: null,
@@ -48,22 +49,35 @@ describe('PipelineRail (REQ-914)', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
-  test('the state is a mark beside the name, not a word in the column that costs', () => {
+  test('the mark beside the name is who is on the step, not how it is going', () => {
     render(
       <PipelineRail
         {...props}
         nodes={[
-          node({ key: 'human_kickoff_gate', label: 'Kickoff gate', kind: 'gate', state: 'done' }),
-          node({ key: 'specify', label: 'Specify', state: 'stopped', reason: 'stopped' }),
+          node({
+            key: 'human_kickoff_gate',
+            label: 'Kickoff gate',
+            kind: 'gate',
+            agent: 'human',
+            state: 'done',
+          }),
+          node({
+            key: 'specify',
+            label: 'Specify',
+            agent: 'codex',
+            state: 'stopped',
+            reason: 'stopped',
+          }),
         ]}
       />,
     )
 
     expect(screen.queryByText('passed')).toBeNull()
-    // The word survives only for a screen reader, which cannot see the mark.
-    expect(screen.getByText('stopped').className).toContain('sr-only')
-    expect(screen.getByTitle('done')).not.toBeNull()
-    expect(screen.getByTitle('stopped')).not.toBeNull()
+    // The state is nowhere in that cell any more, so the word a screen reader
+    // gets in place of the face has to carry both.
+    expect(screen.getByText('You · done').className).toContain('sr-only')
+    expect(screen.getByTitle('You · done')).not.toBeNull()
+    expect(screen.getByTitle('Codex · stopped')).not.toBeNull()
   })
 
   test('a row carries the node’s name and one fact, never a model or a commit', () => {
@@ -109,22 +123,25 @@ describe('PipelineRail (REQ-914)', () => {
     expect(screen.getByText('failed 3 times')).not.toBeNull()
   })
 
-  it('a skip states its reason without taking the width of the name it explains', () => {
+  it('a skipped node is off the walk, reason and all', () => {
     const reason = 'the specification declares 0 scenario(s), under the 4 this node is worth'
     render(
       <PipelineRail
         {...props}
-        nodes={[node({ key: 'spec_review', label: 'Spec review', state: 'skipped', reason })]}
+        nodes={[
+          node({ key: 'specify', label: 'Specify', state: 'done' }),
+          node({ key: 'spec_review', label: 'Spec review', state: 'skipped', reason }),
+          node({ key: 'implement', label: 'Implement', state: 'running' }),
+        ]}
       />,
     )
 
-    const name = screen.getByText('Spec review')
-    const said = screen.getByText(reason)
-
-    // Two lines of the row, not two halves of one: a sentence in the fact
-    // column squeezed `Spec review` down to nothing at all.
-    expect(said).not.toBeNull()
-    expect(name.parentElement).not.toBe(said.parentElement)
+    // The reason a skip carries is a sentence, and a sentence in a column this
+    // narrow pushed the rest of the walk down the page to account for a step
+    // that never ran. The step's own header is where it is read.
+    expect(screen.queryByText('Spec review')).toBeNull()
+    expect(screen.queryByText(reason)).toBeNull()
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
   })
 
   test('activating a node is what opens its run log', async () => {

@@ -1,4 +1,11 @@
-import { isTerminal, type ModelBinding, type TaskState } from '@specmate/core'
+import {
+  type AgentRole,
+  isTerminal,
+  type ModelBinding,
+  type ProviderId,
+  ROLE_CONTRACTS,
+  type TaskState,
+} from '@specmate/core'
 import type { TaskDetail, TimelineEvent } from './api-client.ts'
 import { nodeLabel, stageDuration } from './task-thread.ts'
 
@@ -15,11 +22,22 @@ type PinnedNode = NonNullable<TaskDetail['graph']>['dag']['nodes'][number]
  */
 export type NodeState = 'done' | 'running' | 'stopped' | 'skipped' | 'awaiting' | 'pending'
 
+/**
+ * Who is at the wheel of a node: one of the CLIs, the owner a gate waits on, or
+ * the orchestrator itself for a step nobody is asked about. It is a superset of
+ * `ProviderId` on purpose — a gate and an action have no provider, and drawing
+ * them as an absence is what left the rail's mark column saying only what the
+ * name beside it already said.
+ */
+export type NodeAgent = ProviderId | 'human' | 'specmate'
+
 export interface PipelineNodeView {
   readonly key: string
   readonly kind: PinnedNode['kind']
   readonly label: string
   readonly role: string | null
+  /** Who ran it — or, before it runs, who the role calls on. See `nodeAgent`. */
+  readonly agent: NodeAgent
   readonly binding: ModelBinding | null
   readonly state: NodeState
   /**
@@ -108,6 +126,7 @@ export function buildPipelineNodes({
       kind: node.kind,
       label: nodeLabel(node.key),
       role,
+      agent: nodeAgent(node, latest),
       binding: role ? (modelBindings[role] ?? null) : null,
       state,
       reason: nodeReason(state, runs, skipReason),
@@ -116,6 +135,26 @@ export function buildPipelineNodes({
       latest,
     }
   })
+}
+
+/**
+ * Who the node's face stands for. An attempt is the answer whenever there has
+ * been one: the provider the role defaults to is a setting, and the one that
+ * answered is a fact.
+ *
+ * Before that it is a forecast, and one the client cannot always make well — a
+ * `cross_review` node is bound against whoever wrote the artifacts under review,
+ * which is not decided until the writer has run. The role's own default is the
+ * closest honest guess, and the hint is where an unrun node says the guess is a
+ * guess.
+ */
+function nodeAgent(node: PinnedNode, latest: Stage | null): NodeAgent {
+  if (node.kind === 'gate') return 'human'
+  if (node.kind !== 'stage') return 'specmate'
+
+  if (latest?.provider) return latest.provider
+
+  return ROLE_CONTRACTS[node.role as AgentRole]?.defaultProvider ?? 'claude-code'
 }
 
 /**
