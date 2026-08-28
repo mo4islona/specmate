@@ -23,9 +23,12 @@ readonly OVERRIDE_FILE=docker-compose.override.yml
 # touch the same worktree. The workspace root has to belong to it.
 readonly SERVICE_UID=10001
 
+# Every step in order. A step tied to a provider runs only when `providers` has
+# that one configured; the rest always run.
 readonly STEPS=(
   tools
   env-file
+  providers
   runtime-mode
   secrets
   workspace
@@ -35,6 +38,7 @@ readonly STEPS=(
   runner-image
   services
   claude-auth
+  codex-auth
   github
 )
 
@@ -91,6 +95,91 @@ database_url() {
   printf 'postgres://%s:%s@localhost:%s/%s' \
     "$(env_or POSTGRES_USER specmate)" "$1" \
     "$(env_or POSTGRES_PORT 5432)" "$(env_or POSTGRES_DB specmate)"
+}
+
+# ─── providers ────────────────────────────────────────────────────────────────
+
+# The providers a stage can actually run. `copilot` is in the database's enum
+# and in nothing else, so offering it here would only build a deployment that
+# fails at the first stage bound to it.
+readonly PROVIDERS=(claude-code codex)
+
+provider_label() {
+  case $1 in
+  claude-code) printf 'Claude Code' ;;
+  codex) printf 'Codex' ;;
+  esac
+}
+
+# The compose service in the `tools` profile that mounts this provider's auth
+# volume, so a login run through it writes where its stages will read.
+provider_service() {
+  case $1 in
+  claude-code) printf 'runner' ;;
+  codex) printf 'runner-codex' ;;
+  esac
+}
+
+# The provider a step belongs to, or nothing when it belongs to all of them.
+step_provider() {
+  case $1 in
+  claude-token | claude-auth) printf 'claude-code' ;;
+  codex-auth) printf 'codex' ;;
+  esac
+}
+
+# Spaces stripped, not just commas split: `claude-code, codex` is accepted
+# everywhere else that reads this, and matching it literally would silently skip
+# the second provider's steps.
+provider_selected() {
+  local configured
+  configured=$(env_or AVAILABLE_PROVIDERS claude-code)
+  [[ ",${configured// /}," == *",$1,"* ]]
+}
+
+# The names in a provider's forward list are what the orchestrator hands to a
+# stage, so a credential that is set but not listed there never reaches the
+# agent.
+provider_forwarded() {
+  local forwarded name
+  forwarded=$(env_get "$(tr 'a-z-' 'A-Z_' <<<"$1")_FORWARD_ENV")
+
+  for name in ${forwarded//,/ }; do
+    if [[ -n $(env_get "$name") ]]; then
+      printf '%s' "$name"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+runner_image() { env_or RUNNER_IMAGE specmate/runner-universal:local; }
+
+# `compose run` would build a missing image, which is minutes of work inside
+# what is supposed to be a probe.
+runner_image_built() { docker image inspect "$(runner_image)" >/dev/null 2>&1; }
+
+# Runs a command against one provider's session. Its forwarded credential is
+# exported inside the subshell and passed by name: the value never appears in
+# any process's arguments, where other users on the box could read it.
+provider_run() {
+  local provider=$1
+  shift
+  (
+    local credential
+    credential=$(provider_forwarded "$provider") || credential=
+
+    if [[ -z $credential ]]; then
+      docker compose --profile tools run --rm --no-deps -T \
+        "$(provider_service "$provider")" "$@" 2>&1
+      return
+    fi
+
+    export "${credential}=$(env_get "$credential")"
+    docker compose --profile tools run --rm --no-deps -T -e "$credential" \
+      "$(provider_service "$provider")" "$@" 2>&1
+  )
 }
 
 # ─── host ─────────────────────────────────────────────────────────────────────
@@ -163,6 +252,138 @@ fix_env_file() {
   cp .env.example "$ENV_FILE"
   chmod 600 "$ENV_FILE"
   say "copied .env.example to .env"
+}
+
+check_providers() {
+  local configured provider chosen=()
+  configured=$(env_get AVAILABLE_PROVIDERS)
+  [[ -n $configured ]] || {
+    echo "no agent has been chosen yet"
+    return 1
+  }
+
+  for provider in ${configured//,/ }; do
+    # shellcheck disable=SC2076
+    [[ " ${PROVIDERS[*]} " == *" $provider "* ]] || {
+      echo "AVAILABLE_PROVIDERS names $provider, which no stage here can run"
+      return 1
+    }
+    chosen+=("$provider")
+  done
+
+  # Read back from what was validated rather than echoed as written, so a value
+  # spelled with spaces does not print with doubled ones.
+  echo "${chosen[*]}"
+}
+
+# A ticked list rather than a numbered menu: what is being answered is a set,
+# and a menu would have to carry a line per combination of it. Drawn by
+# repainting the same rows in place, so the choice reads as one thing being
+# edited rather than a transcript of every keystroke.
+#
+# The answer lands in CHOSEN_PROVIDERS instead of on stdout, because a command
+# substitution would capture the drawing along with it.
+CHOSEN_PROVIDERS=
+
+choose_providers() {
+  local total=${#PROVIDERS[@]}
+  local ticked=() cursor=0 index drawn=0 key tail mark pointer
+  local hint='↑↓ move · space ticks · enter confirms'
+
+  # Opens on whatever is configured, so running this again edits the answer
+  # rather than asking for it from nothing.
+  for ((index = 0; index < total; index++)); do
+    if provider_selected "${PROVIDERS[index]}"; then ticked[index]=1; else ticked[index]=0; fi
+  done
+
+  printf '\e[?25l'
+  trap 'printf "\e[?25h"' EXIT
+
+  while :; do
+    ((drawn)) && printf '\e[%dA' $((total + 1))
+
+    for ((index = 0; index < total; index++)); do
+      mark=' '
+      ((ticked[index])) && mark='x'
+      pointer='  '
+      ((index == cursor)) && pointer="${BOLD}❯${RESET} "
+      printf '\r\e[K  %s[%s]  %s\n' "$pointer" "$mark" "$(provider_label "${PROVIDERS[index]}")"
+    done
+    printf '\r\e[K  %s%s%s\n' "$DIM" "$hint" "$RESET"
+    drawn=1
+
+    IFS= read -rsn1 key || key=''
+
+    # Every branch ends on an assignment. An arithmetic command that evaluates
+    # to zero reports failure, and as the last thing a branch does that would
+    # take the whole script down under errexit.
+    case $key in
+    '')
+      # Nothing ticked is not an installation, so enter has nothing to confirm.
+      for ((index = 0; index < total; index++)); do
+        ((ticked[index])) && break 2
+      done
+      hint='pick at least one agent'
+      ;;
+    ' ') ticked[cursor]=$((1 - ticked[cursor])) ;;
+    [1-9])
+      index=$((key - 1))
+      if ((index < total)); then
+        ticked[index]=$((1 - ticked[index]))
+        cursor=$index
+      fi
+      ;;
+    k) cursor=$(((cursor - 1 + total) % total)) ;;
+    j) cursor=$(((cursor + 1) % total)) ;;
+    $'\e')
+      # An arrow arrives as ESC [ A. Read the rest of it, or the bracket lands
+      # on the list as a keystroke of its own.
+      IFS= read -rsn2 tail || tail=''
+      case $tail in
+      '[A') cursor=$(((cursor - 1 + total) % total)) ;;
+      '[B') cursor=$(((cursor + 1) % total)) ;;
+      esac
+      ;;
+    esac
+  done
+
+  printf '\e[?25h'
+  trap - EXIT
+
+  local chosen=()
+  for ((index = 0; index < total; index++)); do
+    ((ticked[index])) && chosen+=("${PROVIDERS[index]}")
+  done
+
+  local IFS=,
+  CHOSEN_PROVIDERS="${chosen[*]}"
+}
+
+fix_providers() {
+  # The remote path runs without a terminal, and so does CI. Choosing the
+  # default beats hanging on a read nobody is there to answer.
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    env_set AVAILABLE_PROVIDERS claude-code
+    say "no terminal to ask on — chose claude-code; change it with ./install.sh --only providers"
+    return 0
+  fi
+
+  cat <<EOF
+
+  ${BOLD}Agents${RESET}
+  Every stage runs on one of these. Tick the ones this deployment may use: a
+  role's binding then picks among them, and a task can only have its work
+  checked by a different agent than wrote it when there is more than one.
+
+  Each brings its own credential, and only the ones ticked here are asked for.
+
+EOF
+
+  choose_providers
+  env_set AVAILABLE_PROVIDERS "$CHOSEN_PROVIDERS"
+
+  echo
+  say "recorded AVAILABLE_PROVIDERS=$CHOSEN_PROVIDERS"
 }
 
 check_runtime_mode() {
@@ -385,25 +606,9 @@ fix_version_pins() {
   fi
 }
 
-# The names in CLAUDE_CODE_FORWARD_ENV are what the orchestrator hands to a
-# stage, so a credential that is set but not listed there never reaches the agent.
-forwarded_credential() {
-  local forwarded name
-  forwarded=$(env_get CLAUDE_CODE_FORWARD_ENV)
-
-  for name in ${forwarded//,/ }; do
-    if [[ -n $(env_get "$name") ]]; then
-      printf '%s' "$name"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 check_claude_token() {
   local name
-  name=$(forwarded_credential) || {
+  name=$(provider_forwarded claude-code) || {
     echo "no Claude credential is set and forwarded to stages"
     return 1
   }
@@ -438,8 +643,8 @@ EOF
 
 check_runner_image() {
   local image built pinned
-  image=$(env_or RUNNER_IMAGE specmate/runner-universal:local)
-  docker image inspect "$image" >/dev/null 2>&1 || {
+  image=$(runner_image)
+  runner_image_built || {
     echo "$image is not built yet"
     return 1
   }
@@ -503,25 +708,17 @@ fix_services() {
 }
 
 check_claude_auth() {
-  local token_name output
-  token_name=$(forwarded_credential) || {
+  local output
+  provider_forwarded claude-code >/dev/null || {
     echo "no credential to check"
     return 1
   }
-  # `compose run` would build a missing image, which is minutes of work inside
-  # what is supposed to be a probe.
-  docker image inspect "$(env_or RUNNER_IMAGE specmate/runner-universal:local)" >/dev/null 2>&1 || {
+  runner_image_built || {
     echo "the runner image is not built yet"
     return 1
   }
 
-  # Exported inside the subshell and passed by name: the value never appears in
-  # any process's arguments, where other users on the box could read it.
-  output=$(
-    export "${token_name}=$(env_get "$token_name")"
-    docker compose --profile tools run --rm --no-deps -T -e "$token_name" \
-      runner claude auth status --json 2>&1
-  ) || {
+  output=$(provider_run claude-code claude auth status --json) || {
     echo "the provider CLI would not run: $(tr '\n' ' ' <<<"$output" | tail -c 120)"
     return 1
   }
@@ -543,6 +740,76 @@ fix_claude_auth() {
 
 EOF
   die "Claude access is not working yet"
+}
+
+check_codex_auth() {
+  local output
+  runner_image_built || {
+    echo "the runner image is not built yet"
+    return 1
+  }
+
+  # Nothing to ask for in JSON: `codex login status` says it in one line and in
+  # its exit code. It reads the stored session, not the environment — an API key
+  # forwarded by name authenticates nothing here.
+  output=$(provider_run codex codex login status) || {
+    echo "the provider CLI reports: $(tr '\n' ' ' <<<"$output" | tail -c 120)"
+    return 1
+  }
+  echo "the provider accepts the credential"
+}
+
+fix_codex_auth() {
+  local stored key prompt
+  stored=$(env_get CODEX_API_KEY)
+
+  [[ -t 0 ]] || die "signing Codex in needs a terminal.
+     Reach the box with ssh -t, or put an OpenAI key in CODEX_API_KEY and run:
+       ./install.sh --only codex-auth"
+
+  cat <<EOF
+
+  ${BOLD}Codex access${RESET}
+  Stages run the Codex CLI, which authenticates from a session file of its own
+  rather than from the environment. Whichever way you go below writes that file
+  into the volume the stages mount.
+
+  Paste an OpenAI API key to bill per token. It is kept in .env as well, so a
+  lost volume can be refilled without asking you for it again.
+
+EOF
+
+  # Blank means the stored key when there is one, and the other way in when
+  # there is not — so the prompt has to say which.
+  if [[ -n $stored ]]; then
+    prompt="  api key (blank to reuse the one in .env): "
+  else
+    cat <<EOF
+  Leave it blank to sign in with a ChatGPT account instead: a link and a short
+  code are printed here, and it waits for you.
+
+EOF
+    prompt="  api key (blank to sign in with ChatGPT): "
+  fi
+
+  read -rsp "$prompt" key
+  echo
+
+  if [[ -z $key && -z $stored ]]; then
+    say "opening the device sign-in"
+    docker compose --profile tools run --rm --no-deps runner-codex codex login --device-auth
+    return 0
+  fi
+
+  if [[ -n $key ]]; then
+    env_set CODEX_API_KEY "$key"
+    say "stored the key in .env"
+  else
+    key=$stored
+  fi
+
+  printf '%s' "$key" |
+    docker compose --profile tools run --rm --no-deps -T runner-codex codex login --with-api-key
 }
 
 check_github() {
@@ -627,9 +894,11 @@ run_step() {
 }
 
 summary() {
-  local port owner
+  local port owner agents
   port=$(env_or WEB_PORT 5173)
   owner=$(env_get SPECMATE_PASSWORD)
+  agents=$(env_or AVAILABLE_PROVIDERS claude-code)
+  agents=${agents// /}
 
   cat <<EOF
 
@@ -637,14 +906,20 @@ summary() {
 
   Open      http://127.0.0.1:${port}
   Password  ${owner}
+  Agents    ${agents//,/ }
 
   Every port binds to loopback: reach the box over a tailnet or an ssh tunnel,
   not the open internet. The password is in .env if you need it again.
 
+EOF
+
+  if provider_selected claude-code; then
+    cat <<EOF
   Claude runs on your own subscription seat. Keep it to your own orchestrator —
   see docs/install.md.
 
 EOF
+  fi
 }
 
 # Every step here reads one machine: whether its docker daemon answers, what
@@ -741,8 +1016,16 @@ fi
 printf '\n  %sSpecMate installer%s  %severy step is checked before it is run%s\n\n' \
   "$BOLD" "$RESET" "$DIM" "$RESET"
 
+# `providers` runs inside this loop and the ones that depend on it come after,
+# so the skip is decided per step rather than by pruning the list up front —
+# which a `for` over an array could not see anyway.
 failed=0
 for step in "${STEPS[@]}"; do
+  provider=$(step_provider "$step")
+  if [[ -n $provider ]] && ! provider_selected "$provider"; then
+    continue
+  fi
+
   run_step "$step" || failed=1
 done
 
