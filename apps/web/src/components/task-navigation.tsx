@@ -53,7 +53,7 @@ export function TaskNavigation() {
   }
 
   return (
-    <nav aria-label="Tasks" className="space-y-5">
+    <nav aria-label="Tasks" className="space-y-7">
       {GROUPS.map((group) => {
         const rows = grouped.get(group) ?? []
         if (rows.length === 0) {
@@ -70,7 +70,7 @@ export function TaskNavigation() {
           <section key={group}>
             <MicroLabel as="h2">{group}</MicroLabel>
 
-            <ul className="mt-2 space-y-0.5">
+            <ul className="mt-0.5 space-y-0.5">
               {rows.map((task) => {
                 const current = location.startsWith(`/tasks/${task.id}`)
 
@@ -80,24 +80,33 @@ export function TaskNavigation() {
                       href={`/tasks/${task.id}`}
                       active={current}
                       title={task.title}
-                      className="flex gap-2.5 pr-10"
+                      className="flex gap-2.5 pr-8"
                     >
-                      <Dot
-                        className={`mt-[0.42rem] ${toneDot(statusTone(task.status))}`}
-                        live={breathing}
-                        halo={asking}
-                      />
+                      {/* Centred on the title's own line rather than nudged down
+                          by a hand-measured margin, so the mark keeps its place
+                          whatever the row's text size settles at. */}
+                      <span className="flex h-5 items-center">
+                        <Dot
+                          className={toneDot(statusTone(task.status))}
+                          live={breathing}
+                          halo={asking}
+                        />
+                      </span>
+
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[0.82rem] leading-5">
                           {task.title}
                         </span>
-                        <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-muted-foreground">
+                        <span className="mt-0.5 block truncate font-mono text-[0.66rem]/4 text-muted-foreground">
                           {nodeLabel(task.status)}
                         </span>
                       </span>
                     </NavRow>
 
-                    <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2">
+                    {/* On the title's line and a mark's width in from the row's
+                        own edge, so the trigger answers the dot across the row
+                        rather than floating between its two lines. */}
+                    <div className="absolute right-[calc(var(--rail-gutter)/-2)] top-2 z-10 flex h-5 items-center">
                       <TaskActions task={task} current={current} />
                     </div>
                   </li>
