@@ -96,7 +96,7 @@ export function TaskShell({ taskId, active, children }: TaskShellProps) {
           <TaskNav
             taskId={taskId}
             active={active}
-            fileCount={files.data?.files.length ?? null}
+            fileCount={files.data?.total ?? null}
             docCount={artifacts.data?.artifacts.length ?? null}
           />
 

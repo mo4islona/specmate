@@ -188,9 +188,9 @@ export function taskRoutes(ctx: RouteContext) {
 
     .get('/tasks/:id/diff/files', async (c) => {
       const task = await requireTask(c.req.param('id'))
-      const { tip, files } = await performDiffOperation(() => workspace.diffFiles(task))
+      const { tip, total, files } = await performDiffOperation(() => workspace.diffFiles(task))
 
-      return c.json({ tip, files })
+      return c.json({ tip, total, files })
     })
 
     .get('/tasks/:id/diff/file', validator('query', validateQuery(FileDiffQuery)), async (c) => {
