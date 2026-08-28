@@ -49,12 +49,23 @@ export const DEFAULT_DIFF_CONTEXT = 3
 export const MAX_DIFF_CONTEXT = 2000
 
 /**
+ * The ceiling on how many files one comparison serves. A branch that changed
+ * more than this is not something a person reads file by file, and the list
+ * alone is then large enough to stop the screen drawing at all — so it is cut
+ * here, where the total can still be reported honestly, rather than in a
+ * browser that has already been handed the whole of it.
+ */
+export const MAX_DIFF_FILES = 2000
+
+/**
  * A comparison and what it holds. The tip travels with the files because a
  * reader's marks on them are a claim about this diff and not the next one
  * (REQ-1013/AC-1062).
  */
 export interface TaskDiffFiles {
   readonly tip: string
+  /** Everything the comparison changed, including whatever the ceiling cut. */
+  readonly total: number
   readonly files: DiffFile[]
 }
 
@@ -164,6 +175,35 @@ export async function taskFilesChanged(
       deletions: count?.deletions ?? null,
     }
   })
+}
+
+/**
+ * The comparison held to `MAX_DIFF_FILES`.
+ *
+ * The specification half goes in first and whole. It is a handful of files, and
+ * it is the only half a task between planning and the spec gate has — cut in
+ * the comparison's own order, it is what a code half running to thousands drops
+ * first, since `openspec/` sorts below almost everything. Past the ceiling even
+ * that gives way, so the count this returns is one the name can be trusted on.
+ */
+export function capDiffFiles(files: readonly DiffFile[]): DiffFile[] {
+  if (files.length <= MAX_DIFF_FILES) return [...files]
+
+  const specFiles = files.filter((file) => file.group === 'spec').length
+  const room: Record<DiffFileGroup, number> = {
+    spec: Math.min(specFiles, MAX_DIFF_FILES),
+    code: Math.max(MAX_DIFF_FILES - specFiles, 0),
+  }
+
+  const kept: DiffFile[] = []
+  for (const file of files) {
+    if (room[file.group] === 0) continue
+
+    room[file.group] -= 1
+    kept.push(file)
+  }
+
+  return kept
 }
 
 /**

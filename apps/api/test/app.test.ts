@@ -2719,6 +2719,7 @@ describeDb('api task diff', () => {
     // committed by provisioning, so it is one of the files this branch adds.
     expect(await response.json()).toEqual({
       tip: expect.any(String),
+      total: expect.any(Number),
       files: expect.arrayContaining([
         { path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
         {
@@ -2745,7 +2746,7 @@ describeDb('api task diff', () => {
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ tip: expect.any(String), files: [] })
+    expect(await response.json()).toEqual({ tip: expect.any(String), total: 0, files: [] })
   })
 
   it('returns one file unified diff by path (AC-1036)', async () => {
@@ -2866,6 +2867,7 @@ describeDb('api task diff', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       tip: expect.any(String),
+      total: expect.any(Number),
       files: expect.arrayContaining([
         { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
       ]),

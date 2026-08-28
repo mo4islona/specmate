@@ -100,6 +100,7 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
       key={files.data.tip}
       taskId={taskId}
       tip={files.data.tip}
+      total={files.data.total}
       files={inTreeOrder(files.data.files)}
     />
   )
@@ -108,10 +109,12 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
 interface FilesReviewProps {
   readonly taskId: string
   readonly tip: string
+  /** Everything the comparison changed; `files` is what survived the server's ceiling. */
+  readonly total: number
   readonly files: readonly DiffFileSummary[]
 }
 
-function FilesReview({ taskId, tip, files }: FilesReviewProps) {
+function FilesReview({ taskId, tip, total, files }: FilesReviewProps) {
   const [pass] = useState(() => readPass(taskId, tip))
   const [viewed, setViewed] = useState<ReadonlySet<string>>(pass.paths)
   const [moved, setMoved] = useState(pass.moved)
@@ -194,6 +197,14 @@ function FilesReview({ taskId, tip, files }: FilesReviewProps) {
           </div>
         )}
       </div>
+
+      {files.length < total && (
+        <Note className="shrink-0 p-4">
+          This comparison changed {total} files, and the {files.length} below are as much of it as
+          this screen will hold. A diff that large is more often a branch that committed something
+          it should not have than a change anyone reads file by file.
+        </Note>
+      )}
 
       {moved && (
         <Note className="flex shrink-0 flex-wrap items-baseline justify-between gap-3 p-4">

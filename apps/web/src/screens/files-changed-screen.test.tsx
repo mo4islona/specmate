@@ -31,6 +31,15 @@ function file(overrides: Partial<DiffFileSummary> = {}): DiffFileSummary {
   }
 }
 
+/**
+ * The comparison as the API sends it. `total` is what the branch changed and
+ * `files` is what survived the server's ceiling, so the two part only where a
+ * test is about the ceiling.
+ */
+function listing(files: DiffFileSummary[], overrides: { tip?: string; total?: number } = {}) {
+  return { tip: overrides.tip ?? TIP, total: overrides.total ?? files.length, files }
+}
+
 function renderScreen(element: ReactElement) {
   // Retries would turn a rejected query into a hung test rather than a failing one.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -63,18 +72,40 @@ afterEach(() => {
 
 describe('FilesChangedScreen (REQ-916)', () => {
   it('shows an explicit empty state rather than a blank list — AC-945', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [] })
+    listDiffFiles.mockResolvedValue(listing([]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
     expect(await screen.findByText(/has not committed any changes yet/)).toBeTruthy()
   })
 
+  it('says how much of a truncated comparison it is showing', async () => {
+    listDiffFiles.mockResolvedValue(
+      listing([file({ path: 'a.ts' }), file({ path: 'b.ts' })], { total: 19902 }),
+    )
+
+    renderScreen(<FilesChangedScreen taskId="task-1" />)
+
+    expect(await screen.findByText(/changed 19902 files/)).toBeTruthy()
+    expect(screen.getByText(/the 2 below/)).toBeTruthy()
+  })
+
+  it('leaves a comparison the ceiling did not cut unremarked', async () => {
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
+
+    renderScreen(<FilesChangedScreen taskId="task-1" />)
+
+    await screen.findByLabelText('Filter files')
+    expect(screen.queryByText(/as much of it as/)).toBeNull()
+  })
+
   it('puts every changed file in the tree with its status and counts — AC-943', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [file(), file({ path: 'src/other.ts', status: 'added', additions: 9, deletions: 0 })],
-    })
+    listDiffFiles.mockResolvedValue(
+      listing([
+        file(),
+        file({ path: 'src/other.ts', status: 'added', additions: 9, deletions: 0 }),
+      ]),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await screen.findByLabelText('Filter files')
@@ -88,13 +119,12 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('lists a specification-only task under the group that names it — AC-995', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [
+    listDiffFiles.mockResolvedValue(
+      listing([
         file({ path: 'openspec/changes/pie-charts/proposal.md', group: 'spec' }),
         file({ path: 'openspec/changes/pie-charts/design.md', group: 'spec' }),
-      ],
-    })
+      ]),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
@@ -103,10 +133,9 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('keeps code and specification apart when a task has both', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [file(), file({ path: 'openspec/changes/x/proposal.md', group: 'spec' })],
-    })
+    listDiffFiles.mockResolvedValue(
+      listing([file(), file({ path: 'openspec/changes/x/proposal.md', group: 'spec' })]),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
@@ -116,7 +145,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
 
   it('draws every file at once and reads only the ones that are open — AC-944', async () => {
     const paths = ['a.ts', 'b.ts', 'c.ts', 'd.ts']
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: paths.map((path) => file({ path })) })
+    listDiffFiles.mockResolvedValue(listing(paths.map((path) => file({ path }))))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
@@ -131,15 +160,14 @@ describe('FilesChangedScreen (REQ-916)', () => {
     // git sorts by path, which puts a change folder above `src/` every time —
     // so the reader would land on the specification and the three cards that
     // arrive open would all be spec files.
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [
+    listDiffFiles.mockResolvedValue(
+      listing([
         file({ path: 'openspec/changes/x/proposal.md', group: 'spec' }),
         file({ path: 'openspec/changes/x/tasks.md', group: 'spec' }),
         file({ path: 'src/b.ts' }),
         file({ path: 'src/a.ts' }),
-      ],
-    })
+      ]),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await screen.findByLabelText('Filter files')
@@ -152,10 +180,9 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('brings a selected file into view without displacing the others — AC-944', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: ['a.ts', 'b.ts', 'c.ts', 'd.ts'].map((path) => file({ path })),
-    })
+    listDiffFiles.mockResolvedValue(
+      listing(['a.ts', 'b.ts', 'c.ts', 'd.ts'].map((path) => file({ path }))),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await screen.findByLabelText('Filter files')
@@ -168,10 +195,9 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('narrows the tree and the diffs, and leaves the pass counting everything — AC-998', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [file({ path: 'src/thing.ts' }), file({ path: 'src/other.ts' })],
-    })
+    listDiffFiles.mockResolvedValue(
+      listing([file({ path: 'src/thing.ts' }), file({ path: 'src/other.ts' })]),
+    )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.type(await screen.findByLabelText('Filter files'), 'other')
@@ -184,7 +210,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('says so when a filter matches nothing', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file()] })
+    listDiffFiles.mockResolvedValue(listing([file()]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.type(await screen.findByLabelText('Filter files'), 'nothing-like-this')
@@ -193,10 +219,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('advances the pass when a file is marked viewed — AC-999', async () => {
-    listDiffFiles.mockResolvedValue({
-      tip: TIP,
-      files: [file({ path: 'a.ts' }), file({ path: 'b.ts' })],
-    })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' }), file({ path: 'b.ts' })]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.click(await tick('a.ts'))
@@ -205,7 +228,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('carries the pass back to a comparison that has not moved', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     const first = renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.click(await tick('a.ts'))
@@ -218,13 +241,13 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('drops the marks and says the comparison moved — AC-1800', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     const first = renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.click(await tick('a.ts'))
     first.unmount()
 
-    listDiffFiles.mockResolvedValue({ tip: NEXT_TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })], { tip: NEXT_TIP }))
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
     expect(await screen.findByText(/committed since these files were marked/)).toBeTruthy()
@@ -234,7 +257,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   it('clamps a diff too long to be one card, and draws the rest on request', async () => {
     const long = ['@@ -1,400 +1,400 @@', ...Array.from({ length: 400 }, (_, i) => ` line ${i}`)]
     getFileDiff.mockResolvedValue({ path: 'a.ts', diff: long.join('\n') })
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
@@ -247,7 +270,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('leaves a diff under the clamp alone', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
@@ -256,7 +279,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
   })
 
   it('holds the unified/split choice across visits — AC-1802', async () => {
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     const first = renderScreen(<FilesChangedScreen taskId="task-1" />)
     await userEvent.click(await screen.findByRole('button', { name: 'Split' }))
@@ -279,7 +302,7 @@ describe('FilesChangedScreen (REQ-916)', () => {
         removeEventListener: vi.fn(),
       })),
     )
-    listDiffFiles.mockResolvedValue({ tip: TIP, files: [file({ path: 'a.ts' })] })
+    listDiffFiles.mockResolvedValue(listing([file({ path: 'a.ts' })]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 

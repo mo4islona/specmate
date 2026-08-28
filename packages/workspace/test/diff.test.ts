@@ -2,9 +2,12 @@ import { afterAll, describe, expect, it } from 'bun:test'
 import { rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  capDiffFiles,
+  type DiffFile,
   Git,
   GitError,
   MAX_DIFF_CONTEXT,
+  MAX_DIFF_FILES,
   mirrorKey,
   mirrorPath,
   resolveTaskDiffRange,
@@ -316,6 +319,53 @@ describe('files changed', () => {
         expect.objectContaining({ path: 'src/target.ts', status: 'type-changed' }),
       ]),
     )
+  })
+})
+
+describe('the file ceiling', () => {
+  const diffFile = (path: string, group: DiffFile['group'] = 'code'): DiffFile => ({
+    path,
+    group,
+    status: 'added',
+    additions: 1,
+    deletions: 0,
+  })
+
+  const codeFiles = (count: number, prefix = 'node_modules') =>
+    Array.from({ length: count }, (_, index) => diffFile(`${prefix}/pkg-${index}/index.js`))
+
+  it('leaves a comparison under the ceiling exactly as it came', () => {
+    const files = codeFiles(3)
+
+    expect(capDiffFiles(files)).toEqual(files)
+  })
+
+  it('serves the ceiling and no more', () => {
+    expect(capDiffFiles(codeFiles(MAX_DIFF_FILES + 500))).toHaveLength(MAX_DIFF_FILES)
+  })
+
+  it('keeps the specification half whole when the code half runs to thousands', () => {
+    const spec = diffFile('openspec/changes/x/proposal.md', 'spec')
+    // git's own order, which sorts the change folder below `node_modules/`.
+    const kept = capDiffFiles([...codeFiles(MAX_DIFF_FILES + 500), spec])
+
+    expect(kept).toContainEqual(spec)
+    expect(kept).toHaveLength(MAX_DIFF_FILES)
+  })
+
+  it('holds the specification half to the ceiling too', () => {
+    const spec = Array.from({ length: MAX_DIFF_FILES + 10 }, (_, index) =>
+      diffFile(`openspec/changes/x/specs/cap-${index}/spec.md`, 'spec'),
+    )
+
+    expect(capDiffFiles([...spec, ...codeFiles(10)])).toHaveLength(MAX_DIFF_FILES)
+  })
+
+  it("cuts in the comparison's own order, so what is kept is its first files", () => {
+    const kept = capDiffFiles(codeFiles(MAX_DIFF_FILES + 500))
+
+    expect(kept[0]?.path).toBe('node_modules/pkg-0/index.js')
+    expect(kept.at(-1)?.path).toBe(`node_modules/pkg-${MAX_DIFF_FILES - 1}/index.js`)
   })
 })
 

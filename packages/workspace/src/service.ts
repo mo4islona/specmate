@@ -8,7 +8,13 @@ import {
 } from '@specmate/core'
 import { type Database, events, getSpecConvention, repositories, tasks } from '@specmate/db'
 import { and, eq, isNull } from 'drizzle-orm'
-import { resolveTaskDiffRange, type TaskDiffFiles, taskFileDiff, taskFilesChanged } from './diff.ts'
+import {
+  capDiffFiles,
+  resolveTaskDiffRange,
+  type TaskDiffFiles,
+  taskFileDiff,
+  taskFilesChanged,
+} from './diff.ts'
 import { Git } from './git.ts'
 import { type IndexedArtifact, indexChangeFolder } from './index-artifacts.ts'
 import type {
@@ -206,7 +212,7 @@ export class WorkspaceService {
     })
     const files = await taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
 
-    return { tip: range.tip, files }
+    return { tip: range.tip, total: files.length, files: capDiffFiles(files) }
   }
 
   async diffFile(task: DiffTaskRef, path: string, context?: number): Promise<string> {
