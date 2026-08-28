@@ -43,6 +43,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-specmate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-specmate}
       WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/var/lib/specmate/workspaces}
       SPECMATE_PASSWORD: ${SPECMATE_PASSWORD}
+      # The same set the orchestrator runs: a binding may only name a provider
+      # this deployment has, and the Settings screen offers what this reports.
+      AVAILABLE_PROVIDERS: ${AVAILABLE_PROVIDERS:-claude-code}
       # The same public identifier the orchestrator carries, so the API can
       # refresh the stored authorization when it reads a GitHub reference.
       # Unset only costs that reading, which degrades to a link.
@@ -77,17 +80,25 @@ services:
       GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
       RUNNER_IMAGE: ${RUNNER_IMAGE:-specmate/runner-universal:local}
-      RUNNER_MODEL: ${RUNNER_MODEL:-claude-opus-5}
-      RUNNER_AUTH_VOLUME: ${RUNNER_AUTH_VOLUME:-specmate_claude-auth}
       RUNNER_TOOLCHAINS_VOLUME: ${RUNNER_TOOLCHAINS_VOLUME:-specmate_toolchains}
       RUNNER_CPUS: ${RUNNER_CPUS:-2}
       RUNNER_MEMORY: ${RUNNER_MEMORY:-4g}
       STAGE_TIMEOUT_MS: ${STAGE_TIMEOUT_MS:-10800000}
-      RUNNER_FORWARD_ENV: ${RUNNER_FORWARD_ENV:-CLAUDE_CODE_OAUTH_TOKEN}
-      # Not read by the orchestrator itself — it is here so RUNNER_FORWARD_ENV
-      # can hand it to a stage by name, which is what keeps the value off the
-      # container runtime's command line.
+      # Exactly the providers this deployment runs. Each keeps its own CLI and
+      # its own stored session, so a stage reaches the credential of the provider
+      # it runs under and no other.
+      AVAILABLE_PROVIDERS: ${AVAILABLE_PROVIDERS:-claude-code}
+      CLAUDE_CODE_CLI: ${CLAUDE_CODE_CLI:-claude}
+      CLAUDE_CODE_AUTH_VOLUME: ${CLAUDE_CODE_AUTH_VOLUME:-specmate_claude-auth}
+      CLAUDE_CODE_FORWARD_ENV: ${CLAUDE_CODE_FORWARD_ENV:-CLAUDE_CODE_OAUTH_TOKEN}
+      CODEX_CLI: ${CODEX_CLI:-codex}
+      CODEX_AUTH_VOLUME: ${CODEX_AUTH_VOLUME:-specmate_codex-auth}
+      CODEX_FORWARD_ENV: ${CODEX_FORWARD_ENV:-}
+      # Not read by the orchestrator itself — they are here so the forward lists
+      # above can hand one to a stage by name, which is what keeps the value off
+      # the container runtime's command line.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
       TICK_INTERVAL_MS: ${TICK_INTERVAL_MS:-5000}
       STAGE_CONCURRENCY: ${STAGE_CONCURRENCY:-1}
       STAGE_ATTEMPT_CAP: ${STAGE_ATTEMPT_CAP:-2}
@@ -127,14 +138,27 @@ services:
         # Empty fails the build with a message from the Dockerfile; a `:?` here
         # would instead break every compose command, including `up postgres`.
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+        CODEX_VERSION: ${CODEX_VERSION:-}
         MISE_VERSION: ${MISE_VERSION:-}
     image: ${RUNNER_IMAGE:-specmate/runner-universal:local}
     volumes:
       - claude-auth:/home/agent
       - specmate_toolchains:/mise/shared:ro
 
+  # The same image over the other provider's volume, so its one-time login
+  # writes where its stages will read: `docker compose run --rm runner-codex codex login`.
+  runner-codex:
+    profiles: ['tools']
+    image: ${RUNNER_IMAGE:-specmate/runner-universal:local}
+    volumes:
+      - codex-auth:/home/agent
+      - specmate_toolchains:/mise/shared:ro
+
 volumes:
   pgdata:
   claude-auth:
+    name: ${CLAUDE_CODE_AUTH_VOLUME:-specmate_claude-auth}
+  codex-auth:
+    name: ${CODEX_AUTH_VOLUME:-specmate_codex-auth}
   specmate_toolchains:
     name: ${RUNNER_TOOLCHAINS_VOLUME:-specmate_toolchains}

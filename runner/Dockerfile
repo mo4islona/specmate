@@ -4,7 +4,12 @@
 # Built from the repo root:
 #   docker build -f runner/Dockerfile \
 #     --build-arg CLAUDE_CODE_VERSION=<version> \
+#     --build-arg CODEX_VERSION=<version> \
 #     --build-arg MISE_VERSION=<version> .
+#
+# One image carries every provider CLI rather than one image per provider: the
+# image is the task's environment pin (REQ-802), and a pin that depended on which
+# provider each stage happened to bind would not be one.
 FROM node:22-bookworm-slim AS provider-runtime
 RUN node -e "require('node:fs').writeFileSync('/tmp/ca-certificates.crt', require('node:tls').rootCertificates.join('\n'))"
 
@@ -19,11 +24,14 @@ COPY --from=provider-runtime /tmp/ca-certificates.crt /etc/ssl/certs/ca-certific
 # An unpinned provider or toolchain manager would make a recorded stage
 # impossible to reproduce. Both versions are required explicitly.
 ARG CLAUDE_CODE_VERSION
+ARG CODEX_VERSION
 ARG MISE_VERSION
 ARG DEBIAN_MIRROR=https://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=https://deb.debian.org/debian-security
 RUN test -n "$CLAUDE_CODE_VERSION" \
   || (echo "build arg CLAUDE_CODE_VERSION is required (pin the provider CLI)" >&2 && exit 1)
+RUN test -n "$CODEX_VERSION" \
+  || (echo "build arg CODEX_VERSION is required (pin the provider CLI)" >&2 && exit 1)
 RUN test -n "$MISE_VERSION" \
   || (echo "build arg MISE_VERSION is required (pin mise)" >&2 && exit 1)
 
@@ -31,6 +39,7 @@ RUN test -n "$MISE_VERSION" \
 # Recording them here is what lets a caller tell the two apart without starting
 # a container.
 LABEL com.specmate.claude-code-version="${CLAUDE_CODE_VERSION}" \
+  com.specmate.codex-version="${CODEX_VERSION}" \
   com.specmate.mise-version="${MISE_VERSION}"
 
 # The language runtimes themselves come from the repository through mise.
@@ -64,6 +73,12 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     "@anthropic-ai/claude-code-linux-${provider_arch}@${CLAUDE_CODE_VERSION}" \
   && npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   && claude --version
+
+# The published package resolves its own platform binary through optional
+# dependencies, so this needs no architecture branch of its own.
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm install --global "@openai/codex@${CODEX_VERSION}" \
+  && codex --version
 
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
   npm install --global "mise@${MISE_VERSION}" \
