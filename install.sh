@@ -360,15 +360,15 @@ choose_providers() {
 }
 
 fix_providers() {
+  local chosen
+
   # The remote path runs without a terminal, and so does CI. Choosing the
   # default beats hanging on a read nobody is there to answer.
   if [[ ! -t 0 || ! -t 1 ]]; then
-    env_set AVAILABLE_PROVIDERS claude-code
+    chosen=claude-code
     say "no terminal to ask on — chose claude-code; change it with ./install.sh --only providers"
-    return 0
-  fi
-
-  cat <<EOF
+  else
+    cat <<EOF
 
   ${BOLD}Agents${RESET}
   Every stage runs on one of these. Tick the ones this deployment may use: a
@@ -379,11 +379,22 @@ fix_providers() {
 
 EOF
 
-  choose_providers
-  env_set AVAILABLE_PROVIDERS "$CHOSEN_PROVIDERS"
+    choose_providers
+    chosen=$CHOSEN_PROVIDERS
+    echo
+  fi
 
-  echo
-  say "recorded AVAILABLE_PROVIDERS=$CHOSEN_PROVIDERS"
+  env_set AVAILABLE_PROVIDERS "$chosen"
+  say "recorded AVAILABLE_PROVIDERS=$chosen"
+
+  # The services read this once, at start, and the `services` step below passes
+  # on a stack that is already up rather than recreating it — so on an installed
+  # box a changed answer would sit in .env unread. During a first install nothing
+  # is up yet, hence the check rather than an unconditional restart.
+  check_services >/dev/null 2>&1 || return 0
+
+  say "restarting the services that read it"
+  docker compose up -d api orchestrator
 }
 
 check_runtime_mode() {
