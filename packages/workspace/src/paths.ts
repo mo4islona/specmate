@@ -91,6 +91,17 @@ export function memoryPath(config: WorkspaceConfig, mirrorKey: MirrorKey): strin
   return join(config.root, 'memory', mirrorKey)
 }
 
+/**
+ * Toolchain caches shared across every task, bound over the conventional
+ * locations under the runner's HOME. Under the workspace root rather than in a
+ * volume of its own, because pnpm fills a project by hardlinking out of its
+ * store and a hardlink does not cross a filesystem — a store anywhere else is
+ * one pnpm abandons for a copy inside the worktree.
+ */
+export function cachePath(config: WorkspaceConfig): string {
+  return join(config.root, 'caches')
+}
+
 /** Disposable detached checkout used by one conversation response attempt. */
 export function conversationWorktreePath(
   config: WorkspaceConfig,

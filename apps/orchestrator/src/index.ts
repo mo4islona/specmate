@@ -9,7 +9,7 @@ import {
   renderLedgerForTask,
   StageExecutor,
 } from '@specmate/runner'
-import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
+import { cachePath, Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { stageActivityPayload } from './activity.ts'
@@ -94,7 +94,10 @@ const pidDir = join(workspaces.config.root, 'agent-pids')
 let runnerConfig: ReturnType<typeof runnerConfigFrom>
 let backend: ReturnType<typeof backendFor>
 try {
-  runnerConfig = runnerConfigFrom(env, env.NODE_ENV, pidDir)
+  runnerConfig = runnerConfigFrom(env, env.NODE_ENV, {
+    pidDir,
+    cacheRoot: cachePath(workspaces.config),
+  })
   backend = backendFor(runnerConfig)
   const report = await backend.preflight(workspaces.config.root)
   console.info(`runner ready — ${report}`)

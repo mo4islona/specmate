@@ -137,7 +137,23 @@ export function providerRuntimesFrom(env: RunnerEnv): ProviderRuntimes {
   return runtimes
 }
 
-export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string, pidDir?: string): RunnerConfig {
+/**
+ * Directories the runner is handed rather than told about, because both are
+ * carved out of the workspace root and only an entrypoint knows where that is.
+ * Named separately rather than derived from the root together: the daemon
+ * tracks pids and a one-shot stage run does not, and that difference is a
+ * decision, not an accident of what each caller passed.
+ */
+export interface RunnerDirs {
+  readonly pidDir?: string
+  readonly cacheRoot?: string
+}
+
+export function runnerConfigFrom(
+  env: RunnerEnv,
+  nodeEnv: string,
+  dirs: RunnerDirs = {},
+): RunnerConfig {
   // The in-process backend shares this process's filesystem and machine with an
   // agent that runs a foreign repository's code. In production that is not a
   // warning, it is a refusal.
@@ -152,7 +168,8 @@ export function runnerConfigFrom(env: RunnerEnv, nodeEnv: string, pidDir?: strin
     memory: env.RUNNER_MEMORY,
     rolesDir: env.ROLES_DIR,
     stageTimeoutMs: env.STAGE_TIMEOUT_MS,
-    pidDir,
+    pidDir: dirs.pidDir,
+    cacheRoot: dirs.cacheRoot,
   })
 }
 
