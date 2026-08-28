@@ -44,6 +44,7 @@ import {
   Reveal,
   Section,
   Select,
+  SelectGroup,
   SelectOption,
   Skeleton,
   SkeletonFacts,
@@ -418,6 +419,30 @@ export function KitScreen() {
 
         <Specimen name="field-label, for a group rather than one control">
           <FieldLabel>Override models for this task</FieldLabel>
+        </Specimen>
+
+        <Specimen name="select, grouped — the heading carries the mark, the row is just the value">
+          <Select
+            mono
+            fullWidth={false}
+            defaultValue="claude-opus-5"
+            className="w-56"
+            display={
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentAvatar name="claude-code" lit label="Claude Code" />
+                <span className="truncate">opus-5</span>
+              </span>
+            }
+          >
+            <SelectGroup label="Claude Code" mark={<AgentAvatar name="claude-code" lit />}>
+              <SelectOption value="claude-opus-5">opus-5</SelectOption>
+              <SelectOption value="claude-sonnet-5">sonnet-5</SelectOption>
+            </SelectGroup>
+            <SelectGroup label="Codex" mark={<AgentAvatar name="codex" lit />}>
+              <SelectOption value="gpt-5.6-sol">gpt-5.6-sol</SelectOption>
+              <SelectOption value="gpt-5.5">gpt-5.5</SelectOption>
+            </SelectGroup>
+          </Select>
         </Specimen>
       </Section>
 

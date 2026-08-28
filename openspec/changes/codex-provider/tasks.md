@@ -89,11 +89,12 @@ Design decisions are referenced as D1–D13 and requirements by ID; neither is r
 - [x] 7.1 Accept a provider in the intake override and the settings update, rejecting an unknown
       provider and an incoherent pair by field — REQ-1001, REQ-1014, AC-1085, AC-1086. Verify:
       `bun test apps/api`.
-- [x] 7.2 `ModelSelectPair` gains a provider select and offers only that provider's models; changing
-      the provider leaves the role naming a model it offers — REQ-917, REQ-903, AC-1809, AC-1913.
-      Verify: `bun run --cwd apps/web test`.
-- [x] 7.3 Add the provider column to the Settings screen and the new-task override, and to the
-      task view's rendering of what a role ran under — AC-946, AC-948. Verify: same command.
+- [x] 7.2 `ModelSelectPair` offers every configured provider's models in one list, grouped under the
+      provider each belongs to, and the chosen model carries its provider — REQ-917, REQ-903,
+      AC-1809, AC-1913. Verify: `bun run --cwd apps/web test`.
+- [x] 7.3 Show the provider on the Settings screen and the new-task override — as the mark the
+      chosen model sits under — and in the task view's rendering of what a role ran under —
+      AC-946, AC-948. Verify: same command.
 - [x] 7.4 Render the new part in `/kit` if `ModelSelectPair` gained a kit primitive; otherwise
       confirm it composes existing ones — repository convention. Verify:
       `bun run --cwd apps/web test`.

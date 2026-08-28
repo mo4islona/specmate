@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL_BINDINGS,
   type ModelId,
   type ProviderId,
+  providerForModel,
   type ReasoningEffort,
 } from '@specmate/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -80,16 +81,15 @@ function ModelDefaultsSection() {
               <ModelSelectPair
                 role={role}
                 providers={defaults.data.availableProviders}
-                providerValue={binding.provider}
-                defaultProvider={binding.provider}
                 modelValue={binding.model}
                 reasoningEffortValue={binding.reasoningEffort}
                 disabled={savingRole === role}
-                // Provider only: the model that comes back is one the new
-                // provider runs, resolved server-side rather than guessed here
+                // The provider goes with the model rather than being inferred
+                // downstream: the row then stores what the owner was shown
                 // (AC-137, AC-1809).
-                onProviderChange={(value) => value && save.mutate({ role, provider: value })}
-                onModelChange={(value) => value && save.mutate({ role, model: value })}
+                onModelChange={(value) =>
+                  value && save.mutate({ role, model: value, provider: providerForModel(value) })
+                }
                 onReasoningEffortChange={(value) =>
                   value && save.mutate({ role, reasoningEffort: value })
                 }

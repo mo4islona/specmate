@@ -14,10 +14,10 @@ and saving to the model-defaults setting; a saved change SHALL take effect for t
 afterward without restarting any service. The section SHALL offer a reset action that restores
 every role to the shipped hardcoded defaults in one save.
 
-A role's model choices SHALL be those of the provider currently selected for it, and changing the
-provider SHALL leave that role naming a model the new provider offers. The screen MUST NOT be able
-to submit a provider paired with a model that provider cannot run — a pairing REQ-1014 rejects is
-one the owner should never have been offered.
+A role SHALL be bound by one choice of model, presented under the provider that model belongs to,
+and the provider stored for that role SHALL be the one its chosen model belongs to. The screen MUST
+NOT be able to submit a provider paired with a model that provider cannot run — a pairing REQ-1014
+rejects is one the owner should never have been offered.
 
 #### Scenario: AC-946 — Changing a role's default model
 
@@ -36,5 +36,5 @@ one the owner should never have been offered.
 
 #### Scenario: AC-1809 — Changing a role's provider
 
-- **WHEN** the owner changes one role's provider in Settings
-- **THEN** that role's model choices SHALL become the new provider's, the role SHALL name one of them, and saving SHALL be accepted
+- **WHEN** the owner picks, for one role in Settings, a model belonging to a provider other than the one that role runs
+- **THEN** that role's stored provider SHALL become the picked model's, and saving SHALL be accepted

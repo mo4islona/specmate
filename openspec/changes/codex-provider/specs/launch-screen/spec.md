@@ -10,8 +10,9 @@ The override control SHALL be collapsed by default so the common case stays a fo
 Validation failures SHALL be shown against the offending fields with the submitted input
 preserved.
 
-A role's model choices in the override control SHALL be those of the provider selected for it, so an
-override cannot be submitted pairing a provider with a model it cannot run.
+The override control SHALL present a role's model choices under the provider each belongs to, and
+carry that provider with the model it overrides, so an override cannot be submitted pairing a
+provider with a model it cannot run.
 
 #### Scenario: AC-905 — Successful launch
 
@@ -35,5 +36,5 @@ override cannot be submitted pairing a provider with a model it cannot run.
 
 #### Scenario: AC-1913 — Overriding a role's provider for one task
 
-- **WHEN** the owner expands the override control and sets a different provider for one role
-- **THEN** that role's model choices SHALL become the new provider's, and the create request SHALL carry the provider override
+- **WHEN** the owner expands the override control and picks, for one role, a model belonging to another provider
+- **THEN** the create request SHALL carry that model and its provider as the override for that role
