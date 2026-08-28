@@ -3,7 +3,7 @@ import * as SelectPrimitive from '@radix-ui/react-select'
 import { type ComponentPropsWithRef, createContext, type ReactNode, useContext, useId } from 'react'
 import { cn } from './cn.ts'
 import { Icon } from './icon.tsx'
-import { ErrorNote, Note } from './note.tsx'
+import { Dot, ErrorNote, Note } from './note.tsx'
 
 interface FieldContextValue {
   readonly id: string
@@ -197,9 +197,10 @@ export function Checkbox({
 
 /**
  * Radix refuses an item whose value is the empty string — it is how it spells
- * "nothing is chosen", so an option cannot also mean it. Half the selects in
- * this app offer exactly that as a choice ("Use default"), so the empty string
- * is carried across the boundary as this instead, and callers keep writing `''`.
+ * "nothing is chosen", so an option cannot also mean it. A select that offers
+ * exactly that as a choice ("Rework target…") needs it to be one, so the empty
+ * string is carried across the boundary as this instead, and callers keep
+ * writing `''`.
  */
 const EMPTY = '__empty__'
 
@@ -208,6 +209,12 @@ interface SelectProps extends ControlProps {
   readonly defaultValue?: string
   readonly onValueChange?: (value: string) => void
   readonly disabled?: boolean
+  /**
+   * The choice is in flight. The control goes disabled and the chevron becomes a
+   * mark that keeps time — said on the control itself, because a line of text
+   * appearing under one moves every row beneath it for as long as a save lasts.
+   */
+  readonly pending?: boolean
   readonly placeholder?: string
   /**
    * What the trigger shows in place of the chosen option's own words, for a
@@ -236,6 +243,7 @@ export function Select({
   defaultValue,
   onValueChange,
   disabled,
+  pending = false,
   placeholder,
   display,
   id,
@@ -250,16 +258,21 @@ export function Select({
       value={value === '' ? EMPTY : value}
       defaultValue={defaultValue === '' ? EMPTY : defaultValue}
       onValueChange={(next) => onValueChange?.(next === EMPTY ? '' : next)}
-      disabled={disabled}
+      disabled={disabled || pending}
     >
       <SelectPrimitive.Trigger
         id={id ?? field?.id}
         aria-invalid={field?.invalid ? true : undefined}
         aria-describedby={field?.describedBy}
+        // Waiting on the server is not the same as unavailable, so the fade a
+        // dead control wears is lifted while one is in flight — the same
+        // `disabled:` utility `Button` uses, so `cn` settles the pair.
+        aria-busy={pending || undefined}
         className={cn(
           CONTROL,
           'flex items-center justify-between gap-2 text-start',
           'disabled:cursor-not-allowed disabled:opacity-[0.38]',
+          pending && 'disabled:opacity-70',
           fullWidth ? 'w-full' : 'inline-flex',
           mono && 'font-mono',
           className,
@@ -271,9 +284,13 @@ export function Select({
         <span className="min-w-0 truncate">
           <SelectPrimitive.Value placeholder={placeholder}>{display}</SelectPrimitive.Value>
         </span>
-        <SelectPrimitive.Icon asChild>
-          <Icon name="chevron-down" className="shrink-0 text-muted-foreground" />
-        </SelectPrimitive.Icon>
+        {pending ? (
+          <Dot live className="me-1 bg-current" />
+        ) : (
+          <SelectPrimitive.Icon asChild>
+            <Icon name="chevron-down" className="shrink-0 text-muted-foreground" />
+          </SelectPrimitive.Icon>
+        )}
       </SelectPrimitive.Trigger>
 
       <SelectPrimitive.Portal>

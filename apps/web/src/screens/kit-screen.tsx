@@ -444,6 +444,12 @@ export function KitScreen() {
             </SelectGroup>
           </Select>
         </Specimen>
+
+        <Specimen name="select, pending — the write is said where it was made, so no row moves">
+          <Select mono fullWidth={false} pending defaultValue="high" className="w-28">
+            <SelectOption value="high">high</SelectOption>
+          </Select>
+        </Specimen>
       </Section>
 
       <Section
