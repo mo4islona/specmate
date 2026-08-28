@@ -2,8 +2,10 @@
 
 A first run needs more than `docker compose up`. Some of it is generated (passwords), some is a
 fact about the machine (the docker group id), some has to be built before anything can run (the
-runner image), and two things live on someone else's website and only you can fetch them: a
-Claude credential and a GitHub OAuth App client id.
+runner image), and some lives on someone else's website where only you can fetch it: an agent's
+credential and a GitHub OAuth App client id.
+
+It asks early which agents this deployment runs, and then asks only for what those agents need.
 
 `install.sh` walks that list.
 
@@ -31,19 +33,48 @@ itself.
 |---|---|---|
 | `tools` | docker, compose, openssl, curl, and a daemon that answers | Install what's missing and start docker. |
 | `env-file` | `.env` exists | Copies `.env.example`. |
+| `providers` | `AVAILABLE_PROVIDERS` names agents this build can run | Asks which ones — see below. |
 | `runtime-mode` | `NODE_ENV=production`, `RUNNER_BACKEND=docker` | Sets both. `local` runs agents as children of the orchestrator and is a development-only mode. |
 | `secrets` | `POSTGRES_PASSWORD` and `SPECMATE_PASSWORD` are set and not the placeholder | Generates both. See the Postgres note below. |
 | `workspace` | `WORKSPACE_ROOT` is absolute, exists, and belongs to uid 10001 | Creates and chowns it; needs root. |
 | `docker-group` | the orchestrator can reach the docker socket | Writes `docker-compose.override.yml` naming the host's docker group. |
-| `version-pins` | `CLAUDE_CODE_VERSION` and `MISE_VERSION` are set | Resolves the current versions from npm. |
-| `claude-token` | a Claude credential is set *and* named in `RUNNER_FORWARD_ENV` | Asks you for it — see below. |
+| `version-pins` | `CLAUDE_CODE_VERSION`, `CODEX_VERSION` and `MISE_VERSION` are set | Resolves the current versions from npm. |
+| `claude-token` | a Claude credential is set *and* named in `CLAUDE_CODE_FORWARD_ENV` | Asks you for it — see below. |
 | `runner-image` | the image exists and was built from the pinned CLI version | Builds it. Several minutes on a cold cache. |
 | `services` | api and orchestrator answer `/readyz` | `docker compose up -d --build`, then waits. |
-| `claude-auth` | the provider CLI actually accepts the credential | Points you back at `--only claude-token`. |
+| `claude-auth` | the Claude CLI actually accepts the credential | Points you back at `--only claude-token`. |
+| `codex-auth` | the Codex CLI reports a session | Takes an API key, or signs you in — see below. |
 | `github` | a client id is set and a stored authorization hasn't expired | Asks for the client id, then runs the device flow. |
+
+`claude-token` and `claude-auth` run only when `claude-code` was chosen, `codex-auth` only when
+`codex` was. Everything else runs every time.
 
 It finishes by printing the URL and your owner password. Every port binds to loopback, so reach
 the box over a tailnet or an ssh tunnel — the service is not built to face the open internet.
+
+## Choosing agents
+
+The third step asks which agents this deployment may run. Tick them:
+
+```
+  ❯ [x]  Claude Code
+    [ ]  Codex
+
+    ↑↓ move · space ticks · enter confirms
+```
+
+`j`/`k` move too, and a digit ticks that row directly. It opens on whatever is already configured,
+so running it again edits the answer rather than asking from nothing, and enter does nothing while
+the list is empty.
+
+The answer becomes `AVAILABLE_PROVIDERS`, and it is a ceiling rather than a choice per stage: a
+role's binding picks from it, and a task can only have its work checked by a different agent than
+wrote it when there is more than one. Change your mind later with `./install.sh --only providers`,
+then run `./install.sh` to be asked for whatever the new agent needs.
+
+The runner image carries both CLIs whatever you answer, so turning the second one on costs no
+rebuild. Without a terminal — `--host` over a non-interactive ssh, or CI — the step takes
+`claude-code` and says so instead of waiting on a prompt nobody can answer.
 
 ## Claude access
 
@@ -56,7 +87,7 @@ claude setup-token
 ```
 
 It opens a browser and prints a token. Paste it when the installer asks. It's stored in `.env`
-as `CLAUDE_CODE_OAUTH_TOKEN`, and `RUNNER_FORWARD_ENV` names it so the orchestrator hands it to
+as `CLAUDE_CODE_OAUTH_TOKEN`, and `CLAUDE_CODE_FORWARD_ENV` names it so the orchestrator hands it to
 each stage — by name, so the value never lands on a command line where another process could
 read it.
 
@@ -67,10 +98,10 @@ people's behalf and not to resell access to Claude.
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-RUNNER_FORWARD_ENV=ANTHROPIC_API_KEY
+CLAUDE_CODE_FORWARD_ENV=ANTHROPIC_API_KEY
 ```
 
-The installer accepts either — `claude-token` passes as soon as `RUNNER_FORWARD_ENV` names a
+The installer accepts either — `claude-token` passes as soon as `CLAUDE_CODE_FORWARD_ENV` names a
 variable that has a value, and `claude-auth` then proves the CLI accepts it.
 
 **The interactive login still works.** `docker compose run --rm runner claude` signs in through a
@@ -78,6 +109,21 @@ browser and writes a session into the `specmate_claude-auth` volume, which stage
 a terminal on the server (`ssh -t`), and it's lost if the volume is. Do it as the container's own
 user, never as root — root-owned files in that volume are unreadable to stages. The token is the
 better default for exactly these reasons.
+
+## Codex access
+
+Codex works the other way round. Its CLI authenticates from a session file of its own and ignores
+a key in its environment, so there is one place a credential can live: the `specmate_codex-auth`
+volume that stages mount. `codex-auth` fills it, either way you like:
+
+- **An OpenAI API key.** Paste it when asked. The installer pipes it into `codex login
+  --with-api-key` and keeps a copy in `.env` as `CODEX_API_KEY`, so a lost volume can be refilled
+  without asking you again — press enter at the prompt and it reuses what it has.
+- **A ChatGPT account.** Leave the prompt blank. `codex login --device-auth` prints a link and a
+  short code and waits for you, the same shape as the GitHub step below.
+
+Both need a terminal on the server (`ssh -t`). To replace a key that stopped working, type the new
+one at the prompt — a typed key always wins over the stored one.
 
 ## GitHub access
 
