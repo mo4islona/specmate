@@ -340,21 +340,25 @@ EOF
 }
 
 check_version_pins() {
-  local claude mise
+  local claude codex mise
   claude=$(env_get CLAUDE_CODE_VERSION)
+  codex=$(env_get CODEX_VERSION)
   mise=$(env_get MISE_VERSION)
-  if [[ -z $claude || -z $mise ]]; then
-    echo "CLAUDE_CODE_VERSION=${claude:-unset}, MISE_VERSION=${mise:-unset}"
+  if [[ -z $claude || -z $codex || -z $mise ]]; then
+    echo "CLAUDE_CODE_VERSION=${claude:-unset}, CODEX_VERSION=${codex:-unset}, MISE_VERSION=${mise:-unset}"
     return 1
   fi
-  echo "claude-code $claude, mise $mise"
+  echo "claude-code $claude, codex $codex, mise $mise"
 }
 
 fix_version_pins() {
   # Pinned, not floating: a stage's environment has to be reproducible, and the
-  # image bakes both versions in at build time.
-  local claude mise
+  # image bakes every version in at build time. Both provider CLIs are pinned
+  # whether or not both are in AVAILABLE_PROVIDERS — one image carries both, so
+  # turning the second one on must not need a rebuild.
+  local claude codex mise
   claude=$(env_get CLAUDE_CODE_VERSION)
+  codex=$(env_get CODEX_VERSION)
   mise=$(env_get MISE_VERSION)
 
   if [[ -z $claude ]]; then
@@ -365,6 +369,14 @@ fix_version_pins() {
     say "pinned claude-code to $claude"
   fi
 
+  if [[ -z $codex ]]; then
+    codex=$(npm_latest @openai/codex) ||
+      die "could not reach the npm registry to resolve the latest codex"
+    [[ -n $codex ]] || die "the npm registry returned no version for @openai/codex"
+    env_set CODEX_VERSION "$codex"
+    say "pinned codex to $codex"
+  fi
+
   if [[ -z $mise ]]; then
     mise=$(npm_latest mise) || die "could not reach the npm registry to resolve the latest mise"
     [[ -n $mise ]] || die "the npm registry returned no version for mise"
@@ -373,11 +385,11 @@ fix_version_pins() {
   fi
 }
 
-# The names in RUNNER_FORWARD_ENV are what the orchestrator hands to a stage, so
-# a credential that is set but not listed there never reaches the agent.
+# The names in CLAUDE_CODE_FORWARD_ENV are what the orchestrator hands to a
+# stage, so a credential that is set but not listed there never reaches the agent.
 forwarded_credential() {
   local forwarded name
-  forwarded=$(env_get RUNNER_FORWARD_ENV)
+  forwarded=$(env_get CLAUDE_CODE_FORWARD_ENV)
 
   for name in ${forwarded//,/ }; do
     if [[ -n $(env_get "$name") ]]; then
@@ -411,7 +423,7 @@ fix_claude_token() {
   It opens a browser, then prints a token. Paste it below. Nothing is echoed.
 
   Prefer per-token API billing instead? Leave this blank, put ANTHROPIC_API_KEY
-  in .env, and set RUNNER_FORWARD_ENV=ANTHROPIC_API_KEY.
+  in .env, and set CLAUDE_CODE_FORWARD_ENV=ANTHROPIC_API_KEY.
 
 EOF
   local token
@@ -420,7 +432,7 @@ EOF
   [[ -n $token ]] || die "no token entered — nothing was changed, run ./install.sh again when you have one"
 
   env_set CLAUDE_CODE_OAUTH_TOKEN "$token"
-  env_set RUNNER_FORWARD_ENV CLAUDE_CODE_OAUTH_TOKEN
+  env_set CLAUDE_CODE_FORWARD_ENV CLAUDE_CODE_OAUTH_TOKEN
   say "stored the token in .env and set it to be forwarded into stages"
 }
 
@@ -433,7 +445,7 @@ check_runner_image() {
   }
 
   # The pins are build args baked into the image, so an .env edit alone leaves
-  # the old CLI running. The label is how the two are told apart.
+  # the old CLI running. The labels are how the two are told apart.
   built=$(docker image inspect --format \
     '{{index .Config.Labels "com.specmate.claude-code-version"}}' "$image" 2>/dev/null)
   pinned=$(env_get CLAUDE_CODE_VERSION)
@@ -441,7 +453,16 @@ check_runner_image() {
     echo "$image carries claude-code ${built:-unknown}, but .env pins $pinned"
     return 1
   fi
-  echo "$image, claude-code ${built:-unlabelled}"
+
+  local built_codex pinned_codex
+  built_codex=$(docker image inspect --format \
+    '{{index .Config.Labels "com.specmate.codex-version"}}' "$image" 2>/dev/null)
+  pinned_codex=$(env_get CODEX_VERSION)
+  if [[ -n $pinned_codex && $built_codex != "$pinned_codex" ]]; then
+    echo "$image carries codex ${built_codex:-unknown}, but .env pins $pinned_codex"
+    return 1
+  fi
+  echo "$image, claude-code ${built:-unlabelled}, codex ${built_codex:-unlabelled}"
 }
 
 fix_runner_image() {

@@ -107,6 +107,7 @@ jobs:
           tags: specmate/runner-universal:ci
           build-args: |
             CLAUDE_CODE_VERSION=2.1.212
+            CODEX_VERSION=0.150.1
             MISE_VERSION=2026.7.13
           cache-from: type=gha,scope=runner
           cache-to: type=gha,mode=max,scope=runner
