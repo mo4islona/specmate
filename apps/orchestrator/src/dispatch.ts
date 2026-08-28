@@ -1,15 +1,17 @@
 import { type ExecutionEnvironment, stageModel } from '@specmate/core'
 import type { ConversationExecutor, StageExecutor } from '@specmate/runner'
 import type { ConversationDispatcher, StageDispatcher } from './engine.ts'
+import { EnvironmentUnresolvableError, type StageEnvironment } from './environment.ts'
 
 export interface StageDispatcherDeps {
   readonly executor: StageExecutor
   /**
-   * The environment pinned during provision, moments after the tick took its task
-   * snapshot — dispatch on the pin, not on the snapshot. Injected rather than read
-   * here so what the dispatcher does to a dispatch is a mapping and nothing else.
+   * The pin the stage runs on, read moments after the tick took its task
+   * snapshot and verified against the host that must honour it. Injected rather
+   * than resolved here so what the dispatcher does to a dispatch is a mapping
+   * and one named failure.
    */
-  readonly pinnedEnvironment: (taskId: string) => Promise<ExecutionEnvironment>
+  readonly stageEnvironment: StageEnvironment
 }
 
 /**
@@ -20,10 +22,21 @@ export interface StageDispatcherDeps {
  */
 export function createStageDispatcher({
   executor,
-  pinnedEnvironment,
+  stageEnvironment,
 }: StageDispatcherDeps): StageDispatcher {
   return async ({ task, node, stageId, attempt, provider, workspace, resume, signal }) => {
     const binding = task.modelBindings[node.role]
+
+    let environment: ExecutionEnvironment
+    try {
+      environment = await stageEnvironment(task.id, workspace)
+    } catch (error) {
+      if (!(error instanceof EnvironmentUnresolvableError)) throw error
+
+      // No container was asked for, and asking again would ask for the same one:
+      // the image is missing on the host that would have to run it (AC-818).
+      return { status: 'failed', attempts: [], failure: 'backend_error', detail: error.message }
+    }
 
     return executor.execute({
       taskId: task.id,
@@ -38,7 +51,7 @@ export function createStageDispatcher({
       reasoningEffort: binding.reasoningEffort,
       workspace,
       baseBranch: workspace.baseBranch,
-      environment: await pinnedEnvironment(task.id),
+      environment,
       attempt,
       resume,
       signal,

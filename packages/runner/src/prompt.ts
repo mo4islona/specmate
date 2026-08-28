@@ -1,8 +1,14 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
-import { type AgentRole, type ConversationActionOption, ROLE_CONTRACTS } from '@specmate/core'
+import {
+  type AgentRole,
+  type ConversationActionOption,
+  ROLE_CONTRACTS,
+  type RoleContract,
+} from '@specmate/core'
 import { artifactKindForPath, type Git, type Workspace } from '@specmate/workspace'
 import type { RunnerConfig } from './config.ts'
+import { renderRejection, type StageRejection } from './rejection.ts'
 import { truncate } from './truncate.ts'
 
 export class RolePromptMissingError extends Error {
@@ -20,6 +26,13 @@ export interface PromptParams {
   readonly workspace: Workspace
   readonly baseBranch: string
   readonly ledger: string
+  /**
+   * What the attempt just before this one was rejected for, when this run is a
+   * retry of it. The ledger carries the same fact across a re-dispatch; this is
+   * the channel for a retry the executor makes itself, whose predecessor is not
+   * in the database yet (REQ-217).
+   */
+  readonly rejection?: StageRejection
   readonly conversation?: {
     readonly context: string
     readonly message: string
@@ -65,9 +78,7 @@ export async function assemblePrompt(
     '',
     '# Change folder',
     '',
-    artifacts.length === 0
-      ? 'The change folder holds none of the artifacts your role reads yet.'
-      : artifacts.join('\n\n'),
+    changeFolderSection(contract, params.workspace.changeDir, artifacts),
     '',
     '---',
     '',
@@ -76,6 +87,17 @@ export async function assemblePrompt(
     diff,
     '',
   ]
+
+  if (params.rejection) {
+    sections.push(
+      '---',
+      '',
+      '# Your previous attempt',
+      '',
+      ...renderRejection(params.rejection),
+      '',
+    )
+  }
 
   if (params.conversation) {
     const delta = await renderConversationDelta(git, config, params)
@@ -104,6 +126,35 @@ export async function assemblePrompt(
   }
 
   return `${sections.join('\n')}\n`
+}
+
+/**
+ * The folder as a path a run is told to write into, not only as a heading over
+ * what is already in it. The one role contracted to name the change otherwise
+ * reads its own declaration as the instruction, and writes into the folder it
+ * named rather than the one it was given (AC-243).
+ */
+function changeFolderSection(
+  contract: RoleContract,
+  changeDir: string,
+  artifacts: readonly string[],
+): string {
+  const contents =
+    artifacts.length === 0
+      ? 'It holds none of the artifacts your role reads yet.'
+      : artifacts.join('\n\n')
+
+  if (contract.writes.length === 0) {
+    return `This task's change folder is \`${changeDir}/\`.\n\n${contents}`
+  }
+
+  const instruction = `Write every artifact of this task into \`${changeDir}/\`, which already exists.`
+  if (!contract.declaresPlan) return `${instruction}\n\n${contents}`
+
+  const naming =
+    'Naming the change is a field on your result — the folder is renamed to what you declare once this stage is accepted, so do not create one yourself.'
+
+  return `${instruction} ${naming}\n\n${contents}`
 }
 
 function renderConversationActionOptions(options: readonly ConversationActionOption[]): string {

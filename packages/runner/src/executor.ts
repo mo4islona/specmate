@@ -1,6 +1,9 @@
 import {
   type AgentProvider,
   type AgentRole,
+  declaredChangeName,
+  FAILURE_KINDS,
+  type FailureReason,
   type ModelId,
   type ProviderId,
   type ReasoningEffort,
@@ -17,7 +20,8 @@ import { checkBriefCompleteness } from './brief.ts'
 import type { RunnerConfig } from './config.ts'
 import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
-import { type RunFailure, type StageRunError, stageLabel } from './provider-run.ts'
+import { RUN_FAILURES, type StageRunError, stageLabel } from './provider-run.ts'
+import type { StageRejection } from './rejection.ts'
 import { changedPaths, checkWriteScope } from './scope.ts'
 
 /** Injected rather than a database handle: the ledger is text by the time a stage sees it. */
@@ -26,12 +30,16 @@ export type LedgerSource = (taskId: string) => Promise<string>
 /** One retry, then the stage fails — `agent-contracts`, structured result contract. */
 const MAX_ATTEMPTS = 2
 
-export type StageFailure =
-  | RunFailure
-  | 'scope_violation'
-  | 'agent_failed'
-  | 'uncorroborated'
-  | 'incomplete_brief'
+/** What a run can end as, plus what the executor's own checks can decline. */
+export const STAGE_FAILURES = [
+  ...RUN_FAILURES,
+  'scope_violation',
+  'agent_failed',
+  'uncorroborated',
+  'incomplete_brief',
+] as const satisfies readonly FailureReason[]
+
+export type StageFailure = (typeof STAGE_FAILURES)[number]
 
 export interface StageRequest {
   readonly taskId: string
@@ -91,6 +99,16 @@ export interface StageExecution {
   readonly coldStartReason?: string | null
 }
 
+/**
+ * What the attempt before this one left behind: why the harness rejected it, and
+ * the session it ran under when that rejection was of complete work.
+ */
+interface PreviousAttempt {
+  readonly rejection: StageRejection
+  /** Null when the run itself failed — that reasoning is what the discard drops. */
+  readonly sessionId: string | null
+}
+
 /** A recognized tool use, attributed to the stage attempt it came from. */
 export interface StageActivityEvent extends StageActivity {
   readonly taskId: string
@@ -142,10 +160,13 @@ export class StageExecutor {
 
     const attempts: StageAttemptRecord[] = []
     const first = request.attempt ?? 0
+    // A retry given the same prompt that produced the failure has nothing to go
+    // on, and one given no session starts from nothing (REQ-209, REQ-217).
+    let previous: PreviousAttempt | undefined
 
     for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
       const attempt = first + i
-      const outcome = await this.attempt(request, attempt, provider)
+      const outcome = await this.attempt(request, attempt, provider, previous)
       attempts.push(outcome.record)
       if (outcome.record.ok) {
         return {
@@ -159,6 +180,26 @@ export class StageExecutor {
           telemetry: outcome.telemetry ?? null,
         }
       }
+
+      if (outcome.record.failure) {
+        // A rejection of complete work is a correction to that work: the session
+        // that produced it is sound, and continuing it is handing the work back
+        // rather than re-reading failed reasoning (REQ-209, AC-244, AC-245).
+        const declined = FAILURE_KINDS[outcome.record.failure].producedResult
+
+        previous = {
+          rejection: {
+            attempt,
+            reason: outcome.record.failure,
+            detail: outcome.record.detail ?? null,
+          },
+          sessionId: declined ? (outcome.sessionId ?? null) : null,
+        }
+      }
+
+      // The second run would be the first run: same image, same host, same
+      // missing manifest. The cap is for a check and an agent that disagree.
+      if (outcome.record.failure && !FAILURE_KINDS[outcome.record.failure].retryable) break
 
       // The stop already ended this stage: another attempt would put an agent back
       // on a workspace the orchestrator is in the middle of discarding.
@@ -183,6 +224,7 @@ export class StageExecutor {
     request: StageRequest,
     attempt: number,
     provider: AgentProvider,
+    previous?: PreviousAttempt,
   ): Promise<{
     record: StageAttemptRecord
     result?: StageResult
@@ -199,6 +241,7 @@ export class StageExecutor {
       workspace: request.workspace,
       baseBranch: request.baseBranch,
       ledger,
+      rejection: previous?.rejection,
     })
 
     const job: StageJob = {
@@ -217,6 +260,7 @@ export class StageExecutor {
       timeoutMs: config.stageTimeoutMs,
       attempt,
       resume: request.resume,
+      continueSession: previous?.sessionId ?? null,
       onActivity: onActivity
         ? (activity) =>
             onActivity({ ...activity, taskId: request.taskId, stageId: request.stageId, attempt })
@@ -246,7 +290,12 @@ export class StageExecutor {
     let changedPathsPromise: Promise<string[]> | undefined
     const getChangedPaths = () => (changedPathsPromise ??= changedPaths(git, request.workspace))
 
-    const violations = await checkWriteScope(request.workspace, request.role, getChangedPaths)
+    const violations = await checkWriteScope(
+      request.workspace,
+      request.role,
+      getChangedPaths,
+      declaredChangeName(request.role, outcome.result),
+    )
     if (violations.length > 0) {
       return {
         record: {
@@ -256,6 +305,7 @@ export class StageExecutor {
           detail: `role ${request.role} may not modify product code but changed: ${violations.join(', ')}`,
           durationMs: outcome.durationMs,
         },
+        sessionId: outcome.sessionId,
       }
     }
 
@@ -271,6 +321,7 @@ export class StageExecutor {
           detail: outcome.result.notes_md || 'the agent reported failure in RESULT.json',
           durationMs: outcome.durationMs,
         },
+        sessionId: outcome.sessionId,
       }
     }
 
@@ -302,6 +353,7 @@ export class StageExecutor {
           detail: brief.detail,
           durationMs: outcome.durationMs,
         },
+        sessionId: outcome.sessionId,
       }
     }
 
@@ -322,6 +374,7 @@ export class StageExecutor {
           detail: `approve is not corroborated by the report for: ${corroboration.violations.join(', ')}`,
           durationMs: outcome.durationMs,
         },
+        sessionId: outcome.sessionId,
       }
     }
     if (corroboration.kind === 'invalid') {
@@ -333,6 +386,7 @@ export class StageExecutor {
           detail: corroboration.detail,
           durationMs: outcome.durationMs,
         },
+        sessionId: outcome.sessionId,
       }
     }
 

@@ -21,6 +21,7 @@ const BASE: LedgerSnapshot = {
   rounds: [],
   interventions: [],
   gateComments: [],
+  lastRejection: null,
 }
 
 describe('ledger', () => {
@@ -37,6 +38,28 @@ describe('ledger', () => {
 
   test('says plainly when no review has run', () => {
     expect(renderLedger(makeConfig(), BASE)).toContain('No review has run yet.')
+  })
+
+  it('says plainly when no earlier attempt at this stage was rejected', () => {
+    expect(renderLedger(makeConfig(), BASE)).toContain(
+      'No earlier attempt at this stage was rejected.',
+    )
+  })
+
+  it('AC-248: states what the previous attempt at this stage was rejected for', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      lastRejection: {
+        attempt: 0,
+        reason: 'scope_violation',
+        detail: 'role planner may not modify product code but changed: src/app.ts',
+      },
+    })
+
+    expect(ledger).toContain(
+      'Attempt 0 was rejected: The run changed files its role may not touch.',
+    )
+    expect(ledger).toContain('- What was wrong: role planner may not modify product code')
   })
 
   test('carries the previous round’s findings', () => {

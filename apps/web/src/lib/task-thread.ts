@@ -1,3 +1,4 @@
+import { failureSentence } from '@specmate/core'
 import type { ConversationMessage, DecisionItem, TaskDetail, TimelineEvent } from './api-client.ts'
 import { isReadOnlyShell } from './shell-reads.ts'
 
@@ -303,7 +304,7 @@ export function eventDetail(
   const reason = payloadValue(event, 'reason')
   const detail = payloadValue(event, 'detail')
   if (reason || detail) {
-    return [reason ? humanize(reason) : null, detail].filter(Boolean).join(' — ')
+    return [reason ? reasonText(reason) : null, detail].filter(Boolean).join(' — ')
   }
 
   return payloadValue(event, 'title')
@@ -312,6 +313,15 @@ export function eventDetail(
 /** Engine enums (`verification_failed`) are written for code; the thread reads them as words. */
 function humanize(value: string): string {
   return value.includes(' ') ? value : value.replaceAll('_', ' ')
+}
+
+/**
+ * A failure the harness named reads as the sentence its table entry carries.
+ * Anything else a `reason` payload holds was never in that vocabulary, and the
+ * identifier read as words is all there is to say about it.
+ */
+function reasonText(reason: string): string {
+  return failureSentence(reason) ?? humanize(reason)
 }
 
 // ─── labels and numbers ───────────────────────────────────────────────────────
@@ -532,7 +542,7 @@ function lineParts(event: TimelineEvent): { action: string; target: string } {
   const target =
     payloadValue(event, 'commit') ??
     payloadValue(event, 'title') ??
-    (reason ? humanize(reason) : null) ??
+    (reason ? reasonText(reason) : null) ??
     payloadValue(event, 'detail') ??
     ''
 

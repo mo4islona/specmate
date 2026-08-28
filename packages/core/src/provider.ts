@@ -53,6 +53,15 @@ export interface StageJob {
    */
   readonly resume: StageResumption | null
   /**
+   * The session of this stage's own previous attempt, set when the harness
+   * declined that attempt's complete result for a named defect (REQ-209).
+   *
+   * Separate from `resume`, which is the graph's fact about what this node
+   * continues and also excuses a run from re-declaring a plan. A retry declares
+   * everything its first attempt owed; only the grounding is inherited.
+   */
+  readonly continueSession?: string | null
+  /**
    * Fired for each recognized tool use while the run is still in progress.
    * Absent for callers (e.g. conversation turns) that don't surface activity.
    */

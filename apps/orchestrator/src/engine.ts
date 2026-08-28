@@ -18,10 +18,10 @@ import {
   type ConversationActionProposal,
   canTransition,
   capsForSize,
-  changeNameFor,
   conditionsOf,
   type DecisionOption,
   decisionFromRequest,
+  declaredChangeName,
   definitionForSize,
   type EscalationInput,
   type ExecutionUsage,
@@ -32,6 +32,7 @@ import {
   type HarnessCoverageAssessment,
   isCoverageGap,
   isRestartable,
+  isRetryable,
   isTerminal,
   LOOP_CAPS,
   NODE_PREDICATES,
@@ -1749,10 +1750,9 @@ export class Engine {
     workspace: Workspace | undefined,
   ): Promise<{ workspace: Workspace | undefined; changeName: string | null }> {
     const unchanged = { workspace, changeName: task.changeName }
-    if (result.status !== 'ok' || !result.plan) return unchanged
-    if (!ROLE_CONTRACTS[node.role].declaresPlan) return unchanged
-
-    const declared = changeNameFor(result.plan)
+    // The same name the write-scope check let this run write under, from the
+    // same place: the two must agree or a correct run is failed for its folder.
+    const declared = declaredChangeName(node.role, result)
     if (!declared || !workspace || !this.deps.workspaces.renameChangeFolder) return unchanged
 
     const renamed = await this.deps.workspaces.renameChangeFolder(workspace, declared)
@@ -2058,7 +2058,10 @@ export class Engine {
         payload: { node: node.key, attempt: row.attempt, reason, detail: detail ?? null },
       })
 
-      if (await this.capSpent(tx, task.id, graph.id, node.key)) {
+      // A failure re-running cannot change is not worth a second dispatch: the
+      // cap is for an agent and a check that disagree, and this is neither
+      // (REQ-613, AC-645).
+      if (!isRetryable(reason) || (await this.capSpent(tx, task.id, graph.id, node.key))) {
         await this.applyTransition(tx, task, graph.dag, 'failed', {
           cause: reason,
           resume: node.key,

@@ -9,6 +9,7 @@ import {
 import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
+import { renderRejection, type StageRejection } from './rejection.ts'
 import { truncate } from './truncate.ts'
 
 export class TaskNotFoundError extends Error {
@@ -60,6 +61,13 @@ export interface LedgerSnapshot {
   }[]
   /** Redirect and rework comments the owner left at a gate, oldest first. */
   readonly gateComments: readonly LedgerGateComment[]
+  /**
+   * Why the last attempt at the node this task now stands on was rejected, when
+   * it was. This is the channel across a re-dispatch: the executor's own retry
+   * still holds the record in memory, but an attempt the engine dispatches after
+   * a failed stage row has nothing but the ledger (REQ-217).
+   */
+  readonly lastRejection: StageRejection | null
 }
 
 export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<LedgerSnapshot> {
@@ -70,7 +78,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
   // the rows either can need, split client-side by kind below. The left join
   // to `stages` only matters to the intervention filter — a gate comment has
   // no consuming stage and passes through it untouched.
-  const [rounds, feedbackRows, probeRows] = await Promise.all([
+  const [rounds, feedbackRows, probeRows, nodeAttempts] = await Promise.all([
     db
       .select()
       .from(iterations)
@@ -104,8 +112,24 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
       )
       .orderBy(desc(stages.finishedAt))
       .limit(1),
+    // Only the most recent row at the node the task stands on: a node revisited
+    // by a loop must not be told about a rejection an accepted run has since
+    // answered, and a failure at another node is not this one's to fix.
+    db
+      .select({ status: stages.status, attempt: stages.attempt, cost: stages.cost })
+      .from(stages)
+      .where(and(eq(stages.taskId, taskId), eq(stages.nodeKey, task.status)))
+      .orderBy(desc(stages.attempt))
+      .limit(1),
   ])
   const harnessEvidence = probeRows[0]?.result?.harness_coverage?.evidence_md ?? null
+
+  const previous = nodeAttempts[0]
+  const rejected = previous?.status === 'failed' ? (previous.cost.failure ?? null) : null
+  const lastRejection: StageRejection | null =
+    previous && rejected
+      ? { attempt: previous.attempt, reason: rejected.reason, detail: rejected.detail ?? null }
+      : null
 
   const [origin] = task.originTaskId
     ? await db
@@ -150,6 +174,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
     })),
     interventions,
     gateComments,
+    lastRejection,
   }
 }
 
@@ -215,6 +240,13 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
         empty: 'The reviewer recorded no findings.',
       }),
     )
+  }
+
+  lines.push('', '## Previous attempt at this stage', '')
+  if (!snapshot.lastRejection) {
+    lines.push('No earlier attempt at this stage was rejected.')
+  } else {
+    lines.push(...renderRejection(snapshot.lastRejection))
   }
 
   // Interventions are live guidance for the run about to start; gate comments

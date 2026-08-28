@@ -16,6 +16,17 @@ if (process.argv.includes('--version')) {
 
 const cwd = process.cwd()
 const prompt = await Bun.stdin.text()
+
+// A fork the CLI will not make, worded as the real one words it — the cold-start
+// path is exercised against something it actually has to recognize. Before the
+// mode queue: a refused fork is not an attempt's outcome, it is a run that never
+// started, and the cold retry that follows is the one entitled to the next mode.
+const forking = process.argv[process.argv.indexOf('--resume') + 1]
+if (forking && process.env.SPECMATE_STUB_REFUSE_FORK === forking) {
+  await Bun.write(Bun.stderr, `Error: No conversation found with session ID: ${forking}\n`)
+  process.exit(1)
+}
+
 const mode = await nextMode()
 
 /**
@@ -147,12 +158,14 @@ const STUB_HARNESS_COVERAGE = {
  */
 function stubPlan() {
   const raw = process.env.SPECMATE_STUB_PREREQS
+  const change = process.env.SPECMATE_STUB_PLAN_CHANGE
 
   return {
     title: process.env.SPECMATE_STUB_PLAN_TITLE ?? 'Stub: the work planning named',
     type: process.env.SPECMATE_STUB_PLAN_TYPE ?? 'feature',
     size: process.env.SPECMATE_STUB_PLAN_SIZE ?? 'medium',
     prerequisites: raw ? JSON.parse(raw) : [],
+    ...(change ? { change } : {}),
   }
 }
 
@@ -657,9 +670,36 @@ switch (mode) {
     await Bun.write(Bun.stdout, `${telemetry}\n`)
     break
   }
+  case 'declares-change': {
+    // Writes into a change folder of its own naming rather than the one the
+    // workspace carries — what `roles/planner.md` describes for the one role
+    // whose result renames that folder.
+    const declared =
+      process.env.SPECMATE_STUB_WRITE_CHANGE ??
+      process.env.SPECMATE_STUB_PLAN_CHANGE ??
+      'declared-change'
+    const folder = join(cwd, 'openspec/changes', declared)
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
+    await writeResult(validResult())
+    await Bun.write(Bun.stdout, `${telemetry}\n`)
+    break
+  }
   case 'nonzero-exit': {
     await Bun.write(Bun.stderr, 'stub failed on purpose\n')
     process.exit(3)
+    break
+  }
+  case 'client-start-failure': {
+    // What a container runtime prints when it cannot start the container at
+    // all. Standing in for the docker client, the exit code is the client's and
+    // no provider ran; standing in for the provider, the same code is the
+    // provider's own and means nothing of the sort.
+    await Bun.write(
+      Bun.stderr,
+      'docker: Error response from daemon: pull access denied for specmate/runner-universal\n',
+    )
+    process.exit(125)
     break
   }
   case 'expired': {

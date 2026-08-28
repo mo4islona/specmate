@@ -44,6 +44,13 @@ export interface ExecResult {
   readonly stderr: string
   readonly durationMs: number
   readonly timedOut: boolean
+  /**
+   * What the backend reported when it could not start the run at all. Present
+   * means the process that exited was a client that never reached the provider,
+   * so the exit code above is the runtime's and none of it is the provider's
+   * (REQ-216).
+   */
+  readonly startFailure?: string
 }
 
 export interface ExecHandle {
@@ -58,6 +65,12 @@ export interface ExecBackend {
   start(spec: ExecSpec): ExecHandle
   run(spec: ExecSpec): Promise<ExecResult>
   resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment>
+  /**
+   * Whether this image reference can be resolved on the host that would run it.
+   * A reference that was immutable when it was written is not a reference that
+   * still resolves, and only the backend knows what resolving means for it.
+   */
+  resolvesImage(image: string): Promise<boolean>
   /**
    * Asserts at startup that this backend can actually execute a stage, under
    * every configured provider. A process that cannot run one can only fail
