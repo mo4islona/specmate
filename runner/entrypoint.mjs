@@ -5,6 +5,12 @@ const MISE = '/usr/local/bin/mise'
 const EMPTY_CONFIG_ROOT = '/tmp/specmate-mise/empty'
 const TOOLCHAINS_ENV = 'SPECMATE_TOOLCHAINS'
 
+// Read by `withStartFailure`: docker exits 125/126/127 when it could not start
+// the container, and a provider that propagates one of those exit codes is
+// indistinguishable from that — except that this line only exists if the
+// container did start. Written before anything that can fail.
+process.stderr.write('specmate runner: entrypoint started\n')
+
 const command = process.argv.slice(2)
 if (command.length === 0) fail('runner command is empty')
 

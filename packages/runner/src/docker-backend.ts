@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { DeclaredToolchain, ExecutionEnvironment, ResolvedToolchain } from '@specmate/core'
 import { detectToolchains } from '@specmate/workspace'
 import {
+  ContainerRuntimeUnavailableError,
   type ExecBackend,
   type ExecHandle,
   type ExecResult,
@@ -302,25 +303,52 @@ export class DockerBackend implements ExecBackend {
     return { image: immutableImage, toolchains }
   }
 
+  async repinImage(
+    image: string,
+    toolchains: readonly ResolvedToolchain[],
+  ): Promise<ExecutionEnvironment> {
+    const immutableImage = await this.resolveImage(image)
+    await this.installToolchains(immutableImage, toolchains)
+
+    return { image: immutableImage, toolchains: [...toolchains] }
+  }
+
   /**
-   * Anything short of a clean answer is "no". A runtime that cannot be reached
-   * cannot honour the pin either, and what follows a "no" is a bounded, recorded
-   * re-pin whose own failure is what reports the runtime.
+   * Only the runtime saying the image is not there is a "no". A socket that
+   * refused, a daemon mid-restart or a client that is not installed are not
+   * answers at all — and a re-pin driven by one of those spends the pin on an
+   * outage, while a permanent failure ends a task for one.
    */
   async resolvesImage(image: string): Promise<boolean> {
-    const inspected = await this.docker(
-      ['image', 'inspect', '--format', '{{.Id}}', image],
-      IMAGE_INSPECT_TIMEOUT_MS,
-    ).catch(() => null)
+    try {
+      await this.docker(
+        ['image', 'inspect', '--format', '{{.Id}}', image],
+        IMAGE_INSPECT_TIMEOUT_MS,
+      )
 
-    return inspected !== null
+      return true
+    } catch (error) {
+      if (isImageAbsent(ensureError(error).message)) return false
+      throw new ContainerRuntimeUnavailableError(ensureError(error).message)
+    }
   }
 
   private async resolveImage(image: string): Promise<string> {
     if (isImmutableImageReference(image)) return image
 
+    let inspected: ExecResult
     try {
-      const inspected = await this.docker(['image', 'inspect', image], IMAGE_INSPECT_TIMEOUT_MS)
+      inspected = await this.docker(['image', 'inspect', image], IMAGE_INSPECT_TIMEOUT_MS)
+    } catch (error) {
+      const detail = ensureError(error).message
+      // The distinction `resolvesImage` makes, made here for the same reason and
+      // in the same place: what docker's wording means is docker's to read.
+      if (!isImageAbsent(detail)) throw new ContainerRuntimeUnavailableError(detail)
+
+      throw new Error(`could not pin runner image "${image}": ${detail}`)
+    }
+
+    try {
       return immutableImageFromInspection(image, inspected.stdout)
     } catch (error) {
       throw new Error(`could not pin runner image "${image}": ${ensureError(error).message}`)
@@ -439,8 +467,18 @@ export class DockerBackend implements ExecBackend {
  */
 const CLIENT_START_EXITS: ReadonlySet<number> = new Set([125, 126, 127])
 
+/**
+ * The exit code alone cannot answer it: `docker run` propagates the container's
+ * status, and the entrypoint propagates the provider's, so a provider CLI that
+ * shells out to something missing exits 127 through both. The marker is written
+ * by the entrypoint before it can fail, so its presence is the container having
+ * started — the one fact the numbering leaves ambiguous.
+ */
+const ENTRYPOINT_MARKER = 'specmate runner: entrypoint started'
+
 export function withStartFailure(result: ExecResult): ExecResult {
   if (result.timedOut || !CLIENT_START_EXITS.has(result.exitCode)) return result
+  if (result.stderr.includes(ENTRYPOINT_MARKER)) return result
 
   const reported = result.stderr.trim() || result.stdout.trim()
 
@@ -448,6 +486,17 @@ export function withStartFailure(result: ExecResult): ExecResult {
     ...result,
     startFailure: reported || `the container runtime exited ${result.exitCode}`,
   }
+}
+
+/**
+ * The runtime answering that it does not have the image. Every other failure of
+ * the same command is the runtime not answering — the distinction the caller
+ * needs, and the only place docker's wording is read.
+ */
+const IMAGE_ABSENT = /no such image|no such object|manifest unknown|not found/i
+
+function isImageAbsent(message: string): boolean {
+  return IMAGE_ABSENT.test(message)
 }
 
 export function isImmutableImageReference(image: string): boolean {

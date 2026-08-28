@@ -1,5 +1,12 @@
 import { afterAll, describe, expect, it, test } from 'bun:test'
-import { type ExecSpec, LineBuffer } from '../src/backend.ts'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import {
+  ContainerRuntimeUnavailableError,
+  type ExecResult,
+  type ExecSpec,
+  LineBuffer,
+} from '../src/backend.ts'
 import {
   DOCKER_SOCKET,
   DockerBackend,
@@ -7,6 +14,7 @@ import {
   isImmutableImageReference,
   MISE_SHARED_ROOT,
   SPECMATE_TOOLCHAINS_ENV,
+  withStartFailure,
 } from '../src/docker-backend.ts'
 import { LocalBackend } from '../src/local-backend.ts'
 import { cleanupTempDirs, makeConfig, STUB, tempDir } from './fixtures.ts'
@@ -228,30 +236,85 @@ describe('docker backend', () => {
 describe('image resolution', () => {
   const IMAGE = 'specmate/runner-universal@sha256:85ebb7e8'
 
+  /** A docker client that says one thing on stderr and exits 1. */
+  async function failingCli(message: string): Promise<string> {
+    const path = join(await tempDir('docker-cli'), 'docker')
+    await writeFile(path, `#!/bin/sh\necho '${message}' >&2\nexit 1\n`, { mode: 0o755 })
+
+    return path
+  }
+
   it('answers yes for a reference the runtime can inspect', async () => {
-    // `true` and `false` stand in for a client that resolves everything and one
-    // that resolves nothing: the exit status is the whole of the answer.
+    // `true` stands in for a client that resolves everything: a clean exit is
+    // the whole of that answer.
     const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli: 'true' }))
 
     expect(await backend.resolvesImage(IMAGE)).toBe(true)
   })
 
-  it('answers no for one the runtime no longer has', async () => {
-    const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli: 'false' }))
+  it('answers no only where the runtime says the image is not there', async () => {
+    const dockerCli = await failingCli(`Error: No such image: ${IMAGE}`)
+    const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli }))
 
     expect(await backend.resolvesImage(IMAGE)).toBe(false)
   })
 
-  it('answers no when the runtime cannot be reached at all', async () => {
+  /**
+   * A "no" re-pins the task and drops the guarantee REQ-802 exists for, so it
+   * has to be an answer. A daemon mid-restart during a deploy is not one, and
+   * the two were indistinguishable while anything short of success meant no.
+   */
+  it('refuses to answer at all when the runtime cannot be reached', async () => {
+    const dockerCli = await failingCli(
+      'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.',
+    )
+    const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli }))
+
+    await expect(backend.resolvesImage(IMAGE)).rejects.toThrow(ContainerRuntimeUnavailableError)
+  })
+
+  it('refuses to answer when the client is not installed', async () => {
     const backend = new DockerBackend(
       makeConfig({ backend: 'docker', dockerCli: '/nonexistent/docker' }),
     )
 
-    expect(await backend.resolvesImage(IMAGE)).toBe(false)
+    await expect(backend.resolvesImage(IMAGE)).rejects.toThrow(ContainerRuntimeUnavailableError)
   })
 
   it('is yes from the in-process backend, which has no images to lose', async () => {
     expect(await new LocalBackend(makeConfig()).resolvesImage(IMAGE)).toBe(true)
+  })
+})
+
+describe('telling a container that never started from a provider that exited', () => {
+  function exited(exitCode: number, stderr: string): ExecResult {
+    return { exitCode, stdout: '', stderr, durationMs: 12, timedOut: false }
+  }
+
+  it('names the runtime when nothing inside the container ran', () => {
+    const result = withStartFailure(exited(125, 'docker: pull access denied for runner-universal'))
+
+    expect(result.startFailure).toContain('pull access denied')
+  })
+
+  /**
+   * The entrypoint propagates the provider's status and `docker run` propagates
+   * the container's, so a provider CLI that shells out to something missing
+   * exits 127 through both. Attributing that to the runtime sends the reader to
+   * the wrong logs, and — since a start failure is not retryable — spends none
+   * of the attempts the disagreement was worth.
+   */
+  it('leaves a provider’s own exit code alone once the container has started', () => {
+    const stderr = 'specmate runner: entrypoint started\nclaude: some-tool: command not found\n'
+    const result = withStartFailure(exited(127, stderr))
+
+    expect(result.startFailure).toBeUndefined()
+  })
+
+  it('leaves a timeout alone whatever it exited with', () => {
+    const timedOut = { ...exited(125, 'killed'), timedOut: true }
+
+    expect(withStartFailure(timedOut).startFailure).toBeUndefined()
   })
 })
 

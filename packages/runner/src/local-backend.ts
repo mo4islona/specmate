@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { ExecutionEnvironment } from '@specmate/core'
+import type { ExecutionEnvironment, ResolvedToolchain } from '@specmate/core'
 import {
   type ExecBackend,
   type ExecHandle,
@@ -38,6 +38,13 @@ export class LocalBackend implements ExecBackend {
 
   async resolveEnvironment(_workspacePath: string, _image: string): Promise<ExecutionEnvironment> {
     return { image: 'local://host', toolchains: [] }
+  }
+
+  async repinImage(
+    _image: string,
+    toolchains: readonly ResolvedToolchain[],
+  ): Promise<ExecutionEnvironment> {
+    return { image: 'local://host', toolchains: [...toolchains] }
   }
 
   /** There are no images to lose: the provider runs as a child of this process. */

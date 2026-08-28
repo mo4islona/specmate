@@ -132,8 +132,11 @@ try {
   process.exit(1)
 }
 
-const service = new WorkspaceService(workspaces, db, (workspace, image) =>
-  backend.resolveEnvironment(workspace.path, image),
+const service = new WorkspaceService(workspaces, db, (workspace, image, toolchains) =>
+  // A re-pin carries the task's toolchains; only provisioning detects them.
+  toolchains
+    ? backend.repinImage(image, toolchains)
+    : backend.resolveEnvironment(workspace.path, image),
 )
 const publisher = new Publisher({
   db,
@@ -172,7 +175,7 @@ const conversationExecutor = new ConversationExecutor({
   config: runnerConfig,
   providers,
   git: new Git(workspaces.config),
-  ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
+  ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId, 'conversation'),
 })
 
 const engineWorkspaces = createEngineWorkspaces({ service, image: runnerConfig.image })
@@ -202,7 +205,7 @@ const dispatcher = createStageDispatcher({ executor, stageEnvironment })
 
 const conversationDispatcher = createConversationDispatcher({
   executor: conversationExecutor,
-  pinnedEnvironment,
+  stageEnvironment,
 })
 
 const engine = new Engine({

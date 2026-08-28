@@ -1,7 +1,11 @@
 import { type ExecutionEnvironment, stageModel } from '@specmate/core'
 import type { ConversationExecutor, StageExecutor } from '@specmate/runner'
 import type { ConversationDispatcher, StageDispatcher } from './engine.ts'
-import { EnvironmentUnresolvableError, type StageEnvironment } from './environment.ts'
+import {
+  EnvironmentUnavailableError,
+  EnvironmentUnresolvableError,
+  type StageEnvironment,
+} from './environment.ts'
 
 export interface StageDispatcherDeps {
   readonly executor: StageExecutor
@@ -31,11 +35,23 @@ export function createStageDispatcher({
     try {
       environment = await stageEnvironment(task.id, workspace)
     } catch (error) {
-      if (!(error instanceof EnvironmentUnresolvableError)) throw error
-
       // No container was asked for, and asking again would ask for the same one:
       // the image is missing on the host that would have to run it (AC-818).
-      return { status: 'failed', attempts: [], failure: 'backend_error', detail: error.message }
+      if (error instanceof EnvironmentUnresolvableError) {
+        return { status: 'failed', attempts: [], failure: 'backend_error', detail: error.message }
+      }
+      // Asking again is exactly what is worth doing here: nothing was
+      // established, and the runtime may well answer on the next tick.
+      if (error instanceof EnvironmentUnavailableError) {
+        return {
+          status: 'failed',
+          attempts: [],
+          failure: 'backend_unavailable',
+          detail: error.message,
+        }
+      }
+
+      throw error
     }
 
     return executor.execute({
@@ -62,13 +78,19 @@ export function createStageDispatcher({
 
 export interface ConversationDispatcherDeps {
   readonly executor: ConversationExecutor
-  readonly pinnedEnvironment: (taskId: string) => Promise<ExecutionEnvironment>
+  /**
+   * The same verified pin a stage runs on. A conversation reaching for the
+   * stored one would run every turn of a task whose image went missing against
+   * a container that cannot start, until the cap — and stages self-healing
+   * around it is what makes that invisible.
+   */
+  readonly stageEnvironment: StageEnvironment
 }
 
 /** The same edge for a conversation turn, testable for the same reason. */
 export function createConversationDispatcher({
   executor,
-  pinnedEnvironment,
+  stageEnvironment,
 }: ConversationDispatcherDeps): ConversationDispatcher {
   return async ({
     task,
@@ -88,6 +110,25 @@ export function createConversationDispatcher({
   }) => {
     const binding = task.modelBindings.answerer
 
+    let environment: ExecutionEnvironment
+    try {
+      environment = await stageEnvironment(task.id, workspace)
+    } catch (error) {
+      if (error instanceof EnvironmentUnresolvableError) {
+        return { status: 'failed', failure: 'backend_error', detail: error.message, durationMs: 0 }
+      }
+      if (error instanceof EnvironmentUnavailableError) {
+        return {
+          status: 'failed',
+          failure: 'backend_unavailable',
+          detail: error.message,
+          durationMs: 0,
+        }
+      }
+
+      throw error
+    }
+
     return executor.execute({
       taskId: task.id,
       conversationId,
@@ -105,7 +146,7 @@ export function createConversationDispatcher({
       reasoningEffort: binding.reasoningEffort,
       workspace,
       baseBranch: workspace.baseBranch,
-      environment: await pinnedEnvironment(task.id),
+      environment,
       attempt,
     })
   }

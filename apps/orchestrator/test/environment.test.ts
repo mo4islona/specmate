@@ -1,15 +1,21 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import {
   type ExecutionEnvironment,
   FEATURE_BUGFIX_PIPELINE,
   instantiateDefinition,
+  type ResolvedToolchain,
   type StageNode,
 } from '@specmate/core'
 import { createDb, type Database, events, type Task, tasks } from '@specmate/db'
-import type { StageExecution, StageExecutor, StageRequest } from '@specmate/runner'
+import {
+  ContainerRuntimeUnavailableError,
+  type StageExecution,
+  type StageExecutor,
+  type StageRequest,
+} from '@specmate/runner'
 import type { Workspace } from '@specmate/workspace'
 import { mirrorKey, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { and, eq, inArray } from 'drizzle-orm'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createStageDispatcher } from '../src/dispatch.ts'
 import type { StageDispatch } from '../src/engine.ts'
 import { createStageEnvironment } from '../src/environment.ts'
@@ -89,21 +95,25 @@ describeDb('the pin a stage runs on', () => {
    * for it. Only its resolver is a stand-in — resolving an image is the
    * backend's job and takes a container runtime.
    */
-  function serviceResolving(resolve: () => Promise<ExecutionEnvironment>) {
-    return new WorkspaceService(new WorkspaceManager({ config: { root: '/tmp/unused' } }), db, () =>
-      resolve(),
+  function serviceResolving(
+    resolve: (toolchains?: readonly ResolvedToolchain[]) => Promise<ExecutionEnvironment>,
+  ) {
+    return new WorkspaceService(
+      new WorkspaceManager({ config: { root: '/tmp/unused' } }),
+      db,
+      (_workspace, _image, toolchains) => resolve(toolchains),
     )
   }
 
   function dispatcherOver(options: {
-    resolves: boolean
-    resolve: () => Promise<ExecutionEnvironment>
+    resolvesImage: () => Promise<boolean>
+    resolve: (toolchains?: readonly ResolvedToolchain[]) => Promise<ExecutionEnvironment>
   }) {
     const { executor, requests } = recordingExecutor()
     const service = serviceResolving(options.resolve)
     const stageEnvironment = createStageEnvironment({
       pinned: async (taskId) => (await reload(db, taskId)).environment as ExecutionEnvironment,
-      resolvesImage: async () => options.resolves,
+      resolvesImage: options.resolvesImage,
       repin: (taskId, workspace) => service.repinEnvironment(taskId, workspace, CONFIGURED_IMAGE),
     })
 
@@ -135,7 +145,7 @@ describeDb('the pin a stage runs on', () => {
   it('AC-816: re-pins to what the deployment runs, and records the substitution', async () => {
     const { task, workspace } = await seedPinnedTask()
     const { dispatcher, requests } = dispatcherOver({
-      resolves: false,
+      resolvesImage: async () => false,
       resolve: async () => REBUILT,
     })
 
@@ -146,10 +156,37 @@ describeDb('the pin a stage runs on', () => {
     expect(await repinEvents(task.id)).toHaveLength(1)
   })
 
+  /**
+   * The image, and only the image. Detection reads the working tree, and at
+   * re-pin time that tree is the task branch — a task bumping `.tool-versions`
+   * would otherwise pin itself to the version its own unmerged change declares,
+   * which is the drift REQ-802 exists to prevent.
+   */
+  it('REQ-802: carries the task’s own toolchains across the substitution', async () => {
+    const { task, workspace } = await seedPinnedTask()
+    let handed: readonly ResolvedToolchain[] | undefined
+    const { dispatcher } = dispatcherOver({
+      resolvesImage: async () => false,
+      resolve: async (toolchains) => {
+        handed = toolchains
+
+        return { image: REBUILT.image, toolchains: [...(toolchains ?? [])] }
+      },
+    })
+
+    await dispatcher(dispatchOf(task, workspace))
+
+    expect(handed).toEqual(PINNED.toolchains)
+    expect((await reload(db, task.id)).environment).toEqual({
+      image: REBUILT.image,
+      toolchains: PINNED.toolchains,
+    })
+  })
+
   it('AC-817: leaves a pin that resolves alone, whatever the default has become', async () => {
     const { task, workspace } = await seedPinnedTask()
     const { dispatcher, requests } = dispatcherOver({
-      resolves: true,
+      resolvesImage: async () => true,
       // Reached only by a re-pin, which is the thing this test says does not happen.
       resolve: async () => REBUILT,
     })
@@ -164,9 +201,9 @@ describeDb('the pin a stage runs on', () => {
   it('AC-818: fails the stage naming the image when there is nothing to re-pin to', async () => {
     const { task, workspace } = await seedPinnedTask()
     const { dispatcher, requests } = dispatcherOver({
-      resolves: false,
+      resolvesImage: async () => false,
       resolve: async () => {
-        throw new Error('could not pin runner image: the container runtime is unreachable')
+        throw new Error('could not pin runner image "specmate/runner-universal:latest"')
       },
     })
 
@@ -178,5 +215,43 @@ describeDb('the pin a stage runs on', () => {
     expect(requests).toHaveLength(0)
     expect((await reload(db, task.id)).environment).toEqual(PINNED)
     expect(await repinEvents(task.id)).toHaveLength(0)
+  })
+
+  /**
+   * REQ-613: a runtime that could not be asked has settled nothing. Reporting
+   * the pin unresolvable would end a healthy task for a daemon restart that
+   * happened to overlap its dispatch, and re-pinning would spend the pin on one.
+   */
+  it('REQ-613: waits rather than deciding when the runtime does not answer', async () => {
+    const { task, workspace } = await seedPinnedTask()
+    const { dispatcher, requests } = dispatcherOver({
+      resolvesImage: async () => {
+        throw new ContainerRuntimeUnavailableError('Cannot connect to the Docker daemon.')
+      },
+      resolve: async () => REBUILT,
+    })
+
+    const execution = await dispatcher(dispatchOf(task, workspace))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('backend_unavailable')
+    expect(requests).toHaveLength(0)
+    expect((await reload(db, task.id)).environment).toEqual(PINNED)
+    expect(await repinEvents(task.id)).toHaveLength(0)
+  })
+
+  it('REQ-613: waits when the runtime stops answering during the re-pin itself', async () => {
+    const { task, workspace } = await seedPinnedTask()
+    const { dispatcher } = dispatcherOver({
+      resolvesImage: async () => false,
+      resolve: async () => {
+        throw new ContainerRuntimeUnavailableError('Cannot connect to the Docker daemon.')
+      },
+    })
+
+    const execution = await dispatcher(dispatchOf(task, workspace))
+
+    expect(execution.failure).toBe('backend_unavailable')
+    expect((await reload(db, task.id)).environment).toEqual(PINNED)
   })
 })

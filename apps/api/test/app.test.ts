@@ -1499,6 +1499,18 @@ describeDb('api', () => {
               updatedAt: new Date('2026-08-16T10:00:00.000Z'),
             },
             {
+              slug: 'attention-vocabulary-failed',
+              title: 'Vocabulary failure fixture',
+              type: 'bugfix',
+              repoUrl: 'https://github.com/example/vocabulary-fixture',
+              repositoryId: await repositoryIdFor(
+                db,
+                'https://github.com/example/vocabulary-fixture',
+              ),
+              status: 'failed',
+              updatedAt: new Date('2026-08-16T09:00:00.000Z'),
+            },
+            {
               slug: 'attention-stalled',
               title: 'Stall fixture',
               type: 'feature',
@@ -1554,6 +1566,7 @@ describeDb('api', () => {
         const bySlug = new Map(seeded.map((task) => [task.slug, task]))
         const gateTask = bySlug.get('attention-gate')
         const failedTask = bySlug.get('attention-failed')
+        const vocabularyFailedTask = bySlug.get('attention-vocabulary-failed')
         const stalledTask = bySlug.get('attention-stalled')
         const healthyTask = bySlug.get('attention-healthy')
         const decisionTask = bySlug.get('attention-decision')
@@ -1562,6 +1575,7 @@ describeDb('api', () => {
         if (
           !gateTask ||
           !failedTask ||
+          !vocabularyFailedTask ||
           !stalledTask ||
           !healthyTask ||
           !decisionTask ||
@@ -1605,6 +1619,12 @@ describeDb('api', () => {
             createdAt: new Date('2026-08-16T10:00:00.000Z'),
           },
           {
+            taskId: vocabularyFailedTask.id,
+            type: 'task.failed',
+            payload: { reason: 'backend_error' },
+            createdAt: new Date('2026-08-16T09:00:00.000Z'),
+          },
+          {
             taskId: stalledTask.id,
             type: 'stage.started',
             createdAt: new Date('2026-08-16T06:00:00.000Z'),
@@ -1637,10 +1657,11 @@ describeDb('api', () => {
             since: string
           }[]
         }
-        expect(body.items).toHaveLength(6)
+        expect(body.items).toHaveLength(7)
         expect(body.items.map((item) => item.reason.kind).sort()).toEqual([
           'decision',
           'decision',
+          'failed',
           'failed',
           'gate',
           'gate',
@@ -1652,7 +1673,16 @@ describeDb('api', () => {
         const decisionItem = body.items.find((item) => item.task.id === decisionTask.id)
         expect(gateItem?.since).toBe('2026-08-16T11:00:00.000Z')
         expect(failedItem?.since).toBe('2026-08-16T10:00:00.000Z')
+        // Not in the vocabulary, so it keeps the words it spells.
         expect(failedItem?.reason.detail).toBe('attempt cap exhausted')
+        // In it, so the operator reads the sentence rather than the identifier.
+        // This is the first screen a task that could not be started reaches.
+        const vocabularyFailedItem = body.items.find(
+          (item) => item.task.id === vocabularyFailedTask.id,
+        )
+        expect(vocabularyFailedItem?.reason.detail).toBe(
+          'The run could not be started: its image is missing on the host that must run it.',
+        )
         expect(decisionItem?.since).toBe('2026-08-16T11:20:00.000Z')
         expect(decisionItem?.reason.detail).toBe('Worth a follow-up task?')
 

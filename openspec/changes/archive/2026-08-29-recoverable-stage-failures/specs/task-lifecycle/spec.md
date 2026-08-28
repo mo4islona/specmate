@@ -17,6 +17,10 @@ stage and the reason, rather than spending the cap on repetitions of the same ru
 that are unfixable by construction qualify; a failure that merely looks unlikely to succeed keeps
 its retries.
 
+A conversational turn's own attempt cap SHALL read the same property: a turn that failed for a
+reason re-running it cannot change SHALL NOT be attempted again, and the owner SHALL be told
+without waiting for the cap to be spent on repetitions.
+
 #### Scenario: AC-622 — Retry starts from committed state
 
 - **WHEN** an attempt fails after half-rewriting artifacts and a retry is dispatched
@@ -41,3 +45,8 @@ its retries.
 
 - **WHEN** an attempt fails on a timeout or on a result that did not parse
 - **THEN** the stage SHALL still be re-dispatched up to its cap
+
+#### Scenario: AC-647 — A conversational turn no retry can fix
+
+- **WHEN** a conversational turn fails because its execution could not be started at all
+- **THEN** no further attempt SHALL be made at that turn and the owner SHALL be told the reason

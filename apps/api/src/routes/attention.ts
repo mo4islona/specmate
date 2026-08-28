@@ -1,4 +1,4 @@
-import { isHumanGate, isTerminal } from '@specmate/core'
+import { failureSentence, isHumanGate, isTerminal } from '@specmate/core'
 import { decisions, events, type Task, tasks } from '@specmate/db'
 import { and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -119,7 +119,13 @@ export function attentionRoutes(ctx: RouteContext) {
           task: taskSummary,
           reason: {
             kind: 'failed',
-            detail: typeof failureReason === 'string' ? failureReason : 'task failed',
+            // This is the operator's triage queue and the detail is rendered as
+            // written, so an identifier reaches a human as an identifier. The
+            // engine's own enums have no sentence and keep their token.
+            detail:
+              typeof failureReason === 'string'
+                ? (failureSentence(failureReason) ?? failureReason)
+                : 'task failed',
           },
           since: failure?.createdAt ?? task.updatedAt,
         })

@@ -229,6 +229,16 @@ SHALL instead be recorded as `interrupted` and MUST NOT count towards the failur
 SHALL remain paused after cleanup; if the owner later restarts it, the new attempt SHALL begin
 from committed state with an incremented attempt number.
 
+An attempt that failed for a reason re-running it cannot change SHALL NOT be re-dispatched. It
+SHALL be recorded like any other failed attempt and SHALL fail the task immediately, naming the
+stage and the reason, rather than spending the cap on repetitions of the same run. Only failures
+that are unfixable by construction qualify; a failure that merely looks unlikely to succeed keeps
+its retries.
+
+A conversational turn's own attempt cap SHALL read the same property: a turn that failed for a
+reason re-running it cannot change SHALL NOT be attempted again, and the owner SHALL be told
+without waiting for the cap to be spent on repetitions.
+
 #### Scenario: AC-622 — Retry starts from committed state
 
 - **WHEN** an attempt fails after half-rewriting artifacts and a retry is dispatched
@@ -243,6 +253,21 @@ from committed state with an incremented attempt number.
 
 - **WHEN** the owner interrupts a running stage and it restarts with confirmed guidance
 - **THEN** the interrupted attempt SHALL remain visible and its replacement SHALL start without increasing the consecutive-failure count
+
+#### Scenario: AC-645 — A failure no retry can fix
+
+- **WHEN** an attempt fails because its execution could not be started at all
+- **THEN** no further attempt SHALL be dispatched for that stage and the task SHALL fail naming the stage and that reason
+
+#### Scenario: AC-646 — A failure that might not recur
+
+- **WHEN** an attempt fails on a timeout or on a result that did not parse
+- **THEN** the stage SHALL still be re-dispatched up to its cap
+
+#### Scenario: AC-647 — A conversational turn no retry can fix
+
+- **WHEN** a conversational turn fails because its execution could not be started at all
+- **THEN** no further attempt SHALL be made at that turn and the owner SHALL be told the reason
 
 ### Requirement: REQ-614 — A restart recovers every task from the store
 

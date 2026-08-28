@@ -147,8 +147,10 @@ never wrong. Write it on the `planning` result — by `specify` the folder is al
 history and keeps the name it has.
 
 Declaring it is all you do about it: the system renames the folder once this stage is accepted,
-before anything is committed. Keep writing into the folder your prompt named — a folder you
-create yourself is outside your write scope, and the stage fails for it.
+before anything is committed. Keep writing into the folder your prompt named. A folder you create
+under the name you declare is accepted too, and merged into the one you were given — but the two
+then hold half your work each until that merge, so there is nothing to gain by it. A name some
+other change already occupies is refused outright: that folder is not this task's to write into.
 
 `type` is `feature` or `bugfix`: restoring behaviour that was meant to work already is a bugfix,
 everything else is a feature. It is a label on the task, not a lever — both run the same pipeline.

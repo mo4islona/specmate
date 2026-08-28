@@ -1,5 +1,5 @@
 import { type AgentRole, ROLE_CONTRACTS } from '@specmate/core'
-import type { Git, Workspace } from '@specmate/workspace'
+import { changeDir, type Git, type Workspace } from '@specmate/workspace'
 
 /**
  * What the filesystem shows is the authoritative statement of what a run did —
@@ -16,10 +16,17 @@ export async function checkWriteScope(
   if (ROLE_CONTRACTS[role].writesCode) return []
 
   const folders = [`${workspace.changeDir}/`]
+
   // The one role contracted to name the change is the one whose correct output
   // can sit outside the folder this check knows about: the workspace takes the
   // declared name only once the declaring stage is accepted (AC-243).
-  if (declaredChange && ROLE_CONTRACTS[role].declaresPlan) {
+  //
+  // Only while the folder still stands under the provisional name, though. Once
+  // the task has converged, its folder is decided — and a later re-declaration
+  // naming some other change would otherwise open that change's folder to writes
+  // this task has no business making (AC-742).
+  const converged = workspace.changeDir !== changeDir(workspace.slug)
+  if (declaredChange && !converged && ROLE_CONTRACTS[role].declaresPlan) {
     folders.push(`${changesRoot(workspace.changeDir)}/${declaredChange}/`)
   }
 
@@ -29,7 +36,7 @@ export async function checkWriteScope(
 }
 
 /** The parent of the task's change folder — `openspec/changes`, wherever it sits. */
-function changesRoot(changeDir: string): string {
+export function changesRoot(changeDir: string): string {
   return changeDir.slice(0, changeDir.lastIndexOf('/'))
 }
 

@@ -11,7 +11,7 @@ import {
   tasks,
 } from '@specmate/db'
 import { mirrorKey } from '@specmate/workspace'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { loadLedgerSnapshot, TaskNotFoundError } from '../src/ledger.ts'
 
 /** The rows under test do not read the graph; it only has to be one. */
@@ -104,14 +104,72 @@ describeDb('ledger snapshot', () => {
       attempt: 0,
       reason: 'scope_violation',
       detail: 'changed src/app.ts',
+      workspaceReset: true,
     })
+
+    // The shape a re-dispatch is actually read in: `claim()` inserts this
+    // attempt's own row before the dispatcher renders anything, so a snapshot
+    // that let a running row answer would find one that has not failed yet and
+    // report no rejection at all — on every dispatch after the first.
+    await db.insert(stages).values({ ...rejected, status: 'running', attempt: 1 })
+    const redispatched = await loadLedgerSnapshot(db, taskId)
+
+    expect(redispatched.lastRejection).toMatchObject({ attempt: 0, reason: 'scope_violation' })
+
+    // A conversation turn is not an attempt at this node and has no rejection
+    // of its own to answer.
+    const conversation = await loadLedgerSnapshot(db, taskId, 'conversation')
+
+    expect(conversation.lastRejection).toBeNull()
 
     // An attempt the harness accepted answers the rejection before it: the next
     // run at this node is repeating nothing.
-    await db.insert(stages).values({ ...rejected, status: 'succeeded', attempt: 1 })
+    await db
+      .update(stages)
+      .set({ status: 'succeeded', cost: {} })
+      .where(
+        and(eq(stages.taskId, taskId), eq(stages.nodeKey, 'spec_review'), eq(stages.attempt, 1)),
+      )
     const answered = await loadLedgerSnapshot(db, taskId)
 
     expect(answered.lastRejection).toBeNull()
+  })
+
+  it('REQ-217: reads the graph the task runs now, and only reasons the table carries', async () => {
+    // Attempts are numbered per graph, so a replan restarts this node at 0 while
+    // the superseded graph still holds its attempt 1. Ordering by attempt across
+    // both would answer for a pipeline that no longer exists.
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({ taskId, version: 3, dag: EMPTY_DAG })
+      .returning()
+    const replanned = {
+      taskId,
+      graphId: graph?.id ?? '',
+      nodeKey: 'spec_review',
+      role: 'reviewer',
+      provider: 'claude-code',
+      status: 'failed',
+      attempt: 0,
+    } as const
+    await db.insert(stages).values({
+      ...replanned,
+      cost: { failure: { reason: 'agent_failed', detail: 'could not find the spec suite' } },
+    })
+
+    const scoped = await loadLedgerSnapshot(db, taskId)
+
+    expect(scoped.lastRejection).toMatchObject({ attempt: 0, reason: 'agent_failed' })
+
+    // `settleOrphan` writes this after a restart. It is not a member of the
+    // vocabulary and nothing about it is an agent's to correct.
+    await db
+      .update(stages)
+      .set({ cost: { failure: { reason: 'orphaned' } } })
+      .where(and(eq(stages.graphId, graph?.id ?? ''), eq(stages.nodeKey, 'spec_review')))
+    const engineEnum = await loadLedgerSnapshot(db, taskId)
+
+    expect(engineEnum.lastRejection).toBeNull()
   })
 
   test('names a task that does not exist', async () => {

@@ -28,6 +28,7 @@ import { changedPaths, checkWriteScope } from './scope.ts'
 /** What a run can end as, plus what a turn's own checks can decline. */
 export const CONVERSATION_FAILURES = [
   ...RUN_FAILURES,
+  'backend_unavailable',
   'agent_failed',
   'malformed_message',
   'cleanup_failed',

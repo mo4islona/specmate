@@ -148,7 +148,11 @@ function changeFolderSection(
     return `This task's change folder is \`${changeDir}/\`.\n\n${contents}`
   }
 
-  const instruction = `Write every artifact of this task into \`${changeDir}/\`, which already exists.`
+  // A role that also writes source must not read this as "everything goes in the
+  // change folder" — only the artifacts its contract names do.
+  const instruction = contract.writesCode
+    ? `This task's artifacts belong in \`${changeDir}/\`, which already exists; product code belongs where the repository already keeps it.`
+    : `Write every artifact of this task into \`${changeDir}/\`, which already exists.`
   if (!contract.declaresPlan) return `${instruction}\n\n${contents}`
 
   const naming =

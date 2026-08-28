@@ -367,6 +367,50 @@ describe('stage execution', () => {
     expect(execution.detail).toContain('openspec/changes/somewhere-else')
   })
 
+  /**
+   * The widening is for the window before convergence, when the folder the check
+   * knows about is still the provisional one. Once the task has converged its
+   * folder is decided, and a later re-declaration naming some other change would
+   * otherwise open that change's folder to writes this task has no business
+   * making — the leak AC-742 exists to close.
+   */
+  it('AC-742: refuses the declared name once the task has converged on its folder', async () => {
+    const harness = await makeHarness('converged-task')
+    // Before the baseline commit: a folder already in the history keeps its
+    // provisional name, and this task is one that converged on a declared one.
+    const converged = await harness.manager.renameChangeFolder(harness.workspace, 'its-own-name')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'stale-lease-retry',
+    }).execute(request(harness, { role: 'planner', workspace: converged }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('scope_violation')
+    expect(execution.detail).toContain('openspec/changes/stale-lease-retry')
+  })
+
+  it('AC-742: refuses a declared name the repository already keeps a change under', async () => {
+    const harness = await makeHarness('colliding-task', {
+      'README.md': '# origin\n',
+      'openspec/changes/stale-lease-retry/proposal.md': '# somebody else\n',
+    })
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'stale-lease-retry',
+    }).execute(request(harness, { role: 'planner' }))
+
+    // Convergence would suffix this task's folder away from that name, so
+    // anything written there is committed into work that is not this task's.
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('scope_violation')
+  })
+
   it('AC-243: leaves a role that declares no change name held to its own folder', async () => {
     const harness = await makeHarness('non-declaring')
     await harness.commitAll('baseline')
@@ -531,9 +575,14 @@ describe('stage execution', () => {
 
     expect(execution.status).toBe('succeeded')
     expect(await promptOf(0)).not.toContain('# Your previous attempt')
-    expect(await promptOf(1)).toContain(
-      'Attempt 0 was rejected: The run changed files its role may not touch.',
-    )
+
+    const retryPrompt = await promptOf(1)
+
+    expect(retryPrompt).toContain('Attempt 0 ended: The run changed files its role may not touch.')
+    expect(retryPrompt).toContain('That is the correction to make')
+    // The discard between attempts is invisible from inside the session this
+    // retry continues: its transcript says it already wrote the artifacts.
+    expect(retryPrompt).toContain('taken back to the last accepted commit')
   })
 
   it('AC-244: continues the declined attempt’s own session on the retry', async () => {
@@ -590,6 +639,34 @@ describe('stage execution', () => {
 
     expect(execution.status).toBe('succeeded')
     expect(execution.coldStartReason).toContain('sess-declined')
+  })
+
+  /**
+   * The fallback chain is two levels deep going in — the declined attempt's own
+   * session, then the node's resumption — so it has to be two deep coming out.
+   * Dropping straight to cold throws away grounding nobody refused, and the
+   * cold-start reason then names only the session that was.
+   */
+  it('AC-235: falls back to the node’s own session before giving up on grounding', async () => {
+    const harness = await makeHarness('fallback-chain')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['out-of-scope', 'ok']))
+    const record = join(await tempDir('record'), 'run.json')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE_FILE: queue,
+      SPECMATE_STUB_SESSION: 'sess-declined',
+      SPECMATE_STUB_REFUSE_FORK: 'sess-declined',
+      SPECMATE_STUB_RECORD: record,
+    }).execute(request(harness, { resume: { node: 'planning', sessionId: 'sess-planning' } }))
+
+    const last = (await Bun.file(record).json()) as { argv: string[] }
+
+    expect(execution.status).toBe('succeeded')
+    expect(last.argv[last.argv.indexOf('--resume') + 1]).toBe('sess-planning')
+    expect(execution.coldStartReason).toContain('sess-declined')
+    expect(execution.coldStartReason).toContain('sess-planning')
   })
 
   it('makes no second attempt at a run the backend could not start', async () => {
@@ -772,10 +849,10 @@ describe('verification corroboration', () => {
     }).execute(request(harness, { role: 'verifier' }))
 
     expect(execution.status).toBe('failed')
-    expect(execution.failure).toBe('invalid_result')
+    expect(execution.failure).toBe('uncheckable_verdict')
   })
 
-  test('fails as an invalid result when the report cannot be found', async () => {
+  test('fails as an uncheckable verdict when the report cannot be found', async () => {
     const slug = 'verify-no-report'
     const harness = await makeHarness(slug, verifierFiles(slug))
     await harness.commitAll('baseline')
@@ -785,8 +862,11 @@ describe('verification corroboration', () => {
       SPECMATE_STUB_VERDICT: 'approve',
     }).execute(request(harness, { role: 'verifier' }))
 
+    // Not `invalid_result`: the result parsed and cleared every earlier check.
+    // What could not be read is the verdict's evidence, so the reasoning behind
+    // it is worth handing back rather than starting the retry cold.
     expect(execution.status).toBe('failed')
-    expect(execution.failure).toBe('invalid_result')
+    expect(execution.failure).toBe('uncheckable_verdict')
     expect(execution.detail).toContain('verification.md')
   })
 

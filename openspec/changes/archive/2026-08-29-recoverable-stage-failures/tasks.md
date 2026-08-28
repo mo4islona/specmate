@@ -103,9 +103,64 @@ them alike.
       (`packages/runner/src/executor.ts`). Verify: `bun test packages/runner` asserts one
       provider invocation for a backend start failure and two for a timeout.
 
-## 8. Close it out
+## 8. Corrections from review
 
-- [x] 8.1 Run the full suite: `bun run test`, `bun run typecheck`, `bun run lint`.
-- [x] 8.2 Run `bun scripts/lint-spec-ids.ts` and confirm no duplicate or dangling ID.
-- [x] 8.3 Record in `deploy/RUNBOOK.md` that a runner-image rebuild no longer strands tasks, and
-      what the `task.environment_repinned` entry in a task thread means when an owner sees one.
+- [x] 8.1 Read the rejection from the last *settled* row at the node, in the graph the task runs
+      now (`packages/runner/src/ledger.ts`). `claim()` inserts this attempt's own `running` row
+      before the dispatcher renders the ledger, so §5's cross-dispatch channel never fired; and
+      attempts are numbered per graph, so a replan let a superseded graph's row answer. Verify:
+      `bun test packages/runner` asserts the rejection survives a running row at the next attempt
+      and is read from the current graph (AC-248).
+- [x] 8.2 Leave the section out for a run that is not an attempt at the stage. The conversation
+      executor shares `renderLedgerForTask`, and a read-only turn was being told it existed to
+      make a correction (AC-254).
+- [x] 8.3 State only reasons the table carries, and ask for a correction only where the attempt
+      produced a result. `orphaned`, `crash` and the `stageDefect` enums reach the same payload
+      and were printing as bare identifiers under a demand to correct them (AC-255).
+- [x] 8.4 Tell a retry that continues a declined session that the tree was discarded, and cap the
+      detail it carries. A scope violation's detail is every path `git status` reported, which
+      could fill the ledger budget and truncate the owner's interventions away (AC-252).
+- [x] 8.5 Give a corroboration decline its own member. It shared `invalid_result` with an
+      unreadable envelope, whose `producedResult: false` threw the session away in exactly the
+      case §5 exists for (`packages/core/src/failures.ts`). Verify: `bun test packages/runner`
+      asserts the verifier's missing-report path is `uncheckable_verdict` (AC-244).
+- [x] 8.6 Gate the change-folder instruction on whether the role writes source, not on whether it
+      writes anything (`packages/runner/src/prompt.ts`). `writes` is non-empty for the
+      implementer too, so it was being told to put product code in the change folder.
+- [x] 8.7 Fall back to the node's own resumption before starting cold
+      (`packages/runner/src/provider-run.ts`). `continueSession` masked `job.resume.sessionId`,
+      so a refused fork dropped grounding nobody refused (AC-251).
+- [x] 8.8 Read the entrypoint's own marker rather than the exit status alone
+      (`runner/entrypoint.mjs`, `packages/runner/src/docker-backend.ts`). The entrypoint
+      propagates the provider's status, so a provider exiting 125/126/127 was recorded as a
+      runtime fault — non-retryable after §7, spending none of its attempts (AC-253).
+- [x] 8.9 Separate a runtime that answered "no" from one that could not be asked
+      (`packages/runner/src/backend.ts`, `apps/orchestrator/src/environment.ts`,
+      `apps/orchestrator/src/dispatch.ts`). Anything short of success meant "no", so a daemon
+      restart overlapping a dispatch permanently failed a healthy task (AC-820).
+- [x] 8.10 Carry the task's toolchains across a re-pin (`packages/workspace/src/service.ts`,
+      `packages/runner/src/docker-backend.ts`). `resolveEnvironment` detects them from the working
+      tree, which at re-pin time is the task branch — a toolchain-bump task would pin itself to
+      its own unmerged change (AC-819).
+- [x] 8.11 Give the conversation path the verified pin and the same retryability check
+      (`apps/orchestrator/src/dispatch.ts`, `apps/orchestrator/src/engine.ts`). Stages self-heal
+      around a missing image; conversations were running every turn against a container that
+      could not start, to the cap (AC-647).
+- [x] 8.12 Bound the write-scope widening, and stop convergence orphaning the folder the run
+      created (`packages/runner/src/scope.ts`, `packages/runner/src/executor.ts`,
+      `packages/workspace/src/manager.ts`). The permitted name came from the result rather than
+      the folder the task converged on, and a folder the run created read as a collision — both
+      re-opening AC-742 (AC-250).
+- [x] 8.13 Render the sentence on the two surfaces still showing the identifier
+      (`apps/api/src/routes/attention.ts`, `apps/orchestrator/src/engine.ts`). A task that could
+      not be started now fails on its first attempt, so the Attention screen is the first place
+      an operator sees it.
+- [x] 8.14 Correct `roles/planner.md`, which still asserted that a folder the planner creates
+      itself fails the stage.
+
+## 9. Close it out
+
+- [x] 9.1 Run the full suite: `bun run test`, `bun run typecheck`, `bun run check`.
+- [x] 9.2 Run `bun scripts/lint-spec-ids.ts` and confirm no duplicate or dangling ID.
+- [x] 9.3 Record in the operator documentation that a runner-image rebuild no longer strands
+      tasks, and what the `task.environment_repinned` entry in a task thread means to an owner.

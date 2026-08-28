@@ -521,6 +521,45 @@ describe('change folder scaffolding', () => {
     ).toBe('# somebody else\n')
   })
 
+  /**
+   * The declaring run is allowed to write into the folder it names (AC-243), so
+   * that folder can already exist by the time this runs. Reading it as a
+   * collision suffixes the destination away from the artifacts sitting in it,
+   * and `git add -A` then commits both — the task going on to call the one
+   * holding nothing but the schema marker its own.
+   */
+  it('AC-741: merges a folder the run created under the name it declared', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const workspace = await manager.provision({
+      slug: 'self-naming-task-1a2b3c4d',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
+    await writeFiles(workspace.path, {
+      'openspec/changes/stale-lease-retry/proposal.md': '# the real work\n',
+    })
+
+    const renamed = await manager.renameChangeFolder(workspace, 'stale-lease-retry')
+
+    expect(renamed.changeDir).toBe('openspec/changes/stale-lease-retry')
+    expect(
+      await readFile(
+        join(workspace.path, 'openspec/changes/stale-lease-retry/proposal.md'),
+        'utf8',
+      ),
+    ).toBe('# the real work\n')
+    // The scaffolding follows the work rather than being left behind as a
+    // second folder for the pipeline to advance on.
+    expect(
+      await pathExists(join(workspace.path, 'openspec/changes/stale-lease-retry/.openspec.yaml')),
+    ).toBe(true)
+    expect(
+      await pathExists(join(workspace.path, 'openspec/changes/self-naming-task-1a2b3c4d')),
+    ).toBe(false)
+  })
+
   it('adds nothing else to a repository that does not use OpenSpec', async () => {
     const origin = await makeOrigin({ 'src/main.ts': 'export const a = 1\n' })
     const { manager } = await makeManager()

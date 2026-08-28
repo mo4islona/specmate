@@ -142,26 +142,43 @@ export async function runProviderStage(
   // the resumed node recorded no session.
   //
   // A declined attempt's own session wins over the node's: it is that session
-  // plus the turns that produced the work being corrected (REQ-209).
-  const forkFrom = job.continueSession ?? job.resume?.sessionId ?? undefined
-  let coldStartReason: string | null = null
+  // plus the turns that produced the work being corrected (REQ-209). The node's
+  // own resumption stands behind it rather than being replaced by it — deduped,
+  // because a first attempt that was never declined has the same id in both.
+  const forks = [
+    ...new Set([job.continueSession, job.resume?.sessionId].filter(Boolean)),
+  ] as string[]
 
-  let started = attempt(forkFrom)
+  let index = 0
+  let started = attempt(forks[index])
   let argv = started.argv
   let run = await started.run
   await started.drain()
 
   // AC-235: the artifacts are the contract and the session is grounding, so a
-  // session the provider will not give back degrades the run rather than failing it.
-  if (forkFrom && cli.refusedSession(run)) {
-    coldStartReason = `the provider would not continue session ${forkFrom}`
+  // session the provider will not give back degrades the run rather than failing
+  // it. One step at a time: a refused fork of the declined attempt's session
+  // still leaves the node's own resumption worth asking for, and dropping
+  // straight to cold would throw away grounding nobody refused.
+  const refused: string[] = []
+  while (forks[index] !== undefined && cli.refusedSession(run)) {
+    refused.push(forks[index] as string)
+    index += 1
     await rm(resultPath, { force: true })
 
-    started = attempt()
+    started = attempt(forks[index])
     argv = started.argv
     run = await started.run
     await started.drain()
   }
+
+  const continued = forks[index]
+  const coldStartReason =
+    refused.length === 0
+      ? null
+      : continued
+        ? `the provider would not continue session ${refused.join(', ')}; continued ${continued} instead`
+        : `the provider would not continue session ${refused.join(', ')}`
 
   // The command line that produced `run`, which after a cold start is not the
   // one this call started with — the log is read to find out what actually ran.
