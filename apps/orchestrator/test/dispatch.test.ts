@@ -1,5 +1,13 @@
 import { describe, expect, it, test } from 'bun:test'
-import { FEATURE_BUGFIX_PIPELINE, instantiateDefinition, type StageNode } from '@specmate/core'
+import {
+  FEATURE_BUGFIX_PIPELINE,
+  instantiateDefinition,
+  type ModelBindingsOverride,
+  type ModelId,
+  PROVIDER_MODELS,
+  resolveModelBindings,
+  type StageNode,
+} from '@specmate/core'
 import type { ConversationMessage, Task } from '@specmate/db'
 import type {
   ConversationExecution,
@@ -138,6 +146,46 @@ describe('the stage dispatcher', () => {
       baseBranch: 'release-4',
     })
     expect(request.workspace).toBe(WORKSPACE)
+  })
+})
+
+/**
+ * The provider is settled before the model, so a checking node — bound to one
+ * chosen to differ from the writer's — does not carry the other provider's model
+ * to a CLI that cannot run it (REQ-112, AC-138).
+ */
+describe('a stage whose provider is not the one its binding names', () => {
+  const taskBound = (bindings: ModelBindingsOverride) =>
+    ({ id: TASK.id, modelBindings: resolveModelBindings({}, bindings) }) as unknown as Task
+
+  test('runs the binding as stored when the two agree', async () => {
+    const request = await dispatched({
+      provider: 'claude-code',
+      task: taskBound({ planner: { provider: 'claude-code', model: 'claude-sonnet-5' } }),
+    })
+
+    expect(request.model).toBe('claude-sonnet-5')
+  })
+
+  test("takes the dispatched provider's model when they do not", async () => {
+    const request = await dispatched({
+      provider: 'codex',
+      task: taskBound({ planner: { provider: 'claude-code', model: 'claude-fable-5' } }),
+    })
+
+    expect(request.provider).toBe('codex')
+    expect(PROVIDER_MODELS.codex).toContain(request.model as ModelId)
+  })
+
+  test('carries the reasoning effort across either way, because it is not provider-specific', async () => {
+    const request = await dispatched({
+      provider: 'codex',
+      task: taskBound({
+        planner: { provider: 'claude-code', model: 'claude-fable-5', reasoningEffort: 'low' },
+      }),
+    })
+
+    expect(request.reasoningEffort).toBe('low')
   })
 })
 

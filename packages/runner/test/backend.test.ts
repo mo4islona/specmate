@@ -17,6 +17,7 @@ function spec(overrides: Partial<ExecSpec> = {}): ExecSpec {
   return {
     argv: [STUB],
     stdin: 'prompt',
+    provider: 'claude-code',
     workspacePath: '/var/lib/specmate/workspaces/tasks/demo',
     env: {},
     timeoutMs: 5_000,

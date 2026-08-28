@@ -16,7 +16,7 @@ import {
   tasks,
 } from '@specmate/db'
 import type { ConversationExecution, StageExecution } from '@specmate/runner'
-import { asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import {
   Engine,
   type EngineSettings,
@@ -775,5 +775,53 @@ describeDb('conversation scheduling and interruption', () => {
     await engine.cancel(other.task.id, 'evgeny')
     expect((await reload(db, other.task.id)).status).toBe('cancelled')
     expect(ws.calls.released).toContain(other.task.id)
+  })
+
+  // AC-240, AC-114: with two providers configured, a role runs the one its task
+  // bound, and the node that checks its work runs the other.
+  test('two configured providers: the implementation runs one and its check runs the other', async () => {
+    const { engine, stagesDispatcher } = makeEngine({
+      availableProviders: ['claude-code', 'codex'],
+    })
+    const { task } = await seed({
+      at: 'implement',
+      modelBindings: { implementer: { provider: 'codex' } },
+    })
+    stagesDispatcher.plan((dispatch) => okExecution(dispatch.node.role, { verdict: 'approve' }))
+
+    await engine.tick()
+    await engine.idle()
+    await engine.tick()
+    await engine.idle()
+
+    const ran = await db
+      .select({ nodeKey: stages.nodeKey, provider: stages.provider })
+      .from(stages)
+      .where(eq(stages.taskId, task.id))
+      .orderBy(asc(stages.createdAt))
+
+    expect(ran.find((row) => row.nodeKey === 'implement')?.provider).toBe('codex')
+    expect(ran.find((row) => row.nodeKey === 'validate')?.provider).toBe('claude-code')
+  })
+
+  test('one configured provider checks its own work rather than skipping the check', async () => {
+    const { engine, stagesDispatcher } = makeEngine({ availableProviders: ['claude-code'] })
+    const { task } = await seed({
+      at: 'implement',
+      modelBindings: { implementer: { provider: 'codex' } },
+    })
+    stagesDispatcher.plan((dispatch) => okExecution(dispatch.node.role, { verdict: 'approve' }))
+
+    await engine.tick()
+    await engine.idle()
+
+    const [ran] = await db
+      .select({ provider: stages.provider })
+      .from(stages)
+      .where(and(eq(stages.taskId, task.id), eq(stages.nodeKey, 'implement')))
+
+    // The binding names a provider this deployment does not run; dispatch falls
+    // back to one it does rather than failing the stage.
+    expect(ran?.provider).toBe('claude-code')
   })
 })

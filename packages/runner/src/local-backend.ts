@@ -9,7 +9,7 @@ import {
   type ExecSpec,
   spawnBoundedHandle,
 } from './backend.ts'
-import type { RunnerConfig } from './config.ts'
+import { configuredProviders, providerRuntime, type RunnerConfig } from './config.ts'
 
 /**
  * Development only: the provider runs as a child of the orchestrator. It gets
@@ -22,10 +22,18 @@ export class LocalBackend implements ExecBackend {
   constructor(private readonly config: RunnerConfig) {}
 
   async preflight(_workspaceRoot: string): Promise<string> {
-    const found = Bun.which(this.config.cli)
-    if (!found) throw new Error(`provider CLI "${this.config.cli}" is not on PATH`)
+    const found: string[] = []
+    for (const provider of configuredProviders(this.config)) {
+      const { cli } = providerRuntime(this.config, provider)
+      const path = Bun.which(cli)
+      if (!path) {
+        throw new Error(`provider "${provider}" is configured but its CLI "${cli}" is not on PATH`)
+      }
 
-    return `local backend: ${found}`
+      found.push(`${provider} ${path}`)
+    }
+
+    return `local backend: ${found.join(', ')}`
   }
 
   async resolveEnvironment(_workspacePath: string, _image: string): Promise<ExecutionEnvironment> {
@@ -80,7 +88,7 @@ export class LocalBackend implements ExecBackend {
       PATH: process.env.PATH ?? '/usr/bin:/bin',
       HOME: process.env.HOME ?? '',
     }
-    for (const name of this.config.forwardEnv) {
+    for (const name of providerRuntime(this.config, spec.provider).forwardEnv) {
       const value = process.env[name]
       if (value !== undefined) env[name] = value
     }

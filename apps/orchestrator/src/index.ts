@@ -18,7 +18,8 @@ import { Engine } from './engine.ts'
 import { Publisher } from './publish.ts'
 import {
   backendFor,
-  providerFor,
+  checkRenamedRunnerEnv,
+  providersFor,
   RunnerEnv,
   runnerConfigFrom,
   taskRunnerEnvironment,
@@ -49,6 +50,15 @@ const Env = z.object({
   NODE_ENV: z.string().min(1).default('development'),
   ...RunnerEnv.shape,
 })
+
+// Before parsing: a `.env` still carrying a renamed variable would otherwise
+// start with the setting silently ignored (REQ-504).
+try {
+  checkRenamedRunnerEnv(process.env)
+} catch (e) {
+  console.error(`invalid environment: ${(e as Error).message}`)
+  process.exit(1)
+}
 
 const parsed = Env.safeParse(process.env)
 if (!parsed.success) {
@@ -127,7 +137,7 @@ const publisher = new Publisher({
   workspaceConfig: workspaces.config,
   token: () => githubToken({ db, clientId: env.GITHUB_APP_CLIENT_ID }),
 })
-const provider = providerFor(runnerConfig, backend)
+const providers = providersFor(runnerConfig, backend)
 // Best-effort but ordered: chained rather than fire-and-forget, so concurrent
 // inserts can't commit out of the order the tool uses actually happened in —
 // `events.seq` is what the SSE stream's cursor advances on. A dropped event
@@ -136,7 +146,7 @@ const provider = providerFor(runnerConfig, backend)
 let activityChain: Promise<unknown> = Promise.resolve()
 const executor = new StageExecutor({
   config: runnerConfig,
-  provider,
+  providers,
   git: new Git(workspaces.config),
   workspaces: service,
   ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
@@ -156,7 +166,7 @@ const executor = new StageExecutor({
 })
 const conversationExecutor = new ConversationExecutor({
   config: runnerConfig,
-  provider,
+  providers,
   git: new Git(workspaces.config),
   ledger: (taskId) => renderLedgerForTask(db, runnerConfig, taskId),
 })
@@ -187,7 +197,7 @@ const engine = new Engine({
     stageConcurrency: env.STAGE_CONCURRENCY,
     conversationConcurrency: env.CONVERSATION_CONCURRENCY,
     stageAttemptCap: env.STAGE_ATTEMPT_CAP,
-    availableProviders: ['claude-code'],
+    availableProviders: env.AVAILABLE_PROVIDERS,
   },
   dispatcher,
   actionDispatcher: ({ task, graph, node }) => publisher.run(task, graph, node),

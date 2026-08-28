@@ -17,6 +17,7 @@ import { WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { and, asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { Engine } from './engine.ts'
+import { RunnerEnv } from './runner.ts'
 import { createTask, latestGraph } from './store.ts'
 
 function flag(name: string): string | undefined {
@@ -45,6 +46,9 @@ const parsed = z
     GIT_AUTHOR_EMAIL: z.string().min(1).default('specmate@localhost'),
     STAGE_CONCURRENCY: z.coerce.number().int().positive().default(1),
     STAGE_ATTEMPT_CAP: z.coerce.number().int().positive().default(2),
+    // Same set the daemon runs: gate operations record a provider on the stages
+    // they skip, and a narrower set here would attribute them to the wrong one.
+    AVAILABLE_PROVIDERS: RunnerEnv.shape.AVAILABLE_PROVIDERS,
     GITHUB_APP_CLIENT_ID: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.string().min(1).optional(),
@@ -86,7 +90,7 @@ const engine = new Engine({
   settings: {
     stageConcurrency: env.STAGE_CONCURRENCY,
     stageAttemptCap: env.STAGE_ATTEMPT_CAP,
-    availableProviders: ['claude-code'],
+    availableProviders: env.AVAILABLE_PROVIDERS,
   },
   log: (message) => console.error(message),
 })

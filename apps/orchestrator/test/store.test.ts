@@ -426,7 +426,7 @@ describeDb('task store', () => {
       })
       created.push(task.id)
 
-      expect(task.modelBindings.implementer).toEqual({
+      expect(task.modelBindings.implementer).toMatchObject({
         model: 'claude-sonnet-5',
         reasoningEffort: 'max',
       })

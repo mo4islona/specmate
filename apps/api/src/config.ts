@@ -1,7 +1,16 @@
+import { PROVIDERS } from '@specmate/core'
 import { z } from 'zod'
 
 /** Docker/`.env` supply unset variables as empty strings; treat those as absent. */
 const optionalString = z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional())
+
+/** The same list the orchestrator runs; here it is what a binding may name (REQ-1014). */
+const providerList = z
+  .string()
+  .min(1)
+  .default('claude-code')
+  .transform((value) => value.split(',').map((name) => name.trim()))
+  .pipe(z.array(z.enum(PROVIDERS)).nonempty())
 
 const Env = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -18,6 +27,7 @@ const Env = z.object({
    * (REQ-1021) — so it must never be required at startup.
    */
   GITHUB_APP_CLIENT_ID: optionalString,
+  AVAILABLE_PROVIDERS: providerList,
 })
 
 export type Config = z.infer<typeof Env>

@@ -8,7 +8,12 @@ import {
   type Workspace,
   WorkspaceManager,
 } from '@specmate/workspace'
-import { type RunnerConfig, type RunnerOptions, resolveRunnerConfig } from '../src/config.ts'
+import {
+  type ProviderRuntimes,
+  type RunnerConfig,
+  type RunnerOptions,
+  resolveRunnerConfig,
+} from '../src/config.ts'
 
 export const STUB = join(import.meta.dir, 'stub-provider.ts')
 export const ROLES_DIR = join(import.meta.dir, '..', '..', '..', 'roles')
@@ -62,13 +67,47 @@ export async function writeFiles(root: string, files: Record<string, string>): P
   }
 }
 
-export function makeConfig(overrides: RunnerOptions = {}): RunnerConfig {
+export interface ConfigOptions extends RunnerOptions {
+  /** Stands in for both providers' CLIs unless `providers` says otherwise. */
+  readonly cli?: string
+  /** Applied to every provider the config runs — the stub reads its settings by name. */
+  readonly forwardEnv?: readonly string[]
+}
+
+/**
+ * Both providers point at the same stub: which CLI ran is asserted from the
+ * recorded argv, and no test needs two stubs to tell them apart.
+ */
+export function makeConfig({ cli, forwardEnv, ...overrides }: ConfigOptions = {}): RunnerConfig {
+  const providers: ProviderRuntimes = overrides.providers ?? {
+    'claude-code': {
+      cli: cli ?? STUB,
+      authVolume: 'specmate_claude-auth',
+      forwardEnv: forwardEnv ?? [],
+    },
+    codex: {
+      cli: cli ?? STUB,
+      authVolume: 'specmate_codex-auth',
+      forwardEnv: forwardEnv ?? [],
+    },
+  }
+
   return resolveRunnerConfig({
     backend: 'local',
-    cli: STUB,
     rolesDir: ROLES_DIR,
     stageTimeoutMs: 20_000,
     ...overrides,
+    providers,
+  })
+}
+
+/** A config running exactly the providers named, for a test about one of them. */
+export function resolveRunnerConfigFor(providers: ProviderRuntimes): RunnerConfig {
+  return resolveRunnerConfig({
+    backend: 'local',
+    rolesDir: ROLES_DIR,
+    stageTimeoutMs: 20_000,
+    providers,
   })
 }
 

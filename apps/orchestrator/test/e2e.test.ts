@@ -26,6 +26,7 @@ import {
   ClaudeCodeProvider,
   ConversationExecutor,
   LocalBackend,
+  providerRegistry,
   renderLedgerForTask,
   resolveRunnerConfig,
   StageExecutor,
@@ -129,19 +130,20 @@ describeDb('the loop against a real repository', () => {
     const manager = new WorkspaceManager({ config: { root } })
     const config = resolveRunnerConfig({
       backend: 'local',
-      cli: STUB,
       rolesDir: join(import.meta.dir, '../../../roles'),
       stageTimeoutMs: 20_000,
-      forwardEnv: STUB_ENV,
+      providers: {
+        'claude-code': { cli: STUB, authVolume: 'specmate_claude-auth', forwardEnv: STUB_ENV },
+      },
     })
     const backend = new LocalBackend(config)
-    const provider = new ClaudeCodeProvider({ config, backend })
+    const providers = providerRegistry([new ClaudeCodeProvider({ config, backend })])
     const service = new WorkspaceService(manager, db, (workspace, image) =>
       backend.resolveEnvironment(workspace.path, image),
     )
     const executor = new StageExecutor({
       config,
-      provider,
+      providers,
       git: new Git(manager.config),
       workspaces: service,
       ledger: (taskId) => renderLedgerForTask(db, config, taskId),
@@ -149,7 +151,7 @@ describeDb('the loop against a real repository', () => {
     })
     const conversationExecutor = new ConversationExecutor({
       config,
-      provider,
+      providers,
       git: new Git(manager.config),
       ledger: (taskId) => renderLedgerForTask(db, config, taskId),
     })

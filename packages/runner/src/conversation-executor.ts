@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type {
-  AgentProvider,
   ConversationActionOption,
   ConversationActionProposal,
   ModelId,
@@ -19,10 +18,10 @@ import {
   type Git,
   SCRATCH_DIR,
 } from '@specmate/workspace'
-import { type RunFailure, type StageRunError, stageLabel } from './claude.ts'
 import type { RunnerConfig } from './config.ts'
-import type { LedgerSource } from './executor.ts'
+import type { LedgerSource, ProviderRegistry } from './executor.ts'
 import { assemblePrompt } from './prompt.ts'
+import { type RunFailure, type StageRunError, stageLabel } from './provider-run.ts'
 import { changedPaths, checkWriteScope } from './scope.ts'
 
 export type ConversationFailure =
@@ -44,7 +43,7 @@ export interface ConversationRequest {
   readonly currentTaskState: string
   readonly contextPath: 'stored' | 'cached' | 'reconstructed' | 'none'
   readonly actionOptions: readonly ConversationActionOption[]
-  readonly provider?: ProviderId
+  readonly provider: ProviderId
   /** Resolved from the task's stored model bindings for the `answerer` role. */
   readonly model: ModelId
   readonly reasoningEffort: ReasoningEffort
@@ -68,7 +67,7 @@ export interface ConversationExecution {
 
 export interface ConversationExecutorDeps {
   readonly config: RunnerConfig
-  readonly provider: AgentProvider
+  readonly providers: ProviderRegistry
   readonly git: Git
   readonly ledger: LedgerSource
 }
@@ -78,12 +77,13 @@ export class ConversationExecutor {
   constructor(private readonly deps: ConversationExecutorDeps) {}
 
   async execute(request: ConversationRequest): Promise<ConversationExecution> {
-    const { config, provider, git, ledger: loadLedger } = this.deps
-    if (request.provider && request.provider !== provider.id) {
+    const { config, git, ledger: loadLedger } = this.deps
+    const provider = this.deps.providers.get(request.provider)
+    if (!provider) {
       return {
         status: 'failed',
         failure: 'provider_error',
-        detail: `conversation is bound to provider "${request.provider}" but this executor runs "${provider.id}"`,
+        detail: `conversation is bound to provider "${request.provider}", which this deployment does not run`,
         durationMs: 0,
       }
     }

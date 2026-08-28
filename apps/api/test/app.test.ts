@@ -6,8 +6,11 @@ import { join } from 'node:path'
 import {
   DEFAULT_MODEL_BINDINGS,
   instantiateDefinition,
+  type ModelId,
   PIPELINE_CATALOG,
   type PinnedGraph,
+  PROVIDER_MODELS,
+  type ProviderId,
   type TaskState,
 } from '@specmate/core'
 import {
@@ -937,6 +940,7 @@ describeDb('api', () => {
   })
 
   interface ModelBindingJson {
+    provider: ProviderId
     model: string
     reasoningEffort: string
   }
@@ -1119,10 +1123,87 @@ describeDb('api', () => {
 
       expect(updated.status).toBe(200)
       const body = (await updated.json()) as { modelDefaults: Record<string, ModelBindingJson> }
-      expect(body.modelDefaults.implementer).toEqual({
+      expect(body.modelDefaults.implementer).toMatchObject({
         model: modelBefore,
         reasoningEffort: 'max',
       })
+    })
+
+    it('reports the providers this deployment runs alongside the defaults — REQ-917', async () => {
+      const response = await app.request('/api/v1/settings/model-defaults', { headers: auth })
+
+      const body = (await response.json()) as { availableProviders: string[] }
+      expect(body.availableProviders).toEqual(['claude-code'])
+    })
+
+    // AC-1086: a provider and a model are wrong together rather than wrong alone.
+    it('rejects an update pairing a provider with a model it cannot run — AC-1086', async () => {
+      const before = await getModelDefaults(db)
+      const rejected = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ implementer: { provider: 'codex', model: 'claude-opus-5' } }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await getModelDefaults(db)).toEqual(before)
+    })
+
+    it('rejects an update naming a provider this deployment does not run — REQ-1014', async () => {
+      const before = await getModelDefaults(db)
+      const rejected = await app.request('/api/v1/settings/model-defaults', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ implementer: { provider: 'codex' } }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({
+        fields: { 'implementer.provider': expect.any(Array) },
+      })
+      expect(await getModelDefaults(db)).toEqual(before)
+    })
+
+    // AC-1085: naming a provider must not require naming a model in the same breath.
+    it('launches with a provider override and no model, taking a model of that provider — AC-1085', async () => {
+      const created = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Provider override fixture',
+          description: 'Provider override fixture request.',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/provider-override',
+          modelBindings: { implementer: { provider: 'codex' } },
+        }),
+      })
+
+      expect(created.status).toBe(201)
+      const body = (await created.json()) as {
+        task: { id: string; modelBindings: Record<string, ModelBindingJson> }
+      }
+      createdTaskIds.push(body.task.id)
+      expect(body.task.modelBindings.implementer?.provider).toBe('codex')
+      expect(PROVIDER_MODELS.codex).toContain(body.task.modelBindings.implementer?.model as ModelId)
+      // Every other role keeps the current default, provider included.
+      expect(body.task.modelBindings.reviewer?.provider).toBe('claude-code')
+    })
+
+    it('rejects a launch pairing a provider with a model it cannot run — AC-136', async () => {
+      const rejected = await app.request('/api/v1/tasks', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          title: 'Incoherent override fixture',
+          description: 'Incoherent override fixture request.',
+          type: 'bugfix',
+          repoUrl: 'https://github.com/example/incoherent-override',
+          modelBindings: { implementer: { provider: 'codex', model: 'claude-opus-5' } },
+        }),
+      })
+
+      expect(rejected.status).toBe(400)
+      expect(await rejected.json()).toMatchObject({ code: 'validation' })
     })
 
     it('rejects an update naming a model outside the known catalog, leaving the stored default unchanged — AC-1042', async () => {
@@ -1214,7 +1295,8 @@ describeDb('api', () => {
         task: { id: string; modelBindings: Record<string, ModelBindingJson> }
       }
       createdTaskIds.push(body.task.id)
-      expect(body.task.modelBindings.implementer).toEqual({
+      expect(body.task.modelBindings.implementer).toMatchObject({
+        provider: currentDefaults.implementer.provider,
         model: currentDefaults.implementer.model,
         reasoningEffort: 'low',
       })
