@@ -671,6 +671,39 @@ describeDb('conversation scheduling and interruption', () => {
     expect(afterAcceptance?.consumedByStageId).not.toBeNull()
   })
 
+  it('AC-645: a failure no retry can fix fails the task without a second dispatch', async () => {
+    const { engine, stagesDispatcher } = makeEngine({ stageAttemptCap: 2 })
+    const { task } = await seed({ at: 'implement' })
+    stagesDispatcher.plan(() => failedExecution('backend_error', 'pull access denied'))
+
+    await engine.tick()
+    await engine.idle()
+
+    const failed = await reload(db, task.id)
+    expect(failed.status).toBe('failed')
+    expect(failed.resumeStatus).toBe('implement')
+    expect(stagesDispatcher.dispatches).toHaveLength(1)
+
+    const rows = await db.select().from(stages).where(eq(stages.taskId, task.id))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.cost.failure).toMatchObject({ reason: 'backend_error' })
+  })
+
+  it('AC-646: a failure that might not recur still retries to the cap', async () => {
+    const { engine, stagesDispatcher } = makeEngine({ stageAttemptCap: 2 })
+    const { task } = await seed({ at: 'implement' })
+    stagesDispatcher.plan(() => failedExecution('timeout', 'no result in time'))
+
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('implement')
+
+    await engine.tick()
+    await engine.idle()
+    expect((await reload(db, task.id)).status).toBe('failed')
+    expect(stagesDispatcher.dispatches).toHaveLength(2)
+  })
+
   test('restart refuses a stage later than the one that failed', async () => {
     const { engine } = makeEngine()
     const { task } = await seed({ at: 'implement', status: 'failed', resume: 'implement' })

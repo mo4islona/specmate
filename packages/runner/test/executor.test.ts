@@ -9,8 +9,9 @@ import {
   ROLE_CONTRACTS,
   type StageJob,
 } from '@specmate/core'
-import type { WorkspaceService } from '@specmate/workspace'
+import { SCRATCH_DIR, type WorkspaceService } from '@specmate/workspace'
 import { ClaudeCodeProvider } from '../src/claude.ts'
+import { DockerBackend } from '../src/docker-backend.ts'
 import {
   providerRegistry,
   roleNeedsContainerRuntime,
@@ -25,6 +26,7 @@ import {
   type Harness,
   makeConfig,
   makeHarness,
+  STUB,
   STUB_ENV,
   setStubEnv,
   tempDir,
@@ -47,7 +49,10 @@ function makeExecutor(
 ) {
   const config = makeConfig({ forwardEnv: STUB_ENV, ...configOverrides })
   setStubEnv({ SPECMATE_STUB_SLUG: harness.workspace.slug, ...env })
-  const provider = new ClaudeCodeProvider({ config, backend: new LocalBackend(config) })
+  // The stub stands in for the container runtime as readily as for the provider,
+  // which is the only way to reach a client that never started a run.
+  const backend = config.backend === 'docker' ? new DockerBackend(config) : new LocalBackend(config)
+  const provider = new ClaudeCodeProvider({ config, backend })
   // Only `commitStage` is exercised here, and only its git half — the artifact
   // index has its own tests in the workspace package.
 
@@ -333,6 +338,49 @@ describe('stage execution', () => {
     expect(execution.status).toBe('succeeded')
   })
 
+  it('AC-243: accepts a declaring role writing under the name its own result declared', async () => {
+    const harness = await makeHarness('declared-folder')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'a-better-name',
+    }).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('succeeded')
+  })
+
+  it('AC-243: fails the same role writing under neither name', async () => {
+    const harness = await makeHarness('undeclared-folder')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'a-better-name',
+      SPECMATE_STUB_WRITE_CHANGE: 'somewhere-else',
+    }).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('scope_violation')
+    expect(execution.detail).toContain('openspec/changes/somewhere-else')
+  })
+
+  it('AC-243: leaves a role that declares no change name held to its own folder', async () => {
+    const harness = await makeHarness('non-declaring')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'researcher',
+      SPECMATE_STUB_WRITE_CHANGE: 'a-better-name',
+    }).execute(request(harness))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('scope_violation')
+  })
+
   test('an honestly reported failure commits nothing to the task branch', async () => {
     const harness = await makeHarness('agent-failed')
     await harness.commitAll('baseline')
@@ -434,6 +482,149 @@ describe('stage execution', () => {
     // Without the stop the queued 'ok' would have made this a success.
     expect(execution.attempts).toHaveLength(1)
     expect(execution.status).toBe('failed')
+  })
+
+  it('names the backend, not the provider, for a run that never started (AC-246)', async () => {
+    const harness = await makeHarness('unstarted')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE: 'client-start-failure' },
+      { backend: 'docker', dockerCli: STUB },
+    ).execute(request(harness))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('backend_error')
+    expect(execution.detail).toContain('pull access denied')
+  })
+
+  it('names the provider for one that ran and left nothing (AC-247)', async () => {
+    const harness = await makeHarness('provider-exit')
+    await harness.commitAll('baseline')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'nonzero-exit',
+    }).execute(request(harness))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('provider_error')
+    expect(execution.detail).toContain('exited 3')
+  })
+
+  it('AC-248, AC-249: tells the retry what the attempt before it was rejected for', async () => {
+    const harness = await makeHarness('rejection-carried')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['out-of-scope', 'ok']))
+    const stage = request(harness)
+
+    const execution = await makeExecutor(harness, { SPECMATE_STUB_MODE_FILE: queue }).execute(stage)
+
+    // Each attempt writes its own prompt into its own scratch directory, which
+    // outlives the discard between them.
+    const promptOf = (attempt: number) =>
+      readFile(
+        join(harness.workspace.path, SCRATCH_DIR, `${stage.stageId}-${attempt}`, 'prompt.md'),
+        'utf8',
+      )
+
+    expect(execution.status).toBe('succeeded')
+    expect(await promptOf(0)).not.toContain('# Your previous attempt')
+    expect(await promptOf(1)).toContain(
+      'Attempt 0 was rejected: The run changed files its role may not touch.',
+    )
+  })
+
+  it('AC-244: continues the declined attempt’s own session on the retry', async () => {
+    const harness = await makeHarness('declined-session')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['out-of-scope', 'ok']))
+    const record = join(await tempDir('record'), 'run.json')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE_FILE: queue,
+      SPECMATE_STUB_SESSION: 'sess-declined',
+      SPECMATE_STUB_RECORD: record,
+    }).execute(request(harness))
+
+    // The record is overwritten per invocation, so it holds the retry's own argv.
+    const retry = (await Bun.file(record).json()) as { argv: string[] }
+
+    expect(execution.status).toBe('succeeded')
+    expect(retry.argv).toContain('--fork-session')
+    expect(retry.argv[retry.argv.indexOf('--resume') + 1]).toBe('sess-declined')
+  })
+
+  it('AC-245: starts cold after a run that failed rather than one that was declined', async () => {
+    const harness = await makeHarness('failed-session')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['no-result', 'ok']))
+    const record = join(await tempDir('record'), 'run.json')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE_FILE: queue,
+      SPECMATE_STUB_SESSION: 'sess-failed',
+      SPECMATE_STUB_RECORD: record,
+    }).execute(request(harness))
+
+    const retry = (await Bun.file(record).json()) as { argv: string[] }
+
+    expect(execution.status).toBe('succeeded')
+    expect(retry.argv).not.toContain('--resume')
+  })
+
+  it('AC-245: a fork the provider refuses degrades to a cold start, with the reason', async () => {
+    const harness = await makeHarness('refused-fork')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['out-of-scope', 'ok']))
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE_FILE: queue,
+      SPECMATE_STUB_SESSION: 'sess-declined',
+      SPECMATE_STUB_REFUSE_FORK: 'sess-declined',
+    }).execute(request(harness))
+
+    expect(execution.status).toBe('succeeded')
+    expect(execution.coldStartReason).toContain('sess-declined')
+  })
+
+  it('makes no second attempt at a run the backend could not start', async () => {
+    const harness = await makeHarness('unstarted-once')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['client-start-failure', 'client-start-failure']))
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE_FILE: queue },
+      { backend: 'docker', dockerCli: STUB },
+    ).execute(request(harness))
+
+    // The queue is consumed one entry per invocation, so what is left of it says
+    // how many runs there were.
+    expect(execution.attempts).toHaveLength(1)
+    expect(JSON.parse(await readFile(queue, 'utf8'))).toHaveLength(1)
+  })
+
+  it('still spends both attempts on a timeout, which might not recur', async () => {
+    const harness = await makeHarness('timeout-twice')
+    await harness.commitAll('baseline')
+    const queue = join(await tempDir('queue'), 'modes.json')
+    await writeFile(queue, JSON.stringify(['hang', 'hang']))
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE_FILE: queue },
+      { stageTimeoutMs: 300 },
+    ).execute(request(harness))
+
+    expect(execution.failure).toBe('timeout')
+    expect(execution.attempts).toHaveLength(2)
+    expect(JSON.parse(await readFile(queue, 'utf8'))).toHaveLength(0)
   })
 
   test('starts the retry from committed state, not from what the failure left', async () => {

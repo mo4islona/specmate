@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { stageActivityPayload } from './activity.ts'
 import { createConversationDispatcher, createStageDispatcher } from './dispatch.ts'
 import { Engine } from './engine.ts'
+import { createStageEnvironment } from './environment.ts'
 import { Publisher } from './publish.ts'
 import {
   backendFor,
@@ -186,7 +187,18 @@ const pinnedEnvironment = async (taskId: string) => {
   return taskRunnerEnvironment(current?.environment ?? null)
 }
 
-const dispatcher = createStageDispatcher({ executor, pinnedEnvironment })
+/**
+ * A pin recorded when the image existed is not a pin that still resolves: the
+ * runner image is built on the deployment host and published nowhere, so a
+ * rebuild collects the manifest an in-flight task is pinned to.
+ */
+const stageEnvironment = createStageEnvironment({
+  pinned: pinnedEnvironment,
+  resolvesImage: (image) => backend.resolvesImage(image),
+  repin: (taskId, workspace) => service.repinEnvironment(taskId, workspace, runnerConfig.image),
+})
+
+const dispatcher = createStageDispatcher({ executor, stageEnvironment })
 
 const conversationDispatcher = createConversationDispatcher({
   executor: conversationExecutor,

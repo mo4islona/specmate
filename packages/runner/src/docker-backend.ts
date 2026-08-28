@@ -65,6 +65,7 @@ export function cacheDirs(cacheRoot: string): string[] {
 }
 const PREFLIGHT_MARKER = '.specmate-preflight'
 const ENVIRONMENT_OUTPUT_LIMIT = 1024 * 1024
+const IMAGE_INSPECT_TIMEOUT_MS = 60_000
 
 export type ContainerKiller = (name: string) => void
 
@@ -276,7 +277,7 @@ export class DockerBackend implements ExecBackend {
     })
 
     return {
-      result: execution.result,
+      result: execution.result.then(withStartFailure),
       cancel: async () => {
         this.kill(name)
         await execution.cancel()
@@ -301,11 +302,25 @@ export class DockerBackend implements ExecBackend {
     return { image: immutableImage, toolchains }
   }
 
+  /**
+   * Anything short of a clean answer is "no". A runtime that cannot be reached
+   * cannot honour the pin either, and what follows a "no" is a bounded, recorded
+   * re-pin whose own failure is what reports the runtime.
+   */
+  async resolvesImage(image: string): Promise<boolean> {
+    const inspected = await this.docker(
+      ['image', 'inspect', '--format', '{{.Id}}', image],
+      IMAGE_INSPECT_TIMEOUT_MS,
+    ).catch(() => null)
+
+    return inspected !== null
+  }
+
   private async resolveImage(image: string): Promise<string> {
     if (isImmutableImageReference(image)) return image
 
     try {
-      const inspected = await this.docker(['image', 'inspect', image], 60_000)
+      const inspected = await this.docker(['image', 'inspect', image], IMAGE_INSPECT_TIMEOUT_MS)
       return immutableImageFromInspection(image, inspected.stdout)
     } catch (error) {
       throw new Error(`could not pin runner image "${image}": ${ensureError(error).message}`)
@@ -412,6 +427,26 @@ export class DockerBackend implements ExecBackend {
     }
 
     return env
+  }
+}
+
+/**
+ * `docker run` exits 125 when the client could not start the container, 126 when
+ * the entrypoint is not executable and 127 when it is not there. None of them is
+ * the provider's own exit code, because the provider has not run — which is what
+ * the run is asked, and answered here rather than by the stage-run layer that
+ * also serves a backend with no containers in it.
+ */
+const CLIENT_START_EXITS: ReadonlySet<number> = new Set([125, 126, 127])
+
+export function withStartFailure(result: ExecResult): ExecResult {
+  if (result.timedOut || !CLIENT_START_EXITS.has(result.exitCode)) return result
+
+  const reported = result.stderr.trim() || result.stdout.trim()
+
+  return {
+    ...result,
+    startFailure: reported || `the container runtime exited ${result.exitCode}`,
   }
 }
 

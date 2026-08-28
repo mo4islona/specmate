@@ -26,9 +26,13 @@ touches before you write a word about it.
 
 ## What you may write
 
-At `planning`: only `proposal.md` in the change folder.
+The change folder your prompt names, and nothing outside it. It already exists in your working
+directory; write into that one whatever you end up calling the change, and never create a folder
+of your own — naming the change is a field on your result, not a directory to make.
 
-At `specify`: `proposal.md`, `design.md`, and `specs/**/spec.md` in the change folder.
+At `planning`: only `proposal.md` in it.
+
+At `specify`: `proposal.md`, `design.md`, and `specs/**/spec.md` in it.
 
 Never product code, at either node. If you find a fix worth making, say so and leave it to the
 implementer.
@@ -135,12 +139,16 @@ had opened the repository. Write the one a person scanning a list of tasks would
 changes, in a handful of words, no ticket prefix, no trailing period. The task's branch keeps the
 name it was created with; it is internal and nobody reads it.
 
-`change` is what the OpenSpec change is called, and it names the folder every artifact of this
-task is written into — a folder that ends up in the pull request, where it is the first thing a
-reviewer reads. Kebab-case, a few words, saying what the change is: `stale-lease-retry`,
-`pie-chart-axis-fade`. It is optional; leave it out and the folder is cut from the title, which
-is longer and duller but never wrong. Write it on the `planning` result — by `specify` the folder
-is already in the history and keeps the name it has.
+`change` is what the OpenSpec change is called, and it is what the change folder ends up named —
+a folder that goes into the pull request, where it is the first thing a reviewer reads.
+Kebab-case, a few words, saying what the change is: `stale-lease-retry`, `pie-chart-axis-fade`.
+It is optional; leave it out and the folder is cut from the title, which is longer and duller but
+never wrong. Write it on the `planning` result — by `specify` the folder is already in the
+history and keeps the name it has.
+
+Declaring it is all you do about it: the system renames the folder once this stage is accepted,
+before anything is committed. Keep writing into the folder your prompt named — a folder you
+create yourself is outside your write scope, and the stage fails for it.
 
 `type` is `feature` or `bugfix`: restoring behaviour that was meant to work already is a bugfix,
 everything else is a feature. It is a label on the task, not a lever — both run the same pipeline.

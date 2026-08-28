@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test'
 import type { PinnedGraph } from '@specmate/core'
 import {
   createDb,
@@ -76,6 +76,42 @@ describeDb('ledger snapshot', () => {
     expect(snapshot.caps.max_spec_iterations).toBeGreaterThan(0)
     expect(snapshot.rounds).toHaveLength(1)
     expect(snapshot.rounds[0]?.findings[0]?.id).toBe('no-scenario')
+  })
+
+  it('AC-248: carries the rejection of the last attempt at the node the task stands on', async () => {
+    // Version 2: a task has one graph per version, and the suite's other case
+    // takes the first.
+    const [graph] = await db
+      .insert(runGraphs)
+      .values({ taskId, version: 2, dag: EMPTY_DAG })
+      .returning()
+    const rejected = {
+      taskId,
+      graphId: graph?.id ?? '',
+      nodeKey: 'spec_review',
+      role: 'reviewer',
+      provider: 'claude-code',
+    } as const
+    await db.insert(stages).values({
+      ...rejected,
+      status: 'failed',
+      attempt: 0,
+      cost: { failure: { reason: 'scope_violation', detail: 'changed src/app.ts' } },
+    })
+
+    const carried = await loadLedgerSnapshot(db, taskId)
+    expect(carried.lastRejection).toEqual({
+      attempt: 0,
+      reason: 'scope_violation',
+      detail: 'changed src/app.ts',
+    })
+
+    // An attempt the harness accepted answers the rejection before it: the next
+    // run at this node is repeating nothing.
+    await db.insert(stages).values({ ...rejected, status: 'succeeded', attempt: 1 })
+    const answered = await loadLedgerSnapshot(db, taskId)
+
+    expect(answered.lastRejection).toBeNull()
   })
 
   test('names a task that does not exist', async () => {

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CONVERSATION_ACTION_KINDS } from './conversations.ts'
 import { HarnessCoverageAssessment } from './harness.ts'
-import { duplicatePrerequisiteKeys, PlanShape } from './plan.ts'
+import { changeNameFor, duplicatePrerequisiteKeys, PlanShape } from './plan.ts'
 import { AgentRole, ArtifactKind, ROLE_CONTRACTS } from './roles.ts'
 import { TaskState } from './state-schemas.ts'
 
@@ -217,6 +217,23 @@ export function checkPlanPresent(result: StageResult, continuation = false): str
   }
 
   return null
+}
+
+/**
+ * What this run's own result declares the change is called, for a role whose
+ * contract is to declare one — the name the folder converges on once the stage
+ * is accepted (REQ-705). The write-scope check and the rename both read it from
+ * here: a check that decided it differently would fail a run for writing into
+ * the folder it was about to be moved to.
+ *
+ * The role is the graph's, never the result's. An agent naming a different role
+ * must not be able to widen its own write scope.
+ */
+export function declaredChangeName(role: AgentRole, result: StageResult): string | null {
+  if (result.status !== 'ok' || !result.plan) return null
+  if (!ROLE_CONTRACTS[role].declaresPlan) return null
+
+  return changeNameFor(result.plan)
 }
 
 /**

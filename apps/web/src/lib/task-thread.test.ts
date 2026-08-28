@@ -145,6 +145,24 @@ describe('decision timeline events', () => {
   test('an event carrying nothing readable gets no invented detail line', () => {
     expect(eventDetail(timelineEvent({ type: 'task.resumed', payload: {} }), new Map())).toBeNull()
   })
+
+  it.each([
+    ['scope_violation', 'The run changed files its role may not touch.'],
+    ['backend_error', 'The run could not be started.'],
+  ])('reads the failure %s as the sentence its table entry carries', (reason, sentence) => {
+    const event = timelineEvent({
+      type: 'stage.failed',
+      payload: { reason, detail: 'openspec/changes/other/proposal.md' },
+    })
+
+    expect(eventDetail(event, new Map())).toBe(`${sentence} — openspec/changes/other/proposal.md`)
+  })
+
+  it('leaves a reason the failure table never had as the words it spells', () => {
+    const event = timelineEvent({ type: 'task.failed', payload: { reason: 'verification_failed' } })
+
+    expect(eventDetail(event, new Map())).toBe('verification failed')
+  })
 })
 
 describe('event titles', () => {
@@ -558,6 +576,25 @@ describe('buildStepFeed (REQ-919, REQ-915)', () => {
 
     expect(feed[0]?.kind === 'line' && feed[0].tone).toBe('trouble')
     expect(feed[0]?.kind === 'line' && feed[0].target).toBe('verification failed')
+  })
+
+  it('gives a failed run its sentence on the line, not its identifier', () => {
+    const failed = stage({ id: 'stage-1', nodeKey: 'implement', attempt: 0, status: 'failed' })
+    const feed = buildStepFeed({
+      ...base,
+      events: [
+        timelineEvent({
+          seq: 1,
+          type: 'stage.failed',
+          stageId: failed.id,
+          payload: { reason: 'backend_error' },
+        }),
+      ],
+      stages: [failed],
+      nodeKey: 'implement',
+    })
+
+    expect(feed[0]?.kind === 'line' && feed[0].target).toBe('The run could not be started.')
   })
 
   test('a message belongs to the step the task stood on when it was written', () => {

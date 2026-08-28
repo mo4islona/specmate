@@ -40,6 +40,11 @@ export class LocalBackend implements ExecBackend {
     return { image: 'local://host', toolchains: [] }
   }
 
+  /** There are no images to lose: the provider runs as a child of this process. */
+  async resolvesImage(_image: string): Promise<boolean> {
+    return true
+  }
+
   /**
    * The child is detached (its own process group), so it survives an
    * orchestrator crash. The pid file is what lets the restart sweep find and

@@ -50,6 +50,7 @@ import {
 } from '../../../packages/runner/test/fixtures.ts'
 import { createConversationDispatcher, createStageDispatcher } from '../src/dispatch.ts'
 import { Engine, type StageDispatcher } from '../src/engine.ts'
+import { createStageEnvironment } from '../src/environment.ts'
 import { taskRunnerEnvironment } from '../src/runner.ts'
 import { createTask } from '../src/store.ts'
 import { createEngineWorkspaces } from '../src/workspaces.ts'
@@ -163,7 +164,12 @@ describeDb('the loop against a real repository', () => {
 
       return taskRunnerEnvironment(current?.environment ?? null)
     }
-    const dispatch = createStageDispatcher({ executor, pinnedEnvironment })
+    const stageEnvironment = createStageEnvironment({
+      pinned: pinnedEnvironment,
+      resolvesImage: (image) => backend.resolvesImage(image),
+      repin: (taskId, workspace) => service.repinEnvironment(taskId, workspace, config.image),
+    })
+    const dispatch = createStageDispatcher({ executor, stageEnvironment })
     const dispatcher: StageDispatcher = async (dispatched) => {
       await options.beforeStage?.()
 

@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   checkReviseHasFindings,
+  type FailureReason,
   parseStageResult,
   ROLE_CONTRACTS,
   type StageActivity,
@@ -14,7 +15,19 @@ import type { ExecBackend, ExecResult } from './backend.ts'
 import type { RunnerConfig } from './config.ts'
 import { editFor, type ToolUse } from './tool-edit.ts'
 
-export type RunFailure = 'timeout' | 'provider_error' | 'no_result' | 'invalid_result'
+/**
+ * How a provider run itself can end badly — the members of `FAILURE_KINDS` a
+ * run can reach, rather than a second list of them.
+ */
+export const RUN_FAILURES = [
+  'timeout',
+  'backend_error',
+  'provider_error',
+  'no_result',
+  'invalid_result',
+] as const satisfies readonly FailureReason[]
+
+export type RunFailure = (typeof RUN_FAILURES)[number]
 
 /** A run that produced no usable result. The log is the diagnosis, so it travels with the error. */
 export class StageRunError extends Error {
@@ -127,7 +140,10 @@ export async function runProviderStage(
   // Only the session id decides whether there is anything to fork; whether this
   // run is a continuation at all is `job.resume`, and the two part company when
   // the resumed node recorded no session.
-  const forkFrom = job.resume?.sessionId ?? undefined
+  //
+  // A declined attempt's own session wins over the node's: it is that session
+  // plus the turns that produced the work being corrected (REQ-209).
+  const forkFrom = job.continueSession ?? job.resume?.sessionId ?? undefined
   let coldStartReason: string | null = null
 
   let started = attempt(forkFrom)
@@ -160,6 +176,12 @@ export async function runProviderStage(
       run.durationMs,
       `no result within ${job.timeoutMs}ms`,
     )
+  }
+
+  // The exit code belongs to the client, not to the provider, which never ran:
+  // attributing it to the provider sends a reader to the wrong logs (REQ-216).
+  if (run.startFailure) {
+    throw new StageRunError('backend_error', log, run.exitCode, run.durationMs, run.startFailure)
   }
 
   const raw = await Bun.file(resultPath)

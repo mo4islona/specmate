@@ -97,7 +97,7 @@ async function dispatched(overrides: Partial<StageDispatch> = {}): Promise<Stage
   const { executor, requests } = recordingExecutor()
   const dispatcher = createStageDispatcher({
     executor,
-    pinnedEnvironment: async () => ENVIRONMENT,
+    stageEnvironment: async () => ENVIRONMENT,
   })
 
   await dispatcher(dispatchOf(overrides))

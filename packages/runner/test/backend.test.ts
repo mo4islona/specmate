@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, it, test } from 'bun:test'
 import { type ExecSpec, LineBuffer } from '../src/backend.ts'
 import {
   DOCKER_SOCKET,
@@ -77,6 +77,20 @@ describe('local backend', () => {
     const seen = (await Bun.file(record).json()) as { env: Record<string, string> }
     expect(seen.env.DATABASE_URL).toBeUndefined()
     expect(seen.env.HOME).toBeDefined()
+  })
+
+  it('reports no start failure of its own, whatever the provider exits with', async () => {
+    const workspacePath = await tempDir('local-start')
+    const backend = new LocalBackend(makeConfig())
+
+    const result = await backend.run(
+      spec({ workspacePath, env: { SPECMATE_STUB_MODE: 'client-start-failure' } }),
+    )
+
+    // The same exit code the docker client uses for a container it could not
+    // start. Here it is the provider's own, and there are no containers to fail.
+    expect(result.exitCode).toBe(125)
+    expect(result.startFailure).toBeUndefined()
   })
 
   test('cancels one exact run, settles it once, and leaves a differently labeled run alive', async () => {
@@ -211,6 +225,36 @@ describe('docker backend', () => {
   })
 })
 
+describe('image resolution', () => {
+  const IMAGE = 'specmate/runner-universal@sha256:85ebb7e8'
+
+  it('answers yes for a reference the runtime can inspect', async () => {
+    // `true` and `false` stand in for a client that resolves everything and one
+    // that resolves nothing: the exit status is the whole of the answer.
+    const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli: 'true' }))
+
+    expect(await backend.resolvesImage(IMAGE)).toBe(true)
+  })
+
+  it('answers no for one the runtime no longer has', async () => {
+    const backend = new DockerBackend(makeConfig({ backend: 'docker', dockerCli: 'false' }))
+
+    expect(await backend.resolvesImage(IMAGE)).toBe(false)
+  })
+
+  it('answers no when the runtime cannot be reached at all', async () => {
+    const backend = new DockerBackend(
+      makeConfig({ backend: 'docker', dockerCli: '/nonexistent/docker' }),
+    )
+
+    expect(await backend.resolvesImage(IMAGE)).toBe(false)
+  })
+
+  it('is yes from the in-process backend, which has no images to lose', async () => {
+    expect(await new LocalBackend(makeConfig()).resolvesImage(IMAGE)).toBe(true)
+  })
+})
+
 describe('runner image pinning', () => {
   const digest = 'a'.repeat(64)
 
@@ -312,6 +356,21 @@ describe('docker deadline', () => {
 
     expect(result.timedOut).toBe(true)
     expect(killed).toEqual(['specmate-stage-9'])
+  })
+
+  it('names a client that never reached the provider, carrying what the runtime said', async () => {
+    const workspacePath = await tempDir('docker-start')
+    const backend = new DockerBackend(
+      makeConfig({ backend: 'docker', dockerCli: STUB, forwardEnv: ['SPECMATE_STUB_MODE'] }),
+    )
+    process.env.SPECMATE_STUB_MODE = 'client-start-failure'
+
+    const result = await backend.run(
+      spec({ workspacePath, argv: [STUB], label: 'stage-unstarted' }),
+    )
+
+    expect(result.exitCode).toBe(125)
+    expect(result.startFailure).toContain('pull access denied')
   })
 
   test('a cancellable handle reaches the exact container and settles', async () => {

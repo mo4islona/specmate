@@ -217,8 +217,35 @@ describe('prompt assembly', () => {
     })
 
     expect(prompt).toContain('# Role: Researcher')
-    expect(prompt).toContain('The change folder holds none of the artifacts your role reads yet.')
+    expect(prompt).toContain('It holds none of the artifacts your role reads yet.')
     expect(prompt).toContain('No product code has changed on this branch yet.')
+  })
+
+  it('tells a role that writes artifacts which folder to write them into', async () => {
+    const { harness, params } = await setup('named-folder')
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'researcher',
+    })
+
+    expect(prompt).toContain(
+      'Write every artifact of this task into `openspec/changes/named-folder/`',
+    )
+  })
+
+  it('tells the role that names the change that the folder is renamed for it', async () => {
+    const { harness, params } = await setup('declaring-folder')
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'planner',
+    })
+
+    expect(prompt).toContain(
+      'Write every artifact of this task into `openspec/changes/declaring-folder/`',
+    )
+    expect(prompt).toContain('the folder is renamed to what you declare')
   })
 
   test('is byte-identical for the same state', async () => {

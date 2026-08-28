@@ -11,12 +11,26 @@ export async function checkWriteScope(
   workspace: Workspace,
   role: AgentRole,
   getChangedPaths: () => Promise<readonly string[]>,
+  declaredChange: string | null = null,
 ): Promise<string[]> {
   if (ROLE_CONTRACTS[role].writesCode) return []
 
-  const prefix = `${workspace.changeDir}/`
+  const folders = [`${workspace.changeDir}/`]
+  // The one role contracted to name the change is the one whose correct output
+  // can sit outside the folder this check knows about: the workspace takes the
+  // declared name only once the declaring stage is accepted (AC-243).
+  if (declaredChange && ROLE_CONTRACTS[role].declaresPlan) {
+    folders.push(`${changesRoot(workspace.changeDir)}/${declaredChange}/`)
+  }
 
-  return (await getChangedPaths()).filter((path) => !path.startsWith(prefix))
+  const changed = await getChangedPaths()
+
+  return changed.filter((path) => !folders.some((folder) => path.startsWith(folder)))
+}
+
+/** The parent of the task's change folder — `openspec/changes`, wherever it sits. */
+function changesRoot(changeDir: string): string {
+  return changeDir.slice(0, changeDir.lastIndexOf('/'))
 }
 
 /** Repo-relative paths touched since the workspace's last commit — what the filesystem shows. */

@@ -12,6 +12,7 @@ import { renderLedgerForTask, StageExecutor } from '@specmate/runner'
 import { cachePath, Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { createStageEnvironment } from './environment.ts'
 import {
   backendFor,
   providersFor,
@@ -82,6 +83,14 @@ const executor = new StageExecutor({
   ledger: (id) => renderLedgerForTask(db, config, id),
 })
 
+// The same verification a dispatched stage gets: a one-off run against a task
+// whose pinned image the host no longer has would fail on `docker run` instead.
+const stageEnvironment = createStageEnvironment({
+  pinned: async () => taskRunnerEnvironment(provisionedTask.environment),
+  resolvesImage: (image) => backend.resolvesImage(image),
+  repin: (id, ws) => workspaces.repinEnvironment(id, ws, config.image),
+})
+
 const binding = provisionedTask.modelBindings[role.data]
 
 const execution = await executor.execute({
@@ -93,7 +102,7 @@ const execution = await executor.execute({
   reasoningEffort: binding.reasoningEffort,
   workspace,
   baseBranch: workspace.baseBranch,
-  environment: taskRunnerEnvironment(provisionedTask.environment),
+  environment: await stageEnvironment(task.id, workspace),
   // One role against one workspace: there is no earlier node here to continue.
   resume: null,
 })

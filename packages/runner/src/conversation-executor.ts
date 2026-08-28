@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type {
   ConversationActionOption,
   ConversationActionProposal,
+  FailureReason,
   ModelId,
   ProviderId,
   ReasoningEffort,
@@ -21,15 +22,19 @@ import {
 import type { RunnerConfig } from './config.ts'
 import type { LedgerSource, ProviderRegistry } from './executor.ts'
 import { assemblePrompt } from './prompt.ts'
-import { type RunFailure, type StageRunError, stageLabel } from './provider-run.ts'
+import { RUN_FAILURES, type StageRunError, stageLabel } from './provider-run.ts'
 import { changedPaths, checkWriteScope } from './scope.ts'
 
-export type ConversationFailure =
-  | RunFailure
-  | 'agent_failed'
-  | 'malformed_message'
-  | 'cleanup_failed'
-  | 'scope_violation'
+/** What a run can end as, plus what a turn's own checks can decline. */
+export const CONVERSATION_FAILURES = [
+  ...RUN_FAILURES,
+  'agent_failed',
+  'malformed_message',
+  'cleanup_failed',
+  'scope_violation',
+] as const satisfies readonly FailureReason[]
+
+export type ConversationFailure = (typeof CONVERSATION_FAILURES)[number]
 
 export interface ConversationRequest {
   readonly taskId: string
