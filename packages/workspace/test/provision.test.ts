@@ -345,6 +345,63 @@ describe('scratch exclusions', () => {
     expect(committedFiles.stdout).not.toContain('.specmate')
     expect(await readFile(join(workspace.path, '.gitignore'), 'utf8')).toBe('dist/\n')
   })
+
+  it('keeps out what only the runner produces, wherever the tree it lands in', async () => {
+    // The target repository ignores none of this: pnpm relocating its store
+    // beside the project, and a core dump, are things its authors never see.
+    const origin = await makeOrigin({ 'README.md': '# origin\n' })
+    const { manager } = await makeManager()
+    const workspace = await manager.provision({
+      slug: 'runner-leftovers',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
+
+    await writeFiles(workspace.path, {
+      '.pnpm-store/v11/files/00/abcdef': 'a package',
+      'node_modules/left-pad/index.js': 'module.exports = 1',
+      'packages/core/node_modules/dep/index.js': 'module.exports = 2',
+      'core.2387': 'a crash',
+      'packages/core/src/chart.ts': 'export const chart = 1\n',
+    })
+    await manager.commitStage(workspace, STAGE)
+    const committedFiles = await new Git(manager.config).run(
+      ['show', '--name-only', '--format=', 'HEAD'],
+      { cwd: workspace.path },
+    )
+
+    expect(committedFiles.stdout).toContain('packages/core/src/chart.ts')
+    expect(committedFiles.stdout).not.toContain('.pnpm-store')
+    expect(committedFiles.stdout).not.toContain('node_modules')
+    expect(committedFiles.stdout).not.toContain('core.2387')
+  })
+
+  it('rewrites its own block rather than leaving a mirror on the list it was first given', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const request = {
+      slug: 'stale-excludes',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    }
+    const workspace = await manager.provision(request)
+    const excludePath = join(workspace.mirrorPath, 'info', 'exclude')
+
+    // What an older SpecMate wrote, under a marker with no end fence.
+    await writeFile(
+      excludePath,
+      'dist/\n\n# specmate: runner scratch — never part of a stage commit\n/RESULT.json\n/.specmate/\n',
+    )
+    await manager.provision(request)
+    const rewritten = await readFile(excludePath, 'utf8')
+
+    expect(rewritten).toContain('.pnpm-store/')
+    expect(rewritten.startsWith('dist/\n')).toBe(true)
+    // One block, not two: the old one is replaced, so `/RESULT.json` is listed once.
+    expect(rewritten.split('/RESULT.json')).toHaveLength(2)
+  })
 })
 
 describe('change folder scaffolding', () => {
