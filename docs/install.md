@@ -72,6 +72,10 @@ role's binding picks from it, and a task can only have its work checked by a dif
 wrote it when there is more than one. Change your mind later with `./install.sh --only providers`,
 then run `./install.sh` to be asked for whatever the new agent needs.
 
+The services read this at start, so on a box that is already running the step restarts the api and
+the orchestrator itself. Without that the new answer would sit in `.env` unread: every later step
+passes on a stack that is up, so nothing else would have recreated them.
+
 The runner image carries both CLIs whatever you answer, so turning the second one on costs no
 rebuild. Without a terminal — `--host` over a non-interactive ssh, or CI — the step takes
 `claude-code` and says so instead of waiting on a prompt nobody can answer.
