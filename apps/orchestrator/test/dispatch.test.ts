@@ -21,6 +21,7 @@ import type { ConversationWorkspace, Workspace } from '@specmate/workspace'
 import { mirrorKey } from '@specmate/workspace'
 import { createConversationDispatcher, createStageDispatcher } from '../src/dispatch.ts'
 import type { ConversationDispatch, StageDispatch } from '../src/engine.ts'
+import { EnvironmentUnavailableError, EnvironmentUnresolvableError } from '../src/environment.ts'
 
 /**
  * The one edge nothing used to cross: the engine's dispatch reaching the executor's
@@ -34,6 +35,8 @@ import type { ConversationDispatch, StageDispatch } from '../src/engine.ts'
 const DAG = instantiateDefinition(FEATURE_BUGFIX_PIPELINE)
 
 const ENVIRONMENT = { image: 'ghcr.io/specmate/runner@sha256:abc', toolchains: [] }
+/** What a re-pin would hand back after the deployment collected the one above. */
+const REPINNED = { image: 'ghcr.io/specmate/runner@sha256:def', toolchains: [] }
 
 const WORKSPACE = {
   slug: 'a-task',
@@ -226,7 +229,7 @@ function conversationDispatchOf(): ConversationDispatch {
   }
 }
 
-async function conversationDispatched(): Promise<ConversationRequest> {
+function recordingConversationExecutor() {
   const requests: ConversationRequest[] = []
   const executor = {
     execute: async (request: ConversationRequest) => {
@@ -236,9 +239,15 @@ async function conversationDispatched(): Promise<ConversationRequest> {
     },
   } as unknown as ConversationExecutor
 
+  return { executor, requests }
+}
+
+async function conversationDispatched(): Promise<ConversationRequest> {
+  const { executor, requests } = recordingConversationExecutor()
+
   const dispatcher = createConversationDispatcher({
     executor,
-    pinnedEnvironment: async () => ENVIRONMENT,
+    stageEnvironment: async () => ENVIRONMENT,
   })
 
   await dispatcher(conversationDispatchOf())
@@ -290,5 +299,57 @@ describe('the conversation dispatcher', () => {
       attempt: 2,
       environment: ENVIRONMENT,
     })
+  })
+
+  /**
+   * The same verified pin a stage runs on, and for the same reason. Stages
+   * self-heal around a runner image that went missing; a conversation reaching
+   * for the stored pin would run every turn of that task against a container
+   * that cannot start, and the self-healing is what hides it.
+   */
+  it('REQ-802: verifies the pin the way a stage does, and re-pins with it', async () => {
+    const asked: [string, string][] = []
+    const { executor, requests } = recordingConversationExecutor()
+    const dispatcher = createConversationDispatcher({
+      executor,
+      stageEnvironment: async (taskId, workspace) => {
+        asked.push([taskId, workspace.slug])
+
+        return REPINNED
+      },
+    })
+
+    await dispatcher(conversationDispatchOf())
+
+    expect(asked).toEqual([[TASK.id, CONVERSATION_WORKSPACE.slug]])
+    expect(requests[0]?.environment).toEqual(REPINNED)
+  })
+
+  it('AC-818: fails the turn rather than running an image the host does not have', async () => {
+    const { executor, requests } = recordingConversationExecutor()
+    const dispatcher = createConversationDispatcher({
+      executor,
+      stageEnvironment: async () => {
+        throw new EnvironmentUnresolvableError(ENVIRONMENT.image, 'no such image')
+      },
+    })
+
+    const execution = await dispatcher(conversationDispatchOf())
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('backend_error')
+    expect(requests).toHaveLength(0)
+  })
+
+  it('REQ-613: reports a runtime that did not answer as worth asking again', async () => {
+    const { executor } = recordingConversationExecutor()
+    const dispatcher = createConversationDispatcher({
+      executor,
+      stageEnvironment: async () => {
+        throw new EnvironmentUnavailableError('Cannot connect to the Docker daemon.')
+      },
+    })
+
+    expect((await dispatcher(conversationDispatchOf())).failure).toBe('backend_unavailable')
   })
 })

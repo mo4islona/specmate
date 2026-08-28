@@ -1,12 +1,13 @@
 import {
   type Caps,
   collapseWhitespace,
+  isFailureReason,
   type ReviewFinding,
   type ReviewVerdict,
   renderFindingBullets,
   type SpecConvention,
 } from '@specmate/core'
-import { type Database, feedback, iterations, stages, tasks } from '@specmate/db'
+import { type Database, feedback, iterations, runGraphs, stages, tasks } from '@specmate/db'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { RunnerConfig } from './config.ts'
 import { renderRejection, type StageRejection } from './rejection.ts'
@@ -32,7 +33,16 @@ export interface LedgerGateComment {
   readonly comment: string
 }
 
+/**
+ * Who the ledger is being assembled for. A conversation turn is not an attempt
+ * at the node the task stands on, so a rejection recorded there is not its to
+ * answer — and telling a read-only answerer it exists to make a correction is
+ * how the same section came to fire in the one place it must not.
+ */
+export type LedgerAudience = 'stage' | 'conversation'
+
 export interface LedgerSnapshot {
+  readonly audience: LedgerAudience
   readonly title: string
   /** The owner's own words the task was launched with; the title stands in when absent. */
   readonly ask: string
@@ -70,7 +80,11 @@ export interface LedgerSnapshot {
   readonly lastRejection: StageRejection | null
 }
 
-export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<LedgerSnapshot> {
+export async function loadLedgerSnapshot(
+  db: Database,
+  taskId: string,
+  audience: LedgerAudience = 'stage',
+): Promise<LedgerSnapshot> {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1)
   if (!task) throw new TaskNotFoundError(taskId)
 
@@ -112,23 +126,57 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
       )
       .orderBy(desc(stages.finishedAt))
       .limit(1),
-    // Only the most recent row at the node the task stands on: a node revisited
-    // by a loop must not be told about a rejection an accepted run has since
-    // answered, and a failure at another node is not this one's to fix.
+    // Only the most recent settled row at the node the task stands on, in the
+    // graph the task runs now. Settled because `claim()` inserts this attempt's
+    // own `running` row before the dispatcher renders any of this, and that row
+    // would otherwise be the one found — the section would then never fire on
+    // the re-dispatch it exists for. Scoped to the graph because attempts are
+    // numbered per graph, so a replan restarts the node at 0 and a superseded
+    // graph's attempt 3 would outrank it. A node revisited by a loop still must
+    // not be told about a rejection an accepted run has since answered, which is
+    // why the succeeded rows stay in and the status is read below rather than
+    // filtered on.
     db
       .select({ status: stages.status, attempt: stages.attempt, cost: stages.cost })
       .from(stages)
-      .where(and(eq(stages.taskId, taskId), eq(stages.nodeKey, task.status)))
+      .where(
+        and(
+          eq(stages.taskId, taskId),
+          eq(stages.nodeKey, task.status),
+          inArray(stages.status, ['succeeded', 'failed']),
+          eq(
+            stages.graphId,
+            db
+              .select({ id: runGraphs.id })
+              .from(runGraphs)
+              .where(eq(runGraphs.taskId, taskId))
+              .orderBy(desc(runGraphs.version))
+              .limit(1),
+          ),
+        ),
+      )
       .orderBy(desc(stages.attempt))
       .limit(1),
   ])
   const harnessEvidence = probeRows[0]?.result?.harness_coverage?.evidence_md ?? null
 
-  const previous = nodeAttempts[0]
+  const previous = audience === 'stage' ? nodeAttempts[0] : undefined
   const rejected = previous?.status === 'failed' ? (previous.cost.failure ?? null) : null
+  // `orphaned`, `crash` and the `stageDefect` enums also land in this payload and
+  // are not members of the vocabulary. They describe something the harness did,
+  // not something the run got wrong, and rendering one would print a bare
+  // identifier under a sentence demanding it be corrected.
   const lastRejection: StageRejection | null =
-    previous && rejected
-      ? { attempt: previous.attempt, reason: rejected.reason, detail: rejected.detail ?? null }
+    previous && rejected && isFailureReason(rejected.reason)
+      ? {
+          attempt: previous.attempt,
+          reason: rejected.reason,
+          detail: rejected.detail ?? null,
+          // `failAttempt` discards the tree back to the stage's last commit
+          // before the next tick re-dispatches, so by the time this is read it
+          // has always happened.
+          workspaceReset: true,
+        }
       : null
 
   const [origin] = task.originTaskId
@@ -152,6 +200,7 @@ export async function loadLedgerSnapshot(db: Database, taskId: string): Promise<
     }))
 
   return {
+    audience,
     title: task.title,
     ask: task.description?.trim() || task.title,
     slug: task.slug,
@@ -242,13 +291,6 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
     )
   }
 
-  lines.push('', '## Previous attempt at this stage', '')
-  if (!snapshot.lastRejection) {
-    lines.push('No earlier attempt at this stage was rejected.')
-  } else {
-    lines.push(...renderRejection(snapshot.lastRejection))
-  }
-
   // Interventions are live guidance for the run about to start; gate comments
   // are history. Interventions come first so an unbounded gate-comment history
   // is what truncate() cuts first, not the guidance this attempt needs.
@@ -261,6 +303,18 @@ export function renderLedger(config: RunnerConfig, snapshot: LedgerSnapshot): st
         `- Intervention ${intervention.id}: ${intervention.instruction}`,
         `  Target: ${JSON.stringify(intervention.target ?? {})}`,
       )
+    }
+  }
+
+  // After the interventions and before the gate comments, for the same reason
+  // they are in that order: this is guidance the attempt needs, the owner's own
+  // direction outranks it, and the history below is what a cut may take.
+  if (snapshot.audience === 'stage') {
+    lines.push('', '## Previous attempt at this stage', '')
+    if (!snapshot.lastRejection) {
+      lines.push('No earlier attempt at this stage was rejected.')
+    } else {
+      lines.push(...renderRejection(snapshot.lastRejection))
     }
   }
 
@@ -282,8 +336,9 @@ export async function renderLedgerForTask(
   db: Database,
   config: RunnerConfig,
   taskId: string,
+  audience: LedgerAudience = 'stage',
 ): Promise<string> {
-  return renderLedger(config, await loadLedgerSnapshot(db, taskId))
+  return renderLedger(config, await loadLedgerSnapshot(db, taskId, audience))
 }
 
 /**

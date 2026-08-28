@@ -22,7 +22,7 @@ import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
 import { RUN_FAILURES, type StageRunError, stageLabel } from './provider-run.ts'
 import type { StageRejection } from './rejection.ts'
-import { changedPaths, checkWriteScope } from './scope.ts'
+import { changedPaths, changesRoot, checkWriteScope } from './scope.ts'
 
 /** Injected rather than a database handle: the ledger is text by the time a stage sees it. */
 export type LedgerSource = (taskId: string) => Promise<string>
@@ -33,9 +33,11 @@ const MAX_ATTEMPTS = 2
 /** What a run can end as, plus what the executor's own checks can decline. */
 export const STAGE_FAILURES = [
   ...RUN_FAILURES,
+  'backend_unavailable',
   'scope_violation',
   'agent_failed',
   'uncorroborated',
+  'uncheckable_verdict',
   'incomplete_brief',
 ] as const satisfies readonly FailureReason[]
 
@@ -192,6 +194,7 @@ export class StageExecutor {
             attempt,
             reason: outcome.record.failure,
             detail: outcome.record.detail ?? null,
+            workspaceReset: false,
           },
           sessionId: declined ? (outcome.sessionId ?? null) : null,
         }
@@ -207,7 +210,18 @@ export class StageExecutor {
 
       // Only before another try: a stage that has run out of attempts leaves its
       // working tree as it was, which is what a human will be asked to look at.
-      if (i < MAX_ATTEMPTS - 1) await this.deps.workspaces.discard(request.workspace)
+      if (i < MAX_ATTEMPTS - 1) {
+        await this.deps.workspaces.discard(request.workspace)
+        // The continued session's transcript says it wrote those files; after
+        // this they are gone. An attempt that is not told so writes only the
+        // correction and leaves the change folder half-built.
+        if (previous) {
+          previous = {
+            ...previous,
+            rejection: { ...previous.rejection, workspaceReset: true },
+          }
+        }
+      }
     }
 
     const last = attempts.at(-1)
@@ -294,7 +308,10 @@ export class StageExecutor {
       request.workspace,
       request.role,
       getChangedPaths,
-      declaredChangeName(request.role, outcome.result),
+      await this.ownDeclaredChange(
+        request.workspace,
+        declaredChangeName(request.role, outcome.result),
+      ),
     )
     if (violations.length > 0) {
       return {
@@ -377,12 +394,15 @@ export class StageExecutor {
         sessionId: outcome.sessionId,
       }
     }
+    // Not `invalid_result`: the result parsed, and cleared scope, self-report and
+    // brief before reaching here. What could not be read is the verdict's own
+    // evidence, and the reasoning that produced the result is worth handing back.
     if (corroboration.kind === 'invalid') {
       return {
         record: {
           attempt,
           ok: false,
-          failure: 'invalid_result',
+          failure: 'uncheckable_verdict',
           detail: corroboration.detail,
           durationMs: outcome.durationMs,
         },
@@ -413,6 +433,24 @@ export class StageExecutor {
       sessionId: outcome.sessionId,
       coldStartReason: outcome.coldStartReason,
     }
+  }
+
+  /**
+   * The declared name only where it is this task's folder to write into. A name
+   * the repository already keeps a change under is another change's: convergence
+   * suffixes this task's folder away from it (AC-742), so anything written there
+   * would be committed into work that is not this task's.
+   */
+  private async ownDeclaredChange(
+    workspace: Workspace,
+    declared: string | null,
+  ): Promise<string | null> {
+    if (!declared) return null
+
+    const folder = `${changesRoot(workspace.changeDir)}/${declared}`
+    const tracked = await this.deps.git.tryRun(['ls-files', '--', folder], { cwd: workspace.path })
+
+    return tracked.exitCode === 0 && tracked.stdout.trim().length > 0 ? null : declared
   }
 }
 

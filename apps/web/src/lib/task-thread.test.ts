@@ -149,7 +149,10 @@ describe('decision timeline events', () => {
 
   it.each([
     ['scope_violation', 'The run changed files its role may not touch.'],
-    ['backend_error', 'The run could not be started.'],
+    [
+      'backend_error',
+      'The run could not be started: its image is missing on the host that must run it.',
+    ],
   ])('reads the failure %s as the sentence its table entry carries', (reason, sentence) => {
     const event = timelineEvent({
       type: 'stage.failed',
@@ -620,7 +623,9 @@ describe('buildStepFeed (REQ-919, REQ-915)', () => {
       nodeKey: 'implement',
     })
 
-    expect(feed[0]?.kind === 'line' && feed[0].target).toBe('The run could not be started.')
+    expect(feed[0]?.kind === 'line' && feed[0].target).toBe(
+      'The run could not be started: its image is missing on the host that must run it.',
+    )
   })
 
   test('a message belongs to the step the task stood on when it was written', () => {

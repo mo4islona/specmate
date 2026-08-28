@@ -3,10 +3,11 @@
 This is a working note, not a change. It records a class of defect found while watching real
 runs: a stage ends badly, and the harness does the same thing regardless of why — discard the
 tree, drop the session, run the same prompt again, say nothing to the agent about what was wrong
-with the last one. Four production failures in one week were instances of it.
+with the last one.
 
-The change that closes it is `openspec/changes/recoverable-stage-failures`. This note keeps the
-analysis and the arithmetic; the vocabulary itself is in the code.
+The change that closed it is `openspec/changes/archive/2026-08-29-recoverable-stage-failures`.
+This note keeps the analysis and the arithmetic; the vocabulary itself is in the code, and the
+behaviour it settled is in the living specs.
 
 ## 1. The distinction the harness did not draw
 
@@ -53,14 +54,14 @@ What was there before was three of them: `RunFailure`, `StageFailure` and `Conve
 as bare unions of string literals in two files, already drifted apart — the conversation list
 carried two members neither of the others had and lacked two the stage list did.
 
-## 4. The four runs that produced this note
+## 4. The cases that produced this note
 
-**The pinned runner image stopped existing.** A task pins its image by digest at first provision
-(REQ-802). The image is built on the deployment host and published nowhere, so the pinned digest
-is a manifest digest that lives on exactly one machine; a deploy that rebuilds the image moves
-the tag and collects the old manifest. Every later stage of that task then died before its
-container started. It cannot be undone by rebuilding — a digest is a content address — and the
-pin is a column, so the only cure was an `UPDATE`.
+**A pinned runner image stopped resolving.** A task pins its image by digest at first provision
+(REQ-802). A digest addresses content, which makes it a stable reference only where that content
+is still present: where the image is not resolved through a registry, the pin holds until the
+image it names is superseded, and then names nothing. Every later stage of such a task dies
+before its container starts, and no rebuild reproduces the digest — so the task cannot recover on
+its own, because the pin is stored state rather than something a run re-derives.
 
 **That failure was recorded against the provider.** `docker run` exits 125 when the client cannot
 start the container at all. The stage recorded `provider_error` — "provider exited 125 and left
@@ -76,8 +77,9 @@ having modified product code. Its proposal was correct.
 
 ## 5. Status
 
-Closed by `openspec/changes/recoverable-stage-failures`, which is implemented and not archived,
-so its deltas are still readable next to the code that satisfies them:
+Closed by `recoverable-stage-failures`, archived, its deltas merged into `agent-execution`
+(REQ-208, REQ-209, REQ-216, REQ-217), `execution-environment` (REQ-802) and `task-lifecycle`
+(REQ-613):
 
 - A pin is verified before it is used, and an unresolvable one is recovered by a re-pin recorded
   on the task (REQ-802).
@@ -89,7 +91,7 @@ so its deltas are still readable next to the code that satisfies them:
 
 Left deliberately open, each named as a non-goal in the change:
 
-- The runner image is still published nowhere. A registry would make the pin resolvable by
+- The pin is still not resolved through a registry. Doing so would make it resolvable by
   construction; the recovery path stays worth having either way, because an image can be absent
   for reasons a registry does not fix.
 - Only the image is recovered. An unavailable toolchain version is a different failure with a

@@ -177,7 +177,7 @@ describeDb('the loop against a real repository', () => {
     }
     const conversationDispatcher = createConversationDispatcher({
       executor: conversationExecutor,
-      pinnedEnvironment,
+      stageEnvironment,
     })
 
     return new Engine({

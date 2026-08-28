@@ -30,12 +30,19 @@ export const FAILURE_KINDS = {
     retryable: true,
     sentence: 'The run did not finish inside its time limit.',
   },
-  // The one failure re-running cannot change: the same image on the same host
-  // is missing the second time too.
+  // The one failure re-running cannot change: the image the host must run is
+  // absent, and it is absent the second time too. A runtime that merely could
+  // not be asked is `backend_unavailable` — a "no" and an unanswered question
+  // are different facts, and only the first one is settled.
   backend_error: {
     producedResult: false,
     retryable: false,
-    sentence: 'The run could not be started.',
+    sentence: 'The run could not be started: its image is missing on the host that must run it.',
+  },
+  backend_unavailable: {
+    producedResult: false,
+    retryable: true,
+    sentence: 'The run could not be started: the container runtime did not answer.',
   },
   provider_error: {
     producedResult: false,
@@ -72,6 +79,15 @@ export const FAILURE_KINDS = {
     retryable: true,
     sentence: 'The run approved what its own report does not support.',
   },
+  // Sibling of `uncorroborated`, and `producedResult` for the same reason: the
+  // result parsed and cleared every check before this one, so the reasoning
+  // that produced it is worth handing back. Distinct from `invalid_result`,
+  // which is an envelope nobody could read.
+  uncheckable_verdict: {
+    producedResult: true,
+    retryable: true,
+    sentence: 'The run left a verdict the harness could not check against its report.',
+  },
   malformed_message: {
     producedResult: false,
     retryable: true,
@@ -87,7 +103,8 @@ export const FAILURE_KINDS = {
 export type FailureReason = keyof typeof FAILURE_KINDS
 
 export function isFailureReason(value: string): value is FailureReason {
-  return value in FAILURE_KINDS
+  // `hasOwn`, not `in`: `constructor` and `toString` are reasons no run ever had.
+  return Object.hasOwn(FAILURE_KINDS, value)
 }
 
 /**

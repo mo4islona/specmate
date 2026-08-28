@@ -9,10 +9,17 @@ default image, detection rules, or repository declarations MUST NOT affect a tas
 Changing a task's pinned environment SHALL be an explicit, recorded operation.
 
 A pin SHALL be verified to be resolvable on the host that must run it before a stage is
-dispatched against it. Where the pinned runner image cannot be resolved there, the task's
-environment SHALL be re-pinned to the environment the deployment currently runs, and that
-substitution SHALL be recorded on the task as the explicit operation above. A pin that resolves
-MUST NOT be re-pinned, whatever the configured default has since become.
+dispatched against it. Where the pinned runner image cannot be resolved there, the task's runner
+image SHALL be re-pinned to the one the deployment currently runs, and that substitution SHALL be
+recorded on the task as the explicit operation above. The task's pinned toolchains SHALL be
+carried across unchanged: a re-pin recovers the image alone, and re-deriving toolchains from the
+working tree would read the task's own in-flight change. A pin that resolves MUST NOT be
+re-pinned, whatever the configured default has since become.
+
+Only a host that answers decides this. Where the host cannot be asked whether the image resolves,
+nothing about the pin SHALL be treated as established: the task MUST NOT be re-pinned, its
+recorded pin SHALL be left as it was, and the stage SHALL fail in a way that a further attempt
+may still resolve.
 
 #### Scenario: AC-805 — Mutable image reference is resolved
 
@@ -53,3 +60,13 @@ MUST NOT be re-pinned, whatever the configured default has since become.
 
 - **WHEN** the pinned runner image cannot be resolved and neither can the environment the deployment currently runs
 - **THEN** the stage SHALL fail naming the unresolvable image, and the task's recorded pin SHALL be left as it was
+
+#### Scenario: AC-819 — A re-pin recovers the image alone
+
+- **WHEN** a task whose pinned runner image cannot be resolved is re-pinned, and its working tree declares toolchain versions other than the ones it is pinned to
+- **THEN** the new pin SHALL carry the task's own pinned toolchain versions unchanged
+
+#### Scenario: AC-820 — The host cannot be asked
+
+- **WHEN** a stage is dispatched and whether the pinned runner image resolves cannot be determined on the host that must run it
+- **THEN** the task SHALL NOT be re-pinned, its recorded pin SHALL be left as it was, and the stage's failure SHALL be one a further attempt may still resolve

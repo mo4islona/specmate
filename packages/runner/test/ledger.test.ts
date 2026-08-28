@@ -4,6 +4,7 @@ import { type LedgerSnapshot, renderLedger } from '../src/ledger.ts'
 import { makeConfig } from './fixtures.ts'
 
 const BASE: LedgerSnapshot = {
+  audience: 'stage',
   title: 'Fix the reorg bug in the ingester',
   ask: 'Fix the reorg bug in the ingester',
   slug: 'fix-reorg',
@@ -53,13 +54,54 @@ describe('ledger', () => {
         attempt: 0,
         reason: 'scope_violation',
         detail: 'role planner may not modify product code but changed: src/app.ts',
+        workspaceReset: true,
       },
     })
 
-    expect(ledger).toContain(
-      'Attempt 0 was rejected: The run changed files its role may not touch.',
-    )
+    expect(ledger).toContain('Attempt 0 ended: The run changed files its role may not touch.')
     expect(ledger).toContain('- What was wrong: role planner may not modify product code')
+    expect(ledger).toContain('That is the correction to make')
+    expect(ledger).toContain('taken back to the last accepted commit')
+  })
+
+  it('REQ-217: does not ask a run that produced nothing to correct itself', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      lastRejection: { attempt: 1, reason: 'timeout', detail: null, workspaceReset: true },
+    })
+
+    expect(ledger).toContain('Attempt 1 ended: The run did not finish inside its time limit.')
+    expect(ledger).not.toContain('That is the correction to make')
+    expect(ledger).toContain('do the work again from the start')
+  })
+
+  it('REQ-217: leaves the section out for a conversation turn', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      audience: 'conversation',
+      lastRejection: null,
+    })
+
+    expect(ledger).not.toContain('## Previous attempt at this stage')
+  })
+
+  it('REQ-217: keeps the owner’s interventions ahead of an unbounded detail', () => {
+    const ledger = renderLedger(makeConfig(), {
+      ...BASE,
+      interventions: [{ id: 'iv-1', instruction: 'Leave the migration alone', target: null }],
+      lastRejection: {
+        attempt: 0,
+        reason: 'scope_violation',
+        detail: Array.from({ length: 4000 }, (_, i) => `node_modules/pkg-${i}/index.js`).join(', '),
+        workspaceReset: true,
+      },
+    })
+
+    expect(ledger).toContain('Leave the migration alone')
+    expect(ledger.indexOf('## Confirmed interventions')).toBeLessThan(
+      ledger.indexOf('## Previous attempt at this stage'),
+    )
+    expect(ledger).toContain('[truncated: the detail exceeded 2000 bytes and was cut here]')
   })
 
   test('carries the previous round’s findings', () => {

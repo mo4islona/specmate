@@ -371,12 +371,28 @@ export class WorkspaceManager {
     // A name the repository has already used for something else is not this
     // task's to write into, and the two sharing one folder is the failure
     // (AC-742). The task's own identity is what separates them.
-    const taken = await isDirectory(join(path, changeDir(changeName)))
+    //
+    // Tracked, not merely present: the declaring run is now allowed to write
+    // into the folder it names, so a folder it just created is this task's own.
+    // Reading that as a collision suffixes the destination away from the
+    // artifacts sitting in it, and both folders are then committed — one of
+    // them holding nothing but the schema marker, and it the one the task goes
+    // on to call its own.
+    const taken = await this.isTracked(path, changeDir(changeName))
     const declared = taken ? `${changeDir(changeName)}-${slug.slice(-8)}` : changeDir(changeName)
 
     // Renaming a folder already in the history would rewrite paths the stage
     // results and artifact rows point at; the provisional name stands.
     if (await this.isTracked(path, provisional)) return provisional
+
+    // The run may have created the declared folder itself. `git mv` and `rename`
+    // both refuse a destination that exists, so the two are merged: what the run
+    // wrote stands, and the provisional's scaffolding fills what it left out.
+    if (await isDirectory(join(path, declared))) {
+      await this.mergeChangeDir(join(path, provisional), join(path, declared))
+
+      return declared
+    }
 
     const moved = await this.git.tryRun(['mv', provisional, declared], { cwd: path })
     if (moved.exitCode !== 0) {
@@ -385,6 +401,16 @@ export class WorkspaceManager {
     }
 
     return declared
+  }
+
+  /** Only what the destination does not already have; then the source is gone. */
+  private async mergeChangeDir(from: string, to: string): Promise<void> {
+    for (const entry of await readdir(from)) {
+      if (await pathExists(join(to, entry))) continue
+      await rename(join(from, entry), join(to, entry))
+    }
+
+    await rm(from, { recursive: true, force: true })
   }
 
   private async isTracked(path: string, folder: string): Promise<boolean> {

@@ -1,4 +1,5 @@
 import type { ExecutionEnvironment } from '@specmate/core'
+import { ContainerRuntimeUnavailableError } from '@specmate/runner'
 import type { Workspace } from '@specmate/workspace'
 
 /**
@@ -16,6 +17,19 @@ export class EnvironmentUnresolvableError extends Error {
       `the pinned runner image ${image} cannot be resolved on this host, and neither can the one this deployment runs: ${detail}`,
     )
     this.name = 'EnvironmentUnresolvableError'
+  }
+}
+
+/**
+ * The host could not be asked whether the pin resolves, so nothing about the pin
+ * has been established. Distinct from `EnvironmentUnresolvableError`, which is
+ * an answer: a daemon mid-restart is a wait, a missing image is a re-pin, and
+ * only the second is settled enough to end a task on.
+ */
+export class EnvironmentUnavailableError extends Error {
+  constructor(readonly detail: string) {
+    super(`the environment for this stage could not be established: ${detail}`)
+    this.name = 'EnvironmentUnavailableError'
   }
 }
 
@@ -50,11 +64,29 @@ export interface StageEnvironmentDeps {
 export function createStageEnvironment(deps: StageEnvironmentDeps): StageEnvironment {
   return async (taskId, workspace) => {
     const pinned = await deps.pinned(taskId)
-    if (await deps.resolvesImage(pinned.image)) return pinned
+
+    let resolves: boolean
+    try {
+      resolves = await deps.resolvesImage(pinned.image)
+    } catch (error) {
+      // The runtime did not answer. Re-pinning here would spend the pin on an
+      // outage, and failing the task would end a healthy one for a restart that
+      // overlapped it — so this reports a wait and the attempt cap decides.
+      if (error instanceof ContainerRuntimeUnavailableError) {
+        throw new EnvironmentUnavailableError(error.message)
+      }
+
+      throw error
+    }
+    if (resolves) return pinned
 
     try {
       return await deps.repin(taskId, workspace)
     } catch (error) {
+      if (error instanceof ContainerRuntimeUnavailableError) {
+        throw new EnvironmentUnavailableError(error.message)
+      }
+
       throw new EnvironmentUnresolvableError(pinned.image, (error as Error).message)
     }
   }

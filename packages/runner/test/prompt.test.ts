@@ -248,6 +248,23 @@ describe('prompt assembly', () => {
     expect(prompt).toContain('the folder is renamed to what you declare')
   })
 
+  /**
+   * `writes` is non-empty for every role that writes source too — an implementer
+   * writes the tasks artifact — so gating on it told the one role that must edit
+   * `src/` to put everything in the change folder instead.
+   */
+  it('does not send a role that writes source into the change folder with it', async () => {
+    const { harness, params } = await setup('code-folder')
+
+    const prompt = await assemblePrompt(harness.git, makeConfig(), {
+      ...params,
+      role: 'implementer',
+    })
+
+    expect(prompt).not.toContain('Write every artifact of this task into')
+    expect(prompt).toContain('product code belongs where the repository already keeps it')
+  })
+
   test('is byte-identical for the same state', async () => {
     const { harness, params } = await setup('deterministic')
     await writeFiles(harness.workspace.path, {

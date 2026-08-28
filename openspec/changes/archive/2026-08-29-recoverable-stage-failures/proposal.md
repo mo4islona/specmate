@@ -2,15 +2,15 @@
 
 Roadmap phase: operational hardening of Phase 5's execution path, alongside `codex-provider`.
 
-Four failures observed in production this week share one shape: the stage was failed for
-something the run itself did not do, and the harness then paid a full cold re-run — sometimes
-four of them — to arrive at the same place.
+Several observed failures share one shape: the stage was failed for something the run itself did
+not do, and the harness then paid a full cold re-run — sometimes four of them — to arrive at the
+same place.
 
-**The pinned runner image stopped existing.** A task pins its image by digest at first provision,
-and REQ-802 makes that binding. But the image is built on the deployment host and published
-nowhere, so under Docker's containerd image store the pinned digest is a manifest digest that
-lives on exactly one machine. A deploy that rebuilds the image moves the tag and the old manifest
-is collected. Every stage of that task then dies before its container starts:
+**A pinned runner image stops resolving.** A task pins its image by digest at first provision, and
+REQ-802 makes that binding. A digest addresses content, which makes it a stable reference only
+where that content is still present — so where the image is not resolved through a registry, the
+pin holds until the image it names is superseded, and then names nothing. Every stage of that
+task then dies before its container starts:
 
 ```
 Unable to find image 'specmate/runner-universal@sha256:85ebb7e8…' locally
@@ -19,10 +19,9 @@ docker: Error response from daemon: pull access denied for specmate/runner-unive
 ```
 
 It cannot be undone by rebuilding — a digest is a content address, and the image is built from a
-moving base with packages from a mirror, so no rebuild reproduces it — and there is nothing to
-re-tag, because the manifest is gone rather than dangling. `repinEnvironment` was written for
-exactly this and has no caller outside tests, so the only cure is an `UPDATE` against the
-database.
+moving base, so no rebuild reproduces it — and there is nothing to re-tag, because the manifest
+is gone rather than dangling. `repinEnvironment` was written for exactly this and has no caller
+outside tests, so a task in that state cannot recover on its own.
 
 **That failure was attributed to the provider.** `docker run` exits 125 when the client cannot
 start the container at all. The stage recorded `provider_error` — "provider exited 125 and left
@@ -100,7 +99,7 @@ failed for naming its own folder reads as `scope violation` and nothing else.
   process it ran was the provider or a client that never got that far; the write-scope check
   takes the declared change folder; a rejected attempt's session and rejection travel out of the
   executor instead of being dropped.
-- `packages/workspace`: `repinEnvironment` gains its production caller.
+- `packages/workspace`: `repinEnvironment` gains its first caller outside tests.
 - `apps/orchestrator`: dispatch verifies the pin and re-pins through the workspace service; the
   rejection of the previous attempt reaches the next one's ledger; the cap check consults whether
   the failure is retryable.

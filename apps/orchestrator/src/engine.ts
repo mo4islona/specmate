@@ -27,6 +27,7 @@ import {
   type ExecutionUsage,
   escalationForPark,
   evaluateCondition,
+  failureSentence,
   forwardTarget,
   type GateNode,
   type HarnessCoverageAssessment,
@@ -1331,13 +1332,18 @@ export class Engine {
     const reason = defect?.reason ?? 'missing_message'
     const detail = defect?.detail
     const attempts = [...response.telemetry, telemetry]
-    if (attempts.length >= CONVERSATION_ATTEMPT_CAP) {
+    // The cap is for a turn that might go differently. A run whose container
+    // could not be started goes the same way every time, and spending the cap on
+    // it only delays telling the owner (REQ-613).
+    if (attempts.length >= CONVERSATION_ATTEMPT_CAP || !isRetryable(reason)) {
       await this.deps.db.transaction(async (tx) => {
         await tx
           .update(conversationMessages)
           .set({
             status: 'failed',
-            failureReason: detail ? `${reason}: ${detail}` : reason,
+            // A sentence, not the identifier: this string is rendered to the
+            // owner verbatim, and `backend_error` is not something to read.
+            failureReason: renderConversationFailure(reason, detail),
             telemetry: attempts,
             updatedAt: finishedAt,
           })
@@ -3850,6 +3856,19 @@ function conversationDefect(execution: ConversationExecution): ConversationDefec
   }
 
   return null
+}
+
+/**
+ * What the owner reads when a turn could not be answered. The reason is an
+ * identifier — `missing_message`, `backend_error` — and the vocabulary already
+ * carries a sentence for the ones it knows; `unknown` and the engine's own
+ * enums keep the identifier, which is at least honest about being one.
+ */
+function renderConversationFailure(reason: string, detail: string | undefined): string {
+  const sentence = failureSentence(reason)
+  if (!sentence) return detail ? `${reason}: ${detail}` : reason
+
+  return detail ? `${sentence} ${detail}` : sentence
 }
 
 interface ConversationUsageInput {

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { ExecutionEnvironment, ProviderId } from '@specmate/core'
+import type { ExecutionEnvironment, ProviderId, ResolvedToolchain } from '@specmate/core'
 import type { BackendId } from './config.ts'
 
 export interface ExecLimits {
@@ -60,15 +60,40 @@ export interface ExecHandle {
   cancel(): Promise<void>
 }
 
+/**
+ * The runtime could not be asked, which is not the same fact as an answer of no.
+ * A missing image is settled and re-running changes nothing; a daemon that is
+ * restarting is neither, and treating the two alike ends a healthy task for a
+ * deploy that happened to overlap it.
+ */
+export class ContainerRuntimeUnavailableError extends Error {
+  constructor(detail: string) {
+    super(`the container runtime could not be reached: ${detail}`)
+    this.name = 'ContainerRuntimeUnavailableError'
+  }
+}
+
 export interface ExecBackend {
   readonly id: BackendId
   start(spec: ExecSpec): ExecHandle
   run(spec: ExecSpec): Promise<ExecResult>
   resolveEnvironment(workspacePath: string, image: string): Promise<ExecutionEnvironment>
   /**
+   * The image half of `resolveEnvironment`, for a task whose toolchains are
+   * already pinned. Re-detecting them would read the working tree as the task's
+   * own committed change has left it, so a task that bumps `.tool-versions`
+   * would rewrite its own pin from the file it is in the middle of changing —
+   * the drift REQ-802 exists to prevent.
+   */
+  repinImage(image: string, toolchains: readonly ResolvedToolchain[]): Promise<ExecutionEnvironment>
+  /**
    * Whether this image reference can be resolved on the host that would run it.
    * A reference that was immutable when it was written is not a reference that
    * still resolves, and only the backend knows what resolving means for it.
+   *
+   * `false` is an answer. A runtime that could not be asked at all raises
+   * `ContainerRuntimeUnavailableError` instead, because the caller's response to
+   * the two differs: one re-pins the task, the other waits.
    */
   resolvesImage(image: string): Promise<boolean>
   /**

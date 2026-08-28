@@ -88,12 +88,30 @@ when it does.
 Before dispatch, not inside the run. Inside the run it is one more thing that fails after the
 container has been asked for, and the diagnosis arrives as a docker error again. Before dispatch
 the orchestrator still holds the workspace and the task row, which is what `repinEnvironment`
-needs — it re-resolves toolchains against the workspace, so it cannot be called from the runner,
-which has neither.
+needs; the runner has neither.
+
+The recovery is the image and nothing else. `resolveEnvironment` also detects toolchains, and it
+detects them from the working tree — which at provision time is the base commit and at re-pin
+time is the task branch. A task that edits `.tool-versions` is a task whose re-pin would read the
+declarations its own unmerged change introduced, and pin itself to them. That is the drift
+REQ-802 exists to prevent, so the re-pin carries the task's recorded toolchains across and asks
+the backend only to resolve the image and install what the task already has.
 
 Resolution is asked of the backend rather than assumed of docker: the two backends answer it
 differently, and the in-process backend has no images at all, so the question has to be one each
 backend answers for itself.
+
+### A "no" and an unanswered question
+
+The re-pin drops the guarantee REQ-802 exists for, so it must rest on an answer. "Anything short
+of success is no" does not give one: a daemon mid-restart, a socket that refused, a client that
+is not installed all look exactly like an image that is gone. Under a deploy — the one moment the
+recovery is most likely to fire — they are also the most likely to occur.
+
+So the backend answers three ways, not two: yes, no, and *could not be asked*. Only "no" re-pins.
+"Could not be asked" establishes nothing, so the pin is left exactly as it was and the stage
+fails with a reason another attempt may still resolve — which is the same distinction the cap
+change below rests on, applied one layer earlier.
 
 ## A run that never started
 
@@ -107,6 +125,13 @@ The separation is a backend concern, so the backend reports it: the exec result 
 process that exited was the provider or a client that never reached it. Reading docker's exit
 numbering in the stage-run layer would put container semantics into code that also serves a
 backend with no containers in it.
+
+The exit code alone cannot make that call, though, and this is the trap the first cut fell into.
+`docker run` propagates the container's status and the entrypoint propagates the provider's, so a
+provider CLI that shells out to something missing exits 127 through both — and would be recorded
+as a runtime fault that spends none of the attempts the disagreement was worth. What separates
+them is not the number but whether anything inside the container ran, so the entrypoint says so
+before it can fail, and the backend reads that rather than guessing from the status.
 
 This is also the precondition for the cap change below. "The container could not be started" is
 the clearest case of a failure that running the same thing again cannot fix, and nothing
@@ -136,9 +161,22 @@ about to live in. Doing only the prompt fix leaves a check that fails correct wo
 agent reasons its way back to the same conclusion; doing only the check fix leaves a role file
 that describes a folder nobody asked it to create.
 
-The check does not widen further. The accepted set is the current change folder plus the one the
-result declares, and only for a role whose contract declares plans. Everything else outside the
-folder is still a violation.
+The check does not widen further, and the widening is bounded at both ends. The accepted set is
+the current change folder plus the one the result declares, only for a role whose contract
+declares plans, only while the folder still stands under its provisional name, and never a name
+the repository already keeps a change under. The last two are what keep this from re-opening
+AC-742: a name declared after the task has converged is not a folder it is about to take, and a
+name another change already occupies is a folder convergence will suffix this task away from —
+so anything written there would be committed into work that is not this task's.
+
+Convergence had to learn the same thing from the other side. It suffixes when the declared folder
+already exists, and after this change the declaring run is allowed to create that folder itself —
+so the folder it just wrote its proposal into would read as a collision, the rename would move
+the scaffolding somewhere else, and `git add -A` would commit both. The task would then carry on
+against the one holding nothing but the schema marker. What separates the two is the same
+question as before: a folder the repository already keeps a change under is *tracked*, and a
+folder this run created is not. Where the run did create it, the provisional folder is merged
+into it rather than moved beside it.
 
 ## Telling the retry what happened
 
@@ -156,11 +194,25 @@ does for a different class of defect.
 So the split is by rejection, not by convenience:
 
 - **Mechanical rejections** — write-scope violation, an incomplete brief, an approve the report
-  does not corroborate. The run completed and produced a result; the harness declined it for a
-  named, checkable defect. The retry may continue the rejected attempt's session and is told what
-  the defect was.
+  does not corroborate, a verdict whose evidence could not be checked. The run completed and
+  produced a result; the harness declined it for a named, checkable defect. The retry may continue
+  the rejected attempt's session and is told what the defect was.
 - **Failures of the run** — timeout, no result, an unparseable result, the agent's own reported
   failure, a backend that could not start. The retry starts cold, as REQ-209 says today.
+
+The fourth mechanical rejection is the one that most nearly went to the wrong side. A corroborated
+role's result can clear parsing, scope, self-report and the brief check and still be declined —
+no verdict, an approve over an empty scenario inventory, a `verification.md` that is missing or
+does not parse. That is a complete result the harness would not accept, which is the definition
+above. It cannot share `invalid_result` with an envelope nobody could read, because that member
+has to say the run produced nothing; so it is its own member, and the split is visible in the
+table rather than decided at the branch.
+
+One thing the retry has to be told besides the defect: the tree was discarded. From inside a
+continued session that is invisible — the transcript records writing the artifacts, and they are
+gone. An attempt that believes them present writes only the correction and leaves the change
+folder half-built, which passes the scope check and gets committed. So the statement says both
+what was wrong and that nothing that attempt wrote survives.
 
 The second half — being told at all — is the larger saving and the smaller risk, and it applies to
 both classes. The ledger's only feedback channel today is `Previous review round`, which carries a
@@ -186,4 +238,10 @@ were being spent on was.
 
 This is deliberately limited to failures that are unfixable *by construction*, not to failures
 that merely look unlikely to succeed. A timeout might pass on a quieter host; an unparseable
-result might parse next time. Those keep their retries.
+result might parse next time. Those keep their retries. So does a container runtime that did not
+answer — which is why the pin check above has to distinguish that from an image that is gone, or
+the one member that stops a task early would be reachable from a daemon restart.
+
+The conversation cap reads the same property. It is a separate cap on a separate path, and a turn
+run against an image the host does not have goes the same way every time; spending the cap on it
+only delays telling the owner.

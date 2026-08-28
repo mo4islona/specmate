@@ -59,8 +59,11 @@ const config = runnerConfigFrom(env, env.NODE_ENV, {
   cacheRoot: cachePath(manager.config),
 })
 const backend = backendFor(config)
-const workspaces = new WorkspaceService(manager, db, (workspace, image) =>
-  backend.resolveEnvironment(workspace.path, image),
+const workspaces = new WorkspaceService(manager, db, (workspace, image, toolchains) =>
+  // A re-pin carries the task's toolchains; only provisioning detects them.
+  toolchains
+    ? backend.repinImage(image, toolchains)
+    : backend.resolveEnvironment(workspace.path, image),
 )
 const workspace = await workspaces.provision({
   taskId: task.id,

@@ -2,6 +2,7 @@ import {
   type ExecutionEnvironment,
   expectedSuitePath,
   isTerminal,
+  type ResolvedToolchain,
   resolveSpecConvention,
   type SpecConvention,
   type TaskState,
@@ -44,6 +45,12 @@ export interface TaskProvisionRequest extends Omit<ProvisionRequest, 'mirrorKey'
 export type EnvironmentResolver = (
   workspace: Workspace,
   image: string,
+  /**
+   * The toolchains this task is already pinned to. Present only on a re-pin,
+   * where detecting them again would read the working tree as the task's own
+   * committed change has left it (REQ-802).
+   */
+  toolchains?: readonly ResolvedToolchain[],
 ) => Promise<ExecutionEnvironment>
 
 export interface DiffTaskRef {
@@ -124,7 +131,13 @@ export class WorkspaceService {
     return workspace
   }
 
-  /** Re-pinning is separate from provisioning so it can never happen as drift. */
+  /**
+   * Re-pinning is separate from provisioning so it can never happen as drift,
+   * and it recovers the image only: the task's toolchains are carried across
+   * rather than detected again. Detection reads the working tree, and at
+   * re-pin time that tree is the task branch — a task bumping `.tool-versions`
+   * would pin itself to the version its own unmerged change declares.
+   */
   async repinEnvironment(
     taskId: string,
     workspace: Workspace,
@@ -135,7 +148,13 @@ export class WorkspaceService {
       throw new WorkspaceTaskMismatchError(taskId)
     }
 
-    const environment = await this.resolveEnvironment(workspace, image)
+    // Undefined rather than empty for a task that was never pinned: it has no
+    // toolchains to carry, so the resolver detects them as provisioning would.
+    const environment = await this.resolveEnvironment(
+      workspace,
+      image,
+      task.environment?.toolchains,
+    )
     await this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(tasks)
