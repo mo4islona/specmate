@@ -1,6 +1,6 @@
 import { PLAN_SIZES, type PlanSize } from '@specmate/core'
 import { useState } from 'react'
-import { Chip, cn, Icon, Popover } from '../ui/index.ts'
+import { Chip, cn, Icon, MenuItem, Popover } from '../ui/index.ts'
 
 /**
  * The size the owner declares up front, or `auto` — the absence of one, which
@@ -61,33 +61,26 @@ export function SizePicker({ value, onChange }: SizePickerProps) {
         const chosen = choice === value
 
         return (
-          <button
+          <MenuItem
             key={choice}
-            type="button"
+            shape="stack"
             role="menuitemradio"
             aria-checked={chosen}
-            className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.06]"
+            trailing={
+              <Icon name="check" className={cn('mt-0.5 text-foreground', !chosen && 'invisible')} />
+            }
             onClick={() => {
               onChange(choice)
               setOpen(false)
             }}
           >
-            <span className="min-w-0 flex-1">
-              <span
-                className={cn(
-                  'block font-mono text-[0.78rem]',
-                  chosen ? 'font-medium text-foreground' : 'text-foreground',
-                )}
-              >
-                {choice}
-              </span>
-              <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted-foreground">
-                {NOTE[choice]}
-              </span>
+            <span className={cn('block font-mono text-[0.78rem]', chosen && 'font-medium')}>
+              {choice}
             </span>
-
-            <Icon name="check" className={cn('mt-0.5 text-foreground', !chosen && 'invisible')} />
-          </button>
+            <span className="mt-0.5 block text-[0.75rem] leading-5 text-muted-foreground">
+              {NOTE[choice]}
+            </span>
+          </MenuItem>
         )
       })}
     </Popover>

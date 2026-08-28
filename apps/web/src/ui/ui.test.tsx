@@ -8,6 +8,7 @@ import { Chip } from './chip.tsx'
 import { Drawer } from './drawer.tsx'
 import { Field, Input } from './field.tsx'
 import { Working } from './loading.tsx'
+import { MenuItem } from './menu.tsx'
 import { Popover } from './popover.tsx'
 import { LoadingState } from './query-state.tsx'
 
@@ -246,6 +247,32 @@ describe('Popover', () => {
     await userEvent.click(screen.getByText('medium'))
 
     expect(screen.getByRole('menu')).toBeTruthy()
+  })
+})
+
+describe('MenuItem', () => {
+  it('is a menu item that does not submit the form it may sit in', () => {
+    const submit = vi.fn()
+    render(
+      <form onSubmit={submit}>
+        <MenuItem>Rename…</MenuItem>
+      </form>,
+    )
+    const item = screen.getByRole('menuitem', { name: 'Rename…' })
+
+    expect(item.getAttribute('type')).toBe('button')
+  })
+
+  it('takes the role the choice it stands for needs, and holds its trailing mark', () => {
+    render(
+      <MenuItem role="menuitemradio" aria-checked shape="stack" trailing={<span>chosen</span>}>
+        medium
+      </MenuItem>,
+    )
+    const item = screen.getByRole('menuitemradio', { name: /medium/ })
+
+    expect(item.getAttribute('aria-checked')).toBe('true')
+    expect(item.textContent).toContain('chosen')
   })
 })
 

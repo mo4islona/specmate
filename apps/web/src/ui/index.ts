@@ -56,6 +56,12 @@ export {
   Working,
 } from './loading.tsx'
 export {
+  MenuItem,
+  type MenuItemShape,
+  type MenuItemTone,
+  MenuSeparator,
+} from './menu.tsx'
+export {
   Dot,
   EmptyState,
   ErrorNote,

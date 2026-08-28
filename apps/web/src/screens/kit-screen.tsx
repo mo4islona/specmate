@@ -32,6 +32,8 @@ import {
   Input,
   ListRow,
   LoadingState,
+  MenuItem,
+  MenuSeparator,
   Meter,
   MicroLabel,
   NavRow,
@@ -517,21 +519,25 @@ export function KitScreen() {
             }
           >
             {['small', 'medium', 'large'].map((size) => (
-              <button
+              <MenuItem
                 key={size}
-                type="button"
                 role="menuitemradio"
                 aria-checked={size === chosen}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.06]"
+                trailing={size === chosen ? <Icon name="check" /> : null}
                 onClick={() => {
                   setChosen(size)
                   setOpen(false)
                 }}
               >
                 <span className="font-mono text-[0.78rem]">{size}</span>
-                {size === chosen && <Icon name="check" />}
-              </button>
+              </MenuItem>
             ))}
+
+            <MenuSeparator />
+
+            <MenuItem tone="destructive" onClick={() => setOpen(false)}>
+              a destructive verb…
+            </MenuItem>
           </Popover>
 
           <HoverHint hint="What the row has no width to say — the model, the attempts, what it spent.">
