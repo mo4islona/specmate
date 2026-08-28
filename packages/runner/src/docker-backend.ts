@@ -28,6 +28,41 @@ export const DOCKER_SOCKET = '/var/run/docker.sock'
 export const MISE_SHARED_ROOT = '/mise/shared'
 export const MISE_SHARED_INSTALLS = `${MISE_SHARED_ROOT}/installs`
 export const SPECMATE_TOOLCHAINS_ENV = 'SPECMATE_TOOLCHAINS'
+
+/**
+ * Where a toolchain's caches live, as two directories rather than a table of
+ * per-tool settings: `~/.cache` and `~/.local/share` are the XDG defaults, so
+ * anything that follows the standard is already pointed at them and has to be
+ * told nothing. That is what makes this hold for the next package manager and
+ * the next language rather than only for the one that broke.
+ *
+ * They must come off the worktree's own filesystem. pnpm fills a project by
+ * hardlinking out of its store, and a hardlink does not cross a filesystem —
+ * handed a store it cannot link from, pnpm copies one into the project instead,
+ * where nothing keeps it out of a stage commit.
+ */
+const CACHE_MOUNTS = [
+  { host: 'xdg-cache', home: '.cache' },
+  { host: 'xdg-data', home: '.local/share' },
+  // What predates the standard and keeps a directory of its own. Nothing is
+  // configured here either — each is mounted where its tool already looks, so
+  // being absent from this list costs sharing, never correctness.
+  { host: 'npm', home: '.npm' },
+  { host: 'cargo-registry', home: '.cargo/registry' },
+  { host: 'go-mod', home: 'go/pkg/mod' },
+  { host: 'bun', home: '.bun/install/cache' },
+] as const
+
+/**
+ * Every host directory the cache root holds. Shared across providers as well as
+ * tasks, which is why the list stops where it does: what lands here is package
+ * content addressed by its own hash. `~/.cargo` in full, `~/.m2`, `~/.gradle`
+ * would each carry a registry credential too, and those stay in the provider's
+ * own home where one task cannot read what another logged into.
+ */
+export function cacheDirs(cacheRoot: string): string[] {
+  return CACHE_MOUNTS.map((mount) => join(cacheRoot, mount.host))
+}
 const PREFLIGHT_MARKER = '.specmate-preflight'
 const ENVIRONMENT_OUTPUT_LIMIT = 1024 * 1024
 
@@ -80,6 +115,16 @@ export class DockerBackend implements ExecBackend {
       '--volume',
       `${config.toolchainsVolume}:${MISE_SHARED_ROOT}:ro`,
     )
+    // Over the top of the provider's home, which is the mount above: the
+    // credential stays in its own volume, and only the cache directories under
+    // it come from the filesystem the worktree is on. Read-write, unlike the
+    // toolchains — filling these is what a stage's install is for.
+    if (config.cacheRoot) {
+      for (const mount of CACHE_MOUNTS) {
+        const host = join(config.cacheRoot, mount.host)
+        argv.push('--volume', `${host}:${config.homeDir}/${mount.home}`)
+      }
+    }
     // Harness containers are opt-in per stage; a stage that has not asked for a
     // runtime cannot reach one even though the host has it.
     if (spec.containerRuntime) argv.push('--volume', `${DOCKER_SOCKET}:${DOCKER_SOCKET}`)
@@ -116,6 +161,15 @@ export class DockerBackend implements ExecBackend {
     })
     if (version.exitCode !== 0) {
       throw new Error(`the container runtime is unreachable: ${version.stderr.trim()}`)
+    }
+
+    // Made here rather than left to the mount: a bind source the runtime has to
+    // create belongs to root, and every stage runs unprivileged. This process
+    // already owns the workspace root, so a directory it makes is writable.
+    if (this.config.cacheRoot) {
+      await Promise.all(
+        cacheDirs(this.config.cacheRoot).map((dir) => mkdir(dir, { recursive: true })),
+      )
     }
 
     const token = randomUUID()

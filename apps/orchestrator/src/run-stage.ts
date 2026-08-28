@@ -9,7 +9,7 @@
 import { AgentRole } from '@specmate/core'
 import { createDb, databaseUrl, tasks } from '@specmate/db'
 import { renderLedgerForTask, StageExecutor } from '@specmate/runner'
-import { Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
+import { cachePath, Git, WorkspaceManager, WorkspaceService } from '@specmate/workspace'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
@@ -54,7 +54,9 @@ const manager = new WorkspaceManager({
     authorEmail: env.GIT_AUTHOR_EMAIL,
   },
 })
-const config = runnerConfigFrom(env, env.NODE_ENV)
+const config = runnerConfigFrom(env, env.NODE_ENV, {
+  cacheRoot: cachePath(manager.config),
+})
 const backend = backendFor(config)
 const workspaces = new WorkspaceService(manager, db, (workspace, image) =>
   backend.resolveEnvironment(workspace.path, image),

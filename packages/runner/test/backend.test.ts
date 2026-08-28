@@ -124,6 +124,29 @@ describe('docker backend', () => {
     expect(argv).toContain(`${SPECMATE_TOOLCHAINS_ENV}=[]`)
   })
 
+  test('binds the toolchain caches where each tool already looks, telling none of them', () => {
+    const cacheRoot = '/var/lib/specmate/workspaces/caches'
+    const argv = new DockerBackend(makeConfig({ backend: 'docker', cacheRoot })).argv(spec())
+    const mounts = argv.filter((_, i) => argv[i - 1] === '--volume')
+
+    expect(mounts).toContain(`${cacheRoot}/xdg-cache:/home/agent/.cache`)
+    expect(mounts).toContain(`${cacheRoot}/xdg-data:/home/agent/.local/share`)
+    expect(mounts).toContain(`${cacheRoot}/npm:/home/agent/.npm`)
+    expect(mounts).toContain(`${cacheRoot}/cargo-registry:/home/agent/.cargo/registry`)
+    // pnpm's store is `$XDG_DATA_HOME/pnpm/store`, so the mount above is the
+    // whole of it: no `npm_config_store_dir`, and nothing per tool at all.
+    expect(argv.join(' ')).not.toContain('npm_config')
+    // The credential a provider must not share with another is in its home,
+    // which is a volume of its own and stays one.
+    expect(mounts).not.toContain(`${cacheRoot}/cargo:/home/agent/.cargo`)
+  })
+
+  test('shares no cache when none is configured', () => {
+    const argv = new DockerBackend(makeConfig({ backend: 'docker' })).argv(spec())
+
+    expect(argv.join(' ')).not.toContain('caches')
+  })
+
   test('caps cpu and memory and runs in the workspace', () => {
     const argv = backend.argv(spec())
 

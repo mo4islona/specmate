@@ -37,6 +37,18 @@ export interface RunnerConfig {
   readonly rolesDir: string
   /** Shared named volume carrying mise installs across stages and tasks. */
   readonly toolchainsVolume: string
+  /**
+   * Host directory holding the toolchain caches shared across stages and tasks
+   * — bound over the conventional locations under HOME, so no tool is told
+   * anything. A named volume will not do: pnpm fills a project by hardlinking
+   * out of its store, so a store on another filesystem is one it silently
+   * abandons for a copy inside the worktree. This therefore has to sit on the
+   * same filesystem as the worktrees, which means under the workspace root.
+   *
+   * Absent leaves every task to build its own — right for the in-process
+   * backend, which has the developer's real home to work in.
+   */
+  readonly cacheRoot?: string
   /** HOME inside the container — where the provider CLI keeps that session. */
   readonly homeDir: string
   /** uid:gid inside the container; matches the image's unprivileged user. */
@@ -101,6 +113,7 @@ export function resolveRunnerConfig(options: RunnerOptions = {}): RunnerConfig {
     ...merged,
     rolesDir: resolve(merged.rolesDir),
     ...(merged.pidDir ? { pidDir: resolve(merged.pidDir) } : {}),
+    ...(merged.cacheRoot ? { cacheRoot: resolve(merged.cacheRoot) } : {}),
   }
 }
 
