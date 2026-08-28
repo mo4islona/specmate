@@ -13,13 +13,15 @@ interface ModelSelectPairProps {
   role: string
   /** Providers this deployment runs — the only ones a binding may name (REQ-1014). */
   providers: readonly ProviderId[]
-  modelValue: ModelId | ''
-  reasoningEffortValue: ReasoningEffort | ''
-  onModelChange: (value: ModelId | '') => void
-  onReasoningEffortChange: (value: ReasoningEffort | '') => void
+  modelValue: ModelId
+  reasoningEffortValue: ReasoningEffort
+  onModelChange: (value: ModelId) => void
+  onReasoningEffortChange: (value: ReasoningEffort) => void
   disabled?: boolean
-  /** Renders a leading "Use default" option, for a field-level override rather than a required setting. */
-  includeUseDefault?: boolean
+  /** Which of the two is being written, if either. */
+  pending?: 'model' | 'reasoningEffort'
+  /** For a field-level override rather than a required setting. */
+  suffix?: string
 }
 
 /**
@@ -32,8 +34,12 @@ interface ModelSelectPairProps {
  * rejects (REQ-112). The provider is the heading its models sit under, wearing
  * the vendor's own mark, and the trigger carries that mark beside the model.
  *
- * The names are the ones the rest of the app says out loud — the task screen
- * has never called it `claude-haiku-4-5-20251001` either.
+ * Both controls always name a real model and a real effort, never the phrase
+ * "Use default": a task resolves its bindings when it is created, so the value
+ * an override would inherit is knowable now, and showing it is what lets the
+ * owner see what the task will run before deciding to change it. What the form
+ * *stores* is the caller's business — see the new-task screen, where a pick
+ * equal to the default is no override at all.
  */
 export function ModelSelectPair({
   role,
@@ -43,10 +49,10 @@ export function ModelSelectPair({
   onModelChange,
   onReasoningEffortChange,
   disabled = false,
-  includeUseDefault = false,
+  pending,
+  suffix = '',
 }: ModelSelectPairProps) {
-  const suffix = includeUseDefault ? ' override' : ''
-  const chosen = providerForModel(modelValue || undefined)
+  const chosen = providerForModel(modelValue)
 
   // A binding written while another provider was configured still has to show
   // what it says; refusing the save is the API's job (REQ-1014), and a trigger
@@ -56,13 +62,11 @@ export function ModelSelectPair({
     .map((provider) => ({ provider, models: modelsFor(provider) }))
     .filter((group) => group.models.length > 0)
 
-  const display = chosen ? (
+  const display = (
     <span className="flex min-w-0 items-center gap-2">
-      <AgentAvatar name={chosen} lit label={AGENT_LABELS[chosen]} />
+      {chosen && <AgentAvatar name={chosen} lit label={AGENT_LABELS[chosen]} />}
       <span className="truncate">{shortModel(modelValue)}</span>
     </span>
-  ) : (
-    'Use default'
   )
 
   return (
@@ -73,9 +77,9 @@ export function ModelSelectPair({
         display={display}
         value={modelValue}
         disabled={disabled}
-        onValueChange={(value) => onModelChange(value as ModelId | '')}
+        pending={pending === 'model'}
+        onValueChange={(value) => onModelChange(value as ModelId)}
       >
-        {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
         {groups.map((group) => (
           <SelectGroup
             key={group.provider}
@@ -95,9 +99,9 @@ export function ModelSelectPair({
         mono
         value={reasoningEffortValue}
         disabled={disabled}
-        onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort | '')}
+        pending={pending === 'reasoningEffort'}
+        onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort)}
       >
-        {includeUseDefault && <SelectOption value="">Use default</SelectOption>}
         {REASONING_EFFORTS.map((effort) => (
           <SelectOption key={effort} value={effort}>
             {effort}

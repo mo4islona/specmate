@@ -103,14 +103,27 @@ describe('ModelSelectPair', () => {
     expect(screen.getByRole('group', { name: 'Codex' })).not.toBeNull()
   })
 
-  // A field-level override names nothing until the owner sets it.
-  it('leads with "Use default" where the field is an override', async () => {
+  // A control that names a real model everywhere is what retired "Use default":
+  // the value a task would inherit is knowable when the form is filled in.
+  it('offers no option that stands for a value instead of being one', async () => {
     const user = userEvent.setup()
-    renderPair({ includeUseDefault: true, modelValue: '', reasoningEffortValue: '' })
+    renderPair()
+    await open(user, /implementer model/)
 
-    expect(screen.getByLabelText(/implementer model override/).textContent).toContain('Use default')
+    expect(screen.queryByRole('option', { name: /default/i })).toBeNull()
+  })
 
-    await open(user, /implementer model override/)
-    expect(screen.getAllByRole('option')[0]?.textContent).toBe('Use default')
+  // The word "Saving…" under a control moved every row beneath it for as long as
+  // the save lasted; the control says it itself now.
+  it('says a write is in flight on the control doing it, and nowhere else', () => {
+    renderPair({ pending: 'model' })
+
+    const model = screen.getByLabelText(/implementer model/)
+    const effort = screen.getByLabelText(/implementer reasoning effort/)
+
+    expect(model.getAttribute('aria-busy')).toBe('true')
+    expect(model.hasAttribute('disabled')).toBe(true)
+    expect(effort.getAttribute('aria-busy')).toBeNull()
+    expect(effort.hasAttribute('disabled')).toBe(false)
   })
 })

@@ -1,9 +1,9 @@
 import {
   type AgentRole,
+  DEFAULT_MODEL_BINDINGS,
   type ModelBinding,
   type ModelId,
   providerForModel,
-  type ReasoningEffort,
 } from '@specmate/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
@@ -72,7 +72,7 @@ export function buildCreateTaskPayload(form: NewTaskForm): CreateTaskInput {
   }
 }
 
-/** Setting a field to `undefined` ("Use default") drops it; an empty role object drops the role too. */
+/** Setting a field to `undefined` drops it; an empty role object drops the role too. */
 export function setOverrideField<K extends keyof ModelBinding>(
   modelBindings: CreateTaskInput['modelBindings'],
   role: AgentRole,
@@ -94,9 +94,18 @@ export function setOverrideField<K extends keyof ModelBinding>(
 }
 
 /**
+ * A pick equal to the role's current default is not an override: a task resolves
+ * its bindings when it is created, so the two produce the same task, and storing
+ * one would send intake a field it can only agree with. Undefined drops it.
+ */
+export function sameAsDefault<T>(picked: T, inherited: T): T | undefined {
+  return picked === inherited ? undefined : picked
+}
+
+/**
  * The two fields a chosen model settles, written together: the provider is the
- * one that model belongs to, and "Use default" drops both rather than leaving a
- * provider behind for a model that is no longer there.
+ * one that model belongs to, and dropping the model drops both rather than
+ * leaving a provider behind for a model that is no longer there.
  */
 export function setModelOverride(
   modelBindings: CreateTaskInput['modelBindings'],
@@ -309,36 +318,48 @@ export function NewTaskScreen() {
                 )}
                 <div className="mt-4">
                   <RoleBindings>
-                    {(role) => (
-                      <ModelSelectPair
-                        role={role}
-                        includeUseDefault
-                        providers={availableProviders}
-                        modelValue={form.modelBindings?.[role]?.model ?? ''}
-                        reasoningEffortValue={form.modelBindings?.[role]?.reasoningEffort ?? ''}
-                        onModelChange={(value) =>
-                          setForm({
-                            ...form,
-                            modelBindings: setModelOverride(
-                              form.modelBindings,
-                              role,
-                              (value || undefined) as ModelId | undefined,
-                            ),
-                          })
-                        }
-                        onReasoningEffortChange={(value) =>
-                          setForm({
-                            ...form,
-                            modelBindings: setOverrideField(
-                              form.modelBindings,
-                              role,
-                              'reasoningEffort',
-                              (value || undefined) as ReasoningEffort | undefined,
-                            ),
-                          })
-                        }
-                      />
-                    )}
+                    {(role) => {
+                      const inherited =
+                        defaults.data?.modelDefaults[role] ?? DEFAULT_MODEL_BINDINGS[role]
+                      const override = form.modelBindings?.[role]
+
+                      return (
+                        <ModelSelectPair
+                          role={role}
+                          suffix=" override"
+                          providers={availableProviders}
+                          // Until the defaults have been read, the shipped ones
+                          // stand in — and a pick made against them would store
+                          // an override the owner did not mean.
+                          disabled={!defaults.data}
+                          modelValue={override?.model ?? inherited.model}
+                          reasoningEffortValue={
+                            override?.reasoningEffort ?? inherited.reasoningEffort
+                          }
+                          onModelChange={(value) =>
+                            setForm({
+                              ...form,
+                              modelBindings: setModelOverride(
+                                form.modelBindings,
+                                role,
+                                sameAsDefault(value, inherited.model),
+                              ),
+                            })
+                          }
+                          onReasoningEffortChange={(value) =>
+                            setForm({
+                              ...form,
+                              modelBindings: setOverrideField(
+                                form.modelBindings,
+                                role,
+                                'reasoningEffort',
+                                sameAsDefault(value, inherited.reasoningEffort),
+                              ),
+                            })
+                          }
+                        />
+                      )
+                    }}
                   </RoleBindings>
                 </div>
               </div>

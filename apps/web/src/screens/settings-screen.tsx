@@ -25,6 +25,14 @@ interface SaveVars {
   reasoningEffort?: ReasoningEffort
 }
 
+/** Which control the save in flight came from, so only that one shows it. */
+function writtenField(saving: SaveVars): 'model' | 'reasoningEffort' | undefined {
+  if (saving.model !== undefined) return 'model'
+  if (saving.reasoningEffort !== undefined) return 'reasoningEffort'
+
+  return undefined
+}
+
 /**
  * Its own component so its loading and error states stay its own. Revoking a
  * coverage waiver is the only way an acceptance ends short of a probe
@@ -57,7 +65,7 @@ function ModelDefaultsSection() {
     return <ErrorState title="Model defaults unavailable" detail={defaults.error.message} />
   }
 
-  const savingRole = save.isPending ? save.variables?.role : undefined
+  const saving = save.isPending ? save.variables : undefined
   const failedRole = save.isError ? save.variables?.role : undefined
 
   return (
@@ -83,20 +91,15 @@ function ModelDefaultsSection() {
                 providers={defaults.data.availableProviders}
                 modelValue={binding.model}
                 reasoningEffortValue={binding.reasoningEffort}
-                disabled={savingRole === role}
+                pending={saving?.role === role ? writtenField(saving) : undefined}
                 // The provider goes with the model rather than being inferred
                 // downstream: the row then stores what the owner was shown
                 // (AC-137, AC-1809).
                 onModelChange={(value) =>
-                  value && save.mutate({ role, model: value, provider: providerForModel(value) })
+                  save.mutate({ role, model: value, provider: providerForModel(value) })
                 }
-                onReasoningEffortChange={(value) =>
-                  value && save.mutate({ role, reasoningEffort: value })
-                }
+                onReasoningEffortChange={(value) => save.mutate({ role, reasoningEffort: value })}
               />
-              {savingRole === role && (
-                <p className="mt-1 font-mono text-[0.62rem] text-muted-foreground">Saving…</p>
-              )}
               {failedRole === role && <RequestError error={save.error} fallback="Save failed" />}
             </>
           )

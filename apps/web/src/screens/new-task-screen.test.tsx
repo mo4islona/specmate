@@ -145,7 +145,7 @@ describe('setOverrideField', () => {
     expect(withBoth).toEqual({ implementer: { model: 'claude-fable-5', reasoningEffort: 'max' } })
   })
 
-  it('clearing back to "Use default" drops just that field', () => {
+  it('clearing a field back to the default drops just that field', () => {
     const withBoth = setOverrideField(
       { implementer: { model: 'claude-fable-5', reasoningEffort: 'max' } },
       'implementer',
