@@ -15,7 +15,7 @@ import { ApiError } from '../errors.ts'
 import { deriveTitle, resolveRepository } from '../intake.ts'
 import { OWNER_ACTOR, type RouteContext } from './context.ts'
 import { knownRepositories } from './known-repositories.ts'
-import { CreateTask, FileDiffQuery } from './schemas.ts'
+import { CreateTask, FileDiffQuery, RenameTask } from './schemas.ts'
 import { serializeStage } from './serialize.ts'
 import { validateJson, validateQuery } from './validation.ts'
 
@@ -74,6 +74,18 @@ export function taskRoutes(ctx: RouteContext) {
       })
 
       return c.json({ task }, 201)
+    })
+
+    .patch('/tasks/:id', validator('json', validateJson(RenameTask)), async (c) => {
+      const task = await requireTask(c.req.param('id'))
+      const { title } = c.req.valid('json')
+      const [renamed] = await db
+        .update(tasks)
+        .set({ title, updatedAt: new Date() })
+        .where(eq(tasks.id, task.id))
+        .returning()
+
+      return c.json({ task: renamed })
     })
 
     .delete('/tasks/:id', async (c) => {

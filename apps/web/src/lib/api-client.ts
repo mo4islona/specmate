@@ -324,6 +324,15 @@ export async function createTask(input: CreateTaskInput): Promise<{ task: TaskSu
   return readJson<{ task: TaskSummary }>(response)
 }
 
+export async function renameTask(taskId: string, title: string): Promise<{ task: TaskSummary }> {
+  const response = await apiClient.api.v1.tasks[':id'].$patch({
+    param: { id: taskId },
+    json: { title },
+  })
+
+  return readJson<{ task: TaskSummary }>(response)
+}
+
 export async function deleteTask(taskId: string): Promise<void> {
   const response = await apiClient.api.v1.tasks[':id'].$delete({ param: { id: taskId } })
 
