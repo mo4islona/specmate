@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { AGENT_NAMES, AgentAvatar } from './agent-avatar.tsx'
 import { Button } from './button.tsx'
 import { Chip } from './chip.tsx'
 import { Drawer } from './drawer.tsx'
@@ -96,6 +97,28 @@ describe('Working', () => {
 
     expect.soft(container.textContent).toBe('loading the whole edit...')
     expect.soft(container.querySelectorAll('.animate-working')).toHaveLength(3)
+  })
+})
+
+describe('AgentAvatar', () => {
+  it('draws a face of its own for every name', () => {
+    const { container } = render(AGENT_NAMES.map((name) => <AgentAvatar key={name} name={name} />))
+
+    const drawn = [...container.querySelectorAll('svg')].map((face) => face.innerHTML)
+
+    // A name that fell out of the map renders an empty frame, and an empty
+    // frame is a tile the eye reads as "nobody" rather than as a missing face.
+    expect(drawn).toHaveLength(AGENT_NAMES.length)
+    expect(new Set(drawn).size).toBe(AGENT_NAMES.length)
+    expect(drawn.every((face) => face.length > 0)).toBe(true)
+  })
+
+  it('says who it is in words only where it is asked to', () => {
+    const { rerender } = render(<AgentAvatar name="codex" />)
+    expect(screen.queryByText('Codex')).toBeNull()
+
+    rerender(<AgentAvatar name="codex" label="Codex" />)
+    expect(screen.getByText('Codex').className).toContain('sr-only')
   })
 })
 

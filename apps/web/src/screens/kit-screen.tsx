@@ -2,6 +2,8 @@ import { type ReactNode, useState } from 'react'
 import { ThemeSection } from '../components/theme-section.tsx'
 import { type Signal, signalBreathes, signalDot, signalText } from '../components/tone.ts'
 import {
+  AGENT_NAMES,
+  AgentAvatar,
   Badge,
   type BadgeTone,
   Button,
@@ -341,6 +343,49 @@ export function KitScreen() {
               pick one
               <Icon name="chevron-down" size="xs" className="rotate-180" />
             </Chip>
+          </Row>
+        </Specimen>
+      </Section>
+
+      <Section
+        eyebrow="Marks"
+        title="Agents"
+        description="Who is at the wheel of a pipeline step, in the column that used to hold a tick or a cross. A vendor's logo lights up in the vendor's own colour once its step has landed and is grey until then, so a rail reads as a run lighting up. Only a stop keeps a mark, because grey is also what a step that has not run looks like. The person is a circle rather than an app tile and has no colour to earn — it takes the row's, which is how a gate holding the run open goes amber."
+      >
+        <Specimen name="the cast — ahead of the run, and behind it">
+          <Row>
+            {AGENT_NAMES.map((name) => (
+              <span key={name} className="flex items-center gap-1.5">
+                <AgentAvatar name={name} />
+                <AgentAvatar name={name} lit />
+                <span className="font-mono text-[0.62rem] text-muted-foreground">{name}</span>
+              </span>
+            ))}
+          </Row>
+        </Specimen>
+
+        <Specimen name="under a signal — the person takes it, the vendor answers for its own">
+          <Row>
+            {SIGNALS.map((signal) => (
+              <span key={signal} className="flex items-center gap-1.5">
+                <AgentAvatar
+                  name="human"
+                  className={cn(signalText(signal), signalBreathes(signal) && 'animate-breath')}
+                />
+                <AgentAvatar
+                  name="claude-code"
+                  className={cn(signalText(signal), signalBreathes(signal) && 'animate-breath')}
+                />
+                <span className="font-mono text-[0.62rem] text-muted-foreground">{signal}</span>
+              </span>
+            ))}
+          </Row>
+        </Specimen>
+
+        <Specimen name="sizes">
+          <Row>
+            <AgentAvatar name="claude-code" size="sm" lit />
+            <AgentAvatar name="claude-code" size="md" lit />
           </Row>
         </Specimen>
       </Section>

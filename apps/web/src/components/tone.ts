@@ -122,6 +122,11 @@ export function nodeDot(state: NodeState): string {
   return SIGNAL_DOT[NODE_SIGNAL[state]]
 }
 
+/** Whose step is behind the run, and so wears the colour it earned. */
+export function nodeLit(state: NodeState): boolean {
+  return state === 'done'
+}
+
 /**
  * The state as a mark rather than a word. `passed` and `stopped` written out
  * beside a coloured dot were the dot's own meaning spelled again, in the column
@@ -141,20 +146,29 @@ export const NODE_MARK: Record<NodeState, { icon: IconName; label: string }> = {
  * reads top to bottom as a sequence, and what is still ahead should not compete
  * for the eye with where the run actually is — the grey ramp alone was not
  * enough separation once every row carried a drawn mark rather than a character.
- *
- * A skipped step keeps its weight: the decision to skip it is news, and its
- * reason is a sentence someone has to be able to read.
  */
 export function nodeAhead(state: NodeState): string {
   return state === 'pending' ? 'opacity-60' : ''
 }
 
-/** The mark's own classes — `settled` reads as grey here, not as a green tick. */
+/**
+ * The face's own classes, for the faces that have no colour of their own — the
+ * person and the app. A vendor's logo answers for itself and ignores all of it.
+ *
+ * `settled` is the page's own text rather than the grey `signalName` gives a
+ * finished row. It is the same idea a lit logo is: a gate you have already been
+ * through should read as crisp as the steps around it that landed, and only what
+ * is still ahead should be faint.
+ *
+ * Both signals worth the eye breathe, not just the moving one — a gate holding
+ * the run open has nothing left to say "you" with except the amber on the person
+ * and the breath under it.
+ */
 export function nodeMarkClass(state: NodeState): string {
   const signal = NODE_SIGNAL[state]
-  const live = state === 'running' ? 'animate-breath ' : ''
+  const live = signalBreathes(signal) ? 'animate-breath ' : ''
 
-  return `${live}${signal === 'settled' ? 'text-muted-foreground' : SIGNAL_TEXT[signal]}`
+  return `${live}${signal === 'settled' ? 'text-foreground' : SIGNAL_TEXT[signal]}`
 }
 
 // ── The task, as the index and the header read it ───────────────────────────

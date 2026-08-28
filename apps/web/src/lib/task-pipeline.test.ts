@@ -221,6 +221,54 @@ describe('a skipped node', () => {
   })
 })
 
+describe('who is on a node', () => {
+  const WALK = [
+    { kind: 'stage', key: 'planning', role: 'planner', binding: 'role_default' },
+    { kind: 'gate', key: 'human_kickoff_gate', approve: 'implement' },
+    { kind: 'stage', key: 'implement', role: 'implementer', binding: 'role_default' },
+    { kind: 'action', key: 'publish' },
+  ] as unknown as PinnedNode[]
+
+  const agents = (stages: Stage[]) =>
+    buildPipelineNodes({
+      nodes: WALK,
+      stages,
+      status: 'implement',
+      resumeStatus: null,
+      modelBindings: BINDINGS,
+    }).map((node) => node.agent)
+
+  it('before a stage runs, it is the provider its role calls on', () => {
+    expect(agents([])).toEqual(['claude-code', 'human', 'codex', 'specmate'])
+  })
+
+  it('once it has run, it is whoever actually answered', () => {
+    const ran = agents([
+      stage({
+        nodeKey: 'implement',
+        role: 'implementer',
+        provider: 'claude-code',
+      } as Partial<Stage>),
+    ])
+
+    expect(ran[2]).toBe('claude-code')
+  })
+
+  it('the latest attempt wins, because that is the one on the row', () => {
+    const ran = agents([
+      stage({ id: 'a', nodeKey: 'implement', attempt: 0, provider: 'codex' } as Partial<Stage>),
+      stage({
+        id: 'b',
+        nodeKey: 'implement',
+        attempt: 1,
+        provider: 'copilot',
+      } as Partial<Stage>),
+    ])
+
+    expect(ran[2]).toBe('copilot')
+  })
+})
+
 describe('nodeSpend', () => {
   const node = (runs: Stage[]) =>
     buildPipelineNodes({

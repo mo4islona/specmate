@@ -2,9 +2,10 @@ import type { StreamConnectionState } from '../lib/event-stream.ts'
 import { signalText, streamSignal } from './tone.ts'
 
 /**
- * The one drawing this app owns. Everything else that is a shape rather than a
- * word comes from `ui/icon.tsx`; a logo is not an icon, and this one carries a
- * reading of the event stream on top.
+ * The app's own lockup. Everything else that is a shape rather than a word comes
+ * from `ui/icon.tsx`, or — for the faces a pipeline step wears — from
+ * `ui/agent-avatar.tsx`; a logo is not an icon, and this one carries a reading of
+ * the event stream on top.
  */
 
 /** How the run stepping out of the brackets is drawn while the stream is in each state. */
