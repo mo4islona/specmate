@@ -23,16 +23,9 @@ export interface TaskDiffRange {
 
 export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'type-changed'
 
-/**
- * Which half of the task's work a file is: the specification it wrote inside
- * its own change folder, or everything else it changed (REQ-1013).
- */
-export type DiffFileGroup = 'spec' | 'code'
-
 export interface DiffFile {
   readonly path: string
   readonly status: DiffFileStatus
-  readonly group: DiffFileGroup
   /** `null` for a binary file, which `git diff --numstat` reports as `-`. */
   readonly additions: number | null
   readonly deletions: number | null
@@ -122,14 +115,18 @@ export async function resolveTaskDiffRange(
 }
 
 /**
- * Everything a task's branch changed, each file marked with which half of the
- * work it is (REQ-1013). The change folder is grouped rather than withheld: a
- * task between planning and the spec gate has changed nothing else, and a list
- * that hides its only work reads as a list of nothing.
+ * The code a task's branch changed (REQ-1013) — everything outside its own
+ * change folder.
  *
- * `renderDiff` (`packages/runner/src/prompt.ts`) still excludes the folder for
- * the reviewer's prompt — a role reading a code diff wants code. Same split,
- * different question.
+ * The folder is withheld rather than grouped. Against the merge-base it is
+ * almost always new outright, so its diff is every line of every document
+ * marked added: the same text the Docs surface renders as documents, in the one
+ * form nobody wants to read it in, padding the file count a reviewer opens this
+ * screen for. One file, one home. A path inside it still has a diff to fetch,
+ * which is what `taskFileDiff` is asked for and answers.
+ *
+ * `renderDiff` (`packages/runner/src/prompt.ts`) excludes it too, and always
+ * did — a role reading a code diff wants code.
  */
 export async function taskFilesChanged(
   git: Git,
@@ -138,7 +135,7 @@ export async function taskFilesChanged(
 ): Promise<DiffFile[]> {
   if (range.base === range.tip) return []
 
-  const pathspec = ['--', '.']
+  const pathspec = ['--', '.', `:(exclude)${changeDir}`]
   const [numstat, nameStatus] = await Promise.all([
     git.inMirror(range.mirror, [
       'diff',
@@ -162,15 +159,12 @@ export async function taskFilesChanged(
 
   const counts = parseNumstat(numstat.stdout)
 
-  const specPrefix = `${changeDir}/`
-
   return parseNameStatus(nameStatus.stdout).map((entry) => {
     const count = counts.get(entry.path)
 
     return {
       path: entry.path,
       status: STATUS_LETTERS[entry.status] ?? 'modified',
-      group: entry.path.startsWith(specPrefix) ? ('spec' as const) : ('code' as const),
       additions: count?.additions ?? null,
       deletions: count?.deletions ?? null,
     }
@@ -178,32 +172,12 @@ export async function taskFilesChanged(
 }
 
 /**
- * The comparison held to `MAX_DIFF_FILES`.
- *
- * The specification half goes in first and whole. It is a handful of files, and
- * it is the only half a task between planning and the spec gate has — cut in
- * the comparison's own order, it is what a code half running to thousands drops
- * first, since `openspec/` sorts below almost everything. Past the ceiling even
- * that gives way, so the count this returns is one the name can be trusted on.
+ * The comparison held to `MAX_DIFF_FILES`, in the comparison's own order. The
+ * total is reported beside it, so a branch past the ceiling is a screen that
+ * says how much of itself it is showing.
  */
 export function capDiffFiles(files: readonly DiffFile[]): DiffFile[] {
-  if (files.length <= MAX_DIFF_FILES) return [...files]
-
-  const specFiles = files.filter((file) => file.group === 'spec').length
-  const room: Record<DiffFileGroup, number> = {
-    spec: Math.min(specFiles, MAX_DIFF_FILES),
-    code: Math.max(MAX_DIFF_FILES - specFiles, 0),
-  }
-
-  const kept: DiffFile[] = []
-  for (const file of files) {
-    if (room[file.group] === 0) continue
-
-    room[file.group] -= 1
-    kept.push(file)
-  }
-
-  return kept
+  return files.slice(0, MAX_DIFF_FILES)
 }
 
 /**

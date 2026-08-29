@@ -3,7 +3,7 @@ import type { DiffFileSummary } from './api-client.ts'
 import { fileName, groupByDirectory, shortDirectory } from './diff-tree.ts'
 
 function file(path: string): DiffFileSummary {
-  return { path, status: 'modified', group: 'code', additions: 1, deletions: 0 }
+  return { path, status: 'modified', additions: 1, deletions: 0 }
 }
 
 const shape = (files: string[]) =>

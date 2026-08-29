@@ -14,27 +14,14 @@ import {
   Input,
   LoadingState,
   Meter,
-  MicroLabel,
   Note,
   Panel,
   TextButton,
 } from '../ui/index.ts'
 
-/** Code first: it is what a reviewer opens the view for once there is any. */
-const GROUPS = [
-  { id: 'code', label: 'Code' },
-  { id: 'spec', label: 'Specification' },
-] as const
-
-/**
- * The stack reads in the order the tree draws — code before specification,
- * then by path. Left in the comparison's own order, `openspec/` sorts above
- * `src/` and the reader lands on the change folder every time.
- */
+/** The stack reads in the order the tree draws it, which is by path. */
 function inTreeOrder(files: readonly DiffFileSummary[]): DiffFileSummary[] {
-  const rank = (file: DiffFileSummary) => GROUPS.findIndex((group) => group.id === file.group)
-
-  return [...files].sort((a, b) => rank(a) - rank(b) || a.path.localeCompare(b.path))
+  return [...files].sort((a, b) => a.path.localeCompare(b.path))
 }
 
 /**
@@ -88,7 +75,9 @@ export function FilesChangedScreen({ taskId }: FilesChangedScreenProps) {
   if (files.data.files.length === 0) {
     return (
       <Panel as="div" flush>
-        <EmptyState>This task has not committed any changes yet.</EmptyState>
+        <EmptyState>
+          This task has not committed any code yet. Its own documents are on Docs.
+        </EmptyState>
       </Panel>
     )
   }
@@ -243,25 +232,12 @@ function FilesReview({ taskId, tip, total, files }: FilesReviewProps) {
             {shown.length === 0 && <Note size="xs">No file's path matches that.</Note>}
 
             <nav aria-label="Changed files" className="min-w-0">
-              {GROUPS.map((group) => {
-                const groupFiles = shown.filter((file) => file.group === group.id)
-                if (groupFiles.length === 0) return null
-
-                return (
-                  <section key={group.id} className="mt-5 min-w-0 first:mt-0">
-                    <MicroLabel>
-                      {group.label} · {groupFiles.length}
-                    </MicroLabel>
-
-                    <FileList
-                      groups={groupByDirectory(groupFiles)}
-                      selected={selected}
-                      viewed={viewed}
-                      onSelect={select}
-                    />
-                  </section>
-                )
-              })}
+              <FileList
+                groups={groupByDirectory(shown)}
+                selected={selected}
+                viewed={viewed}
+                onSelect={select}
+              />
             </nav>
           </div>
         </Panel>

@@ -2798,7 +2798,7 @@ describeDb('api task diff', () => {
     expect(await response.json()).toEqual({
       tip: expect.any(String),
       total: 1,
-      files: [{ path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 }],
+      files: [{ path: 'src/added.ts', status: 'added', additions: 1, deletions: 0 }],
     })
   })
 
@@ -2823,21 +2823,12 @@ describeDb('api task diff', () => {
     const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
 
     expect(response.status).toBe(200)
-    // The change folder is grouped, not withheld (AC-1060): its schema marker is
-    // committed by provisioning, so it is one of the files this branch adds.
+    // The change folder is withheld (AC-1060), the schema marker provisioning
+    // commits into it included — the documents surface is where it is read.
     expect(await response.json()).toEqual({
       tip: expect.any(String),
       total: expect.any(Number),
-      files: expect.arrayContaining([
-        { path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
-        {
-          path: `openspec/changes/${slug}/.openspec.yaml`,
-          status: 'added',
-          group: 'spec',
-          additions: 1,
-          deletions: 0,
-        },
-      ]),
+      files: [{ path: 'src/added.ts', status: 'added', additions: 1, deletions: 0 }],
     })
   })
 
@@ -2977,7 +2968,7 @@ describeDb('api task diff', () => {
       tip: expect.any(String),
       total: expect.any(Number),
       files: expect.arrayContaining([
-        { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
+        { path: 'README.md', status: 'modified', additions: 1, deletions: 0 },
       ]),
     })
   })
