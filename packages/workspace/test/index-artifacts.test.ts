@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { rm, stat } from 'node:fs/promises'
+import { readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { artifacts, createDb, type Database, findOrCreateRepository, tasks } from '@specmate/db'
 import { eq, inArray } from 'drizzle-orm'
@@ -49,8 +49,17 @@ describeDb('artifact index', () => {
     await db.$client.close()
   })
 
-  async function setup() {
-    const origin = await makeOrigin()
+  /**
+   * A repository that keeps an OpenSpec suite, so the task pins the layout where the
+   * change folder is the repository's own content and its commits carry it.
+   */
+  const WITH_SUITE = {
+    'README.md': '# origin\n',
+    'openspec/specs/thing/spec.md': '# thing Specification\n',
+  }
+
+  async function setup(files?: Record<string, string>) {
+    const origin = await makeOrigin(files ?? WITH_SUITE)
     const { manager } = await makeManager()
     const slug = `wsm-${randomUUID().slice(0, 8)}`
     const [task] = await db
@@ -118,6 +127,57 @@ describeDb('artifact index', () => {
     expect(second.map((row) => row.kind)).toEqual(['proposal'])
     expect(second[0]?.snapshotMd).toBe('# second\n')
     expect(second[0]?.gitSha).not.toBe(first.find((row) => row.kind === 'proposal')?.gitSha)
+  })
+
+  test('indexes what a stage wrote where the repository carries nothing — AC-744, AC-745', async () => {
+    // No suite in the origin, so the task pins the internal layout: its change folder is
+    // excluded from commits, and the store is the only place its artifacts exist.
+    const { task, service, workspace, rows } = await setup({ 'README.md': '# origin\n' })
+    expect(workspace.changeDir).toBe(`.specmate/changes/${task.slug}`)
+
+    await writeFiles(workspace.path, {
+      [`${workspace.changeDir}/proposal.md`]: '# brief\n',
+      [`${workspace.changeDir}/notes.txt`]: 'scratch',
+    })
+    const outcome = await service.commitStage(task.id, workspace, STAGE)
+    const indexed = await rows()
+
+    expect(outcome.committed).toBe(false)
+    expect(indexed.map((row) => row.kind)).toEqual(['proposal'])
+    expect(indexed[0]?.gitSha).toBeNull()
+    expect(indexed[0]?.snapshotMd).toBe('# brief\n')
+  })
+
+  test('gives a rebuilt working tree its artifacts back — AC-746, AC-748', async () => {
+    const { task, service, workspace } = await setup({ 'README.md': '# origin\n' })
+    await writeFiles(workspace.path, { [`${workspace.changeDir}/proposal.md`]: '# brief\n' })
+    await service.commitStage(task.id, workspace, STAGE)
+
+    // What a failed attempt left, and a tree that no longer holds the folder at all.
+    await writeFiles(workspace.path, {
+      [`${workspace.changeDir}/proposal.md`]: '# half-written\n',
+      [`${workspace.changeDir}/design.md`]: '# from an attempt nobody accepted\n',
+    })
+    await service.discard(task.id, workspace)
+
+    const proposal = join(workspace.path, workspace.changeDir, 'proposal.md')
+    expect(await readFile(proposal, 'utf8')).toBe('# brief\n')
+    expect(
+      await stat(join(workspace.path, workspace.changeDir, 'design.md')).catch(() => null),
+    ).toBeNull()
+
+    await rm(join(workspace.path, workspace.changeDir), { recursive: true, force: true })
+    const reprovisioned = await service.provision({
+      taskId: task.id,
+      slug: task.slug,
+      repoUrl: task.repoUrl,
+      baseBranch: 'main',
+      image: 'specmate/runner-universal@sha256:index-fixture',
+    })
+
+    expect(
+      await readFile(join(reprovisioned.path, reprovisioned.changeDir, 'proposal.md'), 'utf8'),
+    ).toBe('# brief\n')
   })
 
   test('refuses to release a workspace whose task is still going', async () => {
