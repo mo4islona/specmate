@@ -1,7 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { stat } from 'node:fs/promises'
 import { Git, mirrorKey, type StageRef } from '../src/index.ts'
-import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeManager,
+  makeOrigin,
+  provisionWorkspace,
+  writeFiles,
+} from './fixtures.ts'
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000002',
@@ -15,7 +21,7 @@ afterAll(cleanupTempDirs)
 async function setup(slug: string) {
   const origin = await makeOrigin()
   const { manager } = await makeManager()
-  const workspace = await manager.provision({
+  const workspace = await provisionWorkspace(manager, {
     slug,
     repoUrl: origin.url,
     mirrorKey: mirrorKey(origin.url),

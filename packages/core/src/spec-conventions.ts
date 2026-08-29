@@ -1,9 +1,10 @@
 import { z } from 'zod'
+import { specImplementation } from './spec-implementation.ts'
 
 /**
- * Where a repository's living specification is and which convention governs it.
- * It says nothing about whether the pipeline specifies, which it always does
- * (REQ-1705) — a repository without a specification is `none`, not a shorter run.
+ * Where a repository's living specification is and which convention governs it. What
+ * follows from it — whether the pipeline specifies, where the change folder stands,
+ * what the repository keeps — is `SpecImplementation`, one object per profile.
  */
 export const SPEC_CONVENTION_PROFILES = ['openspec', 'custom', 'none'] as const
 export const SpecConventionProfile = z.enum(SPEC_CONVENTION_PROFILES)
@@ -70,14 +71,11 @@ const NO_SUITE: SpecConvention = {
  * resolved the convention: a fact nobody can assemble yet, which the engine reads as
  * "run the node" rather than as "no suite".
  *
- * Reads the profile and nothing else. `openspec` and `custom` differ in convention, and
- * the segment does not care which; a configured suite the tree does not hold has already
- * resolved to `none` by the time it is persisted (AC-1702).
+ * The rule itself belongs to the profile's implementation, which is where every other
+ * consequence of a profile is stated; this is the reading that tolerates not knowing.
  */
 export function specSuiteInForce(convention: SpecConvention | null | undefined): boolean | null {
-  if (!convention) return null
-
-  return convention.profile !== 'none'
+  return specImplementation(convention)?.specifies ?? null
 }
 
 /** Which path a setting expects to find, or null where it expects none. */

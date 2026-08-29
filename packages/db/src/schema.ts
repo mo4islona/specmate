@@ -17,6 +17,7 @@ import {
   resolveModelBindings,
   type SpecConvention,
   type SpecConventionSetting,
+  type SpecLayout,
   type StageResult,
   type TaskState,
 } from '@specmate/core'
@@ -323,6 +324,13 @@ export const tasks = pgTable(
      * declaration, whose folder stays named after its slug.
      */
     changeName: text('change_name'),
+    /**
+     * Which layout this task's artifacts were laid out under, pinned at first
+     * provisioning and never moved (REQ-1707). The profile is re-read at every node, so
+     * it cannot also decide where artifacts live: an owner answering mid-task would
+     * otherwise file one task's work under two paths. Null means never provisioned.
+     */
+    changeLayout: text('change_layout').$type<SpecLayout>(),
     harnessStatus: harnessStatusEnum('harness_status').notNull().default('unknown'),
     /**
      * Resolved by provisioning, which is the only code that sees the working tree and

@@ -2743,6 +2743,16 @@ describeDb('api task diff', () => {
     }
   })
 
+  /** Provisioning is two steps now; a diff fixture takes the layout its task will pin. */
+  async function provisionApiWorkspace(
+    workspaceManager: WorkspaceManager,
+    request: Parameters<WorkspaceManager['provision']>[0],
+  ) {
+    const tree = await workspaceManager.provision(request)
+
+    return workspaceManager.openChangeFolder(tree, 'repository')
+  }
+
   async function createDiffTask(slug: string): Promise<string> {
     const [task] = await db
       .insert(tasks)
@@ -2764,7 +2774,7 @@ describeDb('api task diff', () => {
   it('lists changed files with status and line counts (AC-1034)', async () => {
     const slug = `diff-files-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2819,7 +2829,7 @@ describeDb('api task diff', () => {
   it('returns one file unified diff by path (AC-1036)', async () => {
     const slug = `diff-file-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2846,7 +2856,7 @@ describeDb('api task diff', () => {
   it('names the commit the comparison was computed against, and renames it on a new commit (AC-1062)', async () => {
     const slug = `diff-tip-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2877,7 +2887,7 @@ describeDb('api task diff', () => {
   it('returns more surrounding context when a wider read is asked for (AC-1063)', async () => {
     const slug = `diff-context-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2914,7 +2924,7 @@ describeDb('api task diff', () => {
   it('reads the same diff after the workspace has been released (AC-1037)', async () => {
     const slug = `diff-released-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2962,7 +2972,7 @@ describeDb('api task diff', () => {
   it('treats the path query parameter as one literal file, not a git pathspec (regression)', async () => {
     const slug = `diff-pathspec-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),
@@ -2987,7 +2997,7 @@ describeDb('api task diff', () => {
   it('reports a task branch with no common history as not-found, not a crash', async () => {
     const slug = `diff-unrelated-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)
-    const workspace = await manager.provision({
+    const workspace = await provisionApiWorkspace(manager, {
       slug,
       repoUrl: originUrl,
       mirrorKey: mirrorKey(originUrl),

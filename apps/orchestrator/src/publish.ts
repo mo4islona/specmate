@@ -1,5 +1,12 @@
 import { type ActionNode, forwardTarget, type PinnedGraph, type TaskState } from '@specmate/core'
-import { type Database, pullRequests, repositories, type Task, tasks } from '@specmate/db'
+import {
+  artifacts,
+  type Database,
+  pullRequests,
+  repositories,
+  type Task,
+  tasks,
+} from '@specmate/db'
 import {
   type Git,
   githubRepository,
@@ -72,7 +79,7 @@ export class Publisher {
     const mirror = mirrorPath(this.options.workspaceConfig, recordedMirrorKey(record.mirrorKey))
     await this.pushBranch(mirror, task.repoUrl, branch)
 
-    const body = await this.readSummary(mirror, task.slug, branch)
+    const body = await this.readSummary(task.id)
     const url = await this.openPullRequest({ repository, task, branch, body })
 
     // A crash (or any failure) between openPullRequest() succeeding and this
@@ -100,19 +107,20 @@ export class Publisher {
     }
   }
 
-  private async readSummary(mirror: string, slug: string, branch: string): Promise<string> {
-    try {
-      const result = await this.options.git.inMirror(mirror, [
-        'show',
-        `${branch}:openspec/changes/${slug}/summary.md`,
-      ])
+  /**
+   * From the index rather than from a path on the branch: a task whose change folder the
+   * repository does not carry has no `summary.md` to show (REQ-1707), and the path this
+   * used to build named the task's slug rather than the name its folder converged on.
+   */
+  private async readSummary(taskId: string): Promise<string> {
+    const [summary] = await this.options.db
+      .select({ content: artifacts.snapshotMd })
+      .from(artifacts)
+      .where(and(eq(artifacts.taskId, taskId), eq(artifacts.kind, 'summary')))
+      .limit(1)
+    if (!summary?.content) throw new PublishError('the task has no summary to publish')
 
-      return result.stdout
-    } catch (error) {
-      throw new PublishError(
-        `reading summary.md failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
+    return summary.content
   }
 
   private async openPullRequest(options: {

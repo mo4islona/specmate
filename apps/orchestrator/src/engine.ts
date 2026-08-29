@@ -324,9 +324,13 @@ export interface EngineWorkspaces {
     /** Absent means the repository's default branch (REQ-703). */
     baseBranch?: string
   }): Promise<Workspace>
-  provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace>
+  provisionConversation(
+    taskId: string,
+    workspace: Workspace,
+    key: string,
+  ): Promise<ConversationWorkspace>
   releaseConversation(task: { slug: string; repoUrl: string }, key: string): Promise<void>
-  discard(workspace: Workspace, commit?: string): Promise<void>
+  discard(taskId: string, workspace: Workspace, commit?: string): Promise<void>
   headCommit?(workspace: Workspace): Promise<string>
   commitStage?(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit>
   /**
@@ -1234,6 +1238,7 @@ export class Engine {
         baseBranch: task.baseBranch ?? undefined,
       })
       workspace = await workspaces.provisionConversation(
+        task.id,
         primary,
         `${response.id}-${response.telemetry.length}`,
       )
@@ -2091,9 +2096,11 @@ export class Engine {
     // Only while attempts remain: a task out of attempts leaves its tree as
     // evidence, which is what the human will be asked to look at.
     if (workspace) {
-      await workspaces.discard(workspace, row.workspaceCommit ?? undefined).catch((e: Error) => {
-        log?.(`discard after failed attempt on ${task.id}/${node.key}: ${e.message}`)
-      })
+      await workspaces
+        .discard(task.id, workspace, row.workspaceCommit ?? undefined)
+        .catch((e: Error) => {
+          log?.(`discard after failed attempt on ${task.id}/${node.key}: ${e.message}`)
+        })
     }
   }
 
@@ -2369,7 +2376,7 @@ export class Engine {
         repoUrl: task.repoUrl,
         baseBranch: task.baseBranch ?? undefined,
       })
-      await workspaces.discard(workspace, row.workspaceCommit ?? undefined)
+      await workspaces.discard(task.id, workspace, row.workspaceCommit ?? undefined)
     } catch (e) {
       log?.(`sweep: workspace discard for ${task.id} failed: ${(e as Error).message}`)
     }
@@ -2534,7 +2541,7 @@ export class Engine {
         repoUrl: task.repoUrl,
         baseBranch: task.baseBranch ?? undefined,
       })
-      await this.deps.workspaces.discard(workspace, stage.workspaceCommit ?? undefined)
+      await this.deps.workspaces.discard(task.id, workspace, stage.workspaceCommit ?? undefined)
       const [cleaned] = await this.deps.db
         .update(stages)
         .set({

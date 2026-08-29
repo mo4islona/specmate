@@ -3,7 +3,13 @@ import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Git, mirrorKey, RESULT_FILE, SCRATCH_DIR, type StageRef } from '../src/index.ts'
-import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeManager,
+  makeOrigin,
+  provisionWorkspace,
+  writeFiles,
+} from './fixtures.ts'
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000009',
@@ -20,7 +26,7 @@ async function setup(slug: string) {
     'src/app.ts': 'export const a = 1\n',
   })
   const { manager } = await makeManager()
-  const workspace = await manager.provision({
+  const workspace = await provisionWorkspace(manager, {
     slug,
     repoUrl: origin.url,
     mirrorKey: mirrorKey(origin.url),

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { artifactKindForPath, changeDir, mirrorKey, taskBranch } from '../src/index.ts'
+import {
+  artifactKindForPath,
+  changeDir,
+  changeLayoutOf,
+  mirrorKey,
+  taskBranch,
+} from '../src/index.ts'
 
 describe('mirror keys', () => {
   test('are filesystem-safe and stable', () => {
@@ -26,7 +32,13 @@ describe('mirror keys', () => {
 describe('task paths', () => {
   test('branch and change folder derive from the slug', () => {
     expect(taskBranch('fix-reorg')).toBe('task/fix-reorg')
-    expect(changeDir('fix-reorg')).toBe('openspec/changes/fix-reorg')
+    expect(changeDir('repository', 'fix-reorg')).toBe('openspec/changes/fix-reorg')
+  })
+
+  test('the folder stands under the layout the task is pinned to — AC-1722', () => {
+    expect(changeDir('internal', 'fix-reorg')).toBe('.specmate/changes/fix-reorg')
+    expect(changeLayoutOf('.specmate/changes/fix-reorg')).toBe('internal')
+    expect(changeLayoutOf('openspec/changes/fix-reorg')).toBe('repository')
   })
 })
 

@@ -15,14 +15,14 @@ import {
   type StageResumption,
   type StageTelemetry,
 } from '@specmate/core'
-import type { Git, Workspace, WorkspaceService } from '@specmate/workspace'
+import { changeRootOf, type Git, type Workspace, type WorkspaceService } from '@specmate/workspace'
 import { checkBriefCompleteness } from './brief.ts'
 import type { RunnerConfig } from './config.ts'
 import { corroborateVerification } from './corroboration.ts'
 import { assemblePrompt } from './prompt.ts'
 import { RUN_FAILURES, type StageRunError, stageLabel } from './provider-run.ts'
 import type { StageRejection } from './rejection.ts'
-import { changedPaths, changesRoot, checkWriteScope } from './scope.ts'
+import { changedPaths, checkWriteScope } from './scope.ts'
 
 /** Injected rather than a database handle: the ledger is text by the time a stage sees it. */
 export type LedgerSource = (taskId: string) => Promise<string>
@@ -211,7 +211,7 @@ export class StageExecutor {
       // Only before another try: a stage that has run out of attempts leaves its
       // working tree as it was, which is what a human will be asked to look at.
       if (i < MAX_ATTEMPTS - 1) {
-        await this.deps.workspaces.discard(request.workspace)
+        await this.deps.workspaces.discard(request.taskId, request.workspace)
         // The continued session's transcript says it wrote those files; after
         // this they are gone. An attempt that is not told so writes only the
         // correction and leaves the change folder half-built.
@@ -301,8 +301,15 @@ export class StageExecutor {
     // Memoized: `checkWriteScope` and `checkBriefCompleteness` both read the
     // workspace's changed paths, and a stage attempt never mutates the tree
     // between them, so the underlying `git status` runs at most once here.
+    //
+    // Two halves, because git reports only one of them: the tree as git sees it, and
+    // the change folder where the repository does not carry it (REQ-1707).
     let changedPathsPromise: Promise<string[]> | undefined
-    const getChangedPaths = () => (changedPathsPromise ??= changedPaths(git, request.workspace))
+    const getChangedPaths = () =>
+      (changedPathsPromise ??= Promise.all([
+        changedPaths(git, request.workspace),
+        workspaces.changedArtifacts(request.taskId, request.workspace),
+      ]).then(([tracked, written]) => [...tracked, ...written]))
 
     const violations = await checkWriteScope(
       request.workspace,
@@ -447,7 +454,7 @@ export class StageExecutor {
   ): Promise<string | null> {
     if (!declared) return null
 
-    const folder = `${changesRoot(workspace.changeDir)}/${declared}`
+    const folder = `${changeRootOf(workspace.changeDir)}/${declared}`
     const tracked = await this.deps.git.tryRun(['ls-files', '--', folder], { cwd: workspace.path })
 
     return tracked.exitCode === 0 && tracked.stdout.trim().length > 0 ? null : declared

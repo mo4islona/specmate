@@ -87,7 +87,7 @@ export function fakeWorkspaces(): FakeWorkspaces {
         calls.provisioned.push(request.slug)
         return workspace(request.slug)
       },
-      async provisionConversation(primary, key): Promise<ConversationWorkspace> {
+      async provisionConversation(_taskId, primary, key): Promise<ConversationWorkspace> {
         calls.conversationProvisioned.push(key)
         return {
           ...primary,
@@ -106,7 +106,7 @@ export function fakeWorkspaces(): FakeWorkspaces {
           throw error
         }
       },
-      async discard(ws) {
+      async discard(_taskId, ws) {
         calls.discarded.push(ws.slug)
       },
       async writeDecisionLog(ws, markdown) {

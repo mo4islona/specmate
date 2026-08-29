@@ -1,13 +1,14 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import type { AgentRole, ProviderId } from '@specmate/core'
+import { dirname, isAbsolute, join } from 'node:path'
+import type { AgentRole, ProviderId, SpecLayout } from '@specmate/core'
 import { resolveWorkspaceConfig, type WorkspaceConfig, type WorkspaceOptions } from './config.ts'
-import { isDirectory, pathExists } from './fs.ts'
+import { isDirectory, pathExists, walkMarkdown } from './fs.ts'
 import { Git } from './git.ts'
 import { withMirrorLock as lockMirror } from './lock.ts'
 import { ensureExcludes, ensureMirror, resolveBaseCommit, resolveDefaultBranch } from './mirror.ts'
 import {
   changeDir,
+  changeLayoutOf,
   conversationWorktreePath,
   DECISION_LOG_FILE,
   type MirrorKey,
@@ -24,11 +25,14 @@ export interface ProvisionRequest {
   readonly mirrorKey: MirrorKey
   /** Absent means the repository's default branch, resolved here (REQ-703). */
   readonly baseBranch?: string
-  /** What planning called the change; absent leaves the folder under the slug (REQ-705). */
-  readonly changeName?: string | null
 }
 
-export interface Workspace {
+/**
+ * A working tree, before the task's change folder has been opened in it. The two are
+ * separate steps because where that folder goes depends on the repository's convention,
+ * and reading the convention needs the tree (REQ-1707).
+ */
+export interface ProvisionedTree {
   readonly slug: string
   readonly repoUrl: string
   readonly mirrorKey: MirrorKey
@@ -37,9 +41,12 @@ export interface Workspace {
   readonly baseBranch: string
   /** Absolute path of the working tree — what a runner container mounts. */
   readonly path: string
+  readonly mirrorPath: string
+}
+
+export interface Workspace extends ProvisionedTree {
   /** Change folder, relative to the working tree (see `StageJob.changeDir`). */
   readonly changeDir: string
-  readonly mirrorPath: string
 }
 
 /** A clean, detached snapshot destroyed after one conversation response attempt. */
@@ -47,6 +54,13 @@ export interface ConversationWorkspace extends Workspace {
   readonly kind: 'conversation'
   readonly key: string
   readonly sourceBranch: string
+}
+
+export class NotACheckoutError extends Error {
+  constructor(readonly path: unknown) {
+    super(`refusing to work in ${JSON.stringify(path)}: it is not a checkout`)
+    this.name = 'NotACheckoutError'
+  }
 }
 
 export class InvalidConversationWorkspaceKeyError extends Error {
@@ -97,7 +111,7 @@ export class WorkspaceManager {
    * no longer matches its branch. Every path is derived from the slug, so the
    * filesystem is the only bookkeeping there is.
    */
-  async provision(request: ProvisionRequest): Promise<Workspace> {
+  async provision(request: ProvisionRequest): Promise<ProvisionedTree> {
     const mirror = mirrorPath(this.config, request.mirrorKey)
     return this.withMirrorLock(mirror, async () => {
       await ensureMirror(this.git, this.config, request)
@@ -110,7 +124,7 @@ export class WorkspaceManager {
       await ensureExcludes(mirror)
       const path = worktreePath(this.config, request.slug)
       await this.ensureWorktree(mirror, path, branch)
-      const folder = await this.scaffoldChangeFolder(path, request.slug, request.changeName)
+
       return {
         slug: request.slug,
         repoUrl: request.repoUrl,
@@ -118,9 +132,25 @@ export class WorkspaceManager {
         branch,
         baseBranch,
         path,
-        changeDir: folder,
         mirrorPath: mirror,
       }
+    })
+  }
+
+  /**
+   * Opens the task's change folder under the layout it is pinned to, and answers with
+   * the workspace naming where it ended up. Separate from `provision` because the
+   * layout is the caller's to decide: it is a fact about the task, not about the tree.
+   */
+  async openChangeFolder(
+    tree: ProvisionedTree,
+    layout: SpecLayout,
+    changeName?: string | null,
+  ): Promise<Workspace> {
+    return this.withMirrorLock(tree.mirrorPath, async () => {
+      const folder = await this.scaffoldChangeFolder(tree.path, layout, tree.slug, changeName)
+
+      return { ...tree, changeDir: folder }
     })
   }
 
@@ -178,7 +208,7 @@ export class WorkspaceManager {
    * this one worktree, so a commit racing a conversation's HEAD read (or
    * another commit, or a discard) is a real TOCTOU otherwise.
    */
-  async commitStage(workspace: Workspace, stage: StageRef): Promise<CommitOutcome> {
+  async commitStage(workspace: ProvisionedTree, stage: StageRef): Promise<CommitOutcome> {
     return this.withMirrorLock(workspace.mirrorPath, async () => {
       await this.git.run(['add', '-A'], { cwd: workspace.path })
       const status = await this.git.run(['status', '--porcelain=v1', '-z'], { cwd: workspace.path })
@@ -209,7 +239,13 @@ export class WorkspaceManager {
    * result — is the evidence a human is shown, and excluded paths are exactly
    * what `-x` would delete.
    */
-  async discard(workspace: Workspace, commit = 'HEAD'): Promise<void> {
+  async discard(workspace: ProvisionedTree, commit = 'HEAD'): Promise<void> {
+    // A reset and a clean take their directory from the workspace they are handed, so
+    // one that names no checkout would run them in whatever directory this process is
+    // in. Nothing about the caller is worth that, and a signature change is exactly
+    // how a caller comes to pass the wrong shape.
+    await assertCheckout(workspace)
+
     await this.withMirrorLock(workspace.mirrorPath, async () => {
       await this.git.run(['reset', '--hard', '--quiet', commit], { cwd: workspace.path })
       await this.git.run(['clean', '-fdq'], { cwd: workspace.path })
@@ -257,7 +293,12 @@ export class WorkspaceManager {
    */
   async renameChangeFolder(workspace: Workspace, changeName: string): Promise<Workspace> {
     return this.withMirrorLock(workspace.mirrorPath, async () => {
-      const folder = await this.scaffoldChangeFolder(workspace.path, workspace.slug, changeName)
+      const folder = await this.scaffoldChangeFolder(
+        workspace.path,
+        changeLayoutOf(workspace.changeDir),
+        workspace.slug,
+        changeName,
+      )
 
       return { ...workspace, changeDir: folder }
     })
@@ -341,10 +382,11 @@ export class WorkspaceManager {
    */
   private async scaffoldChangeFolder(
     path: string,
+    layout: SpecLayout,
     slug: string,
     changeName?: string | null,
   ): Promise<string> {
-    const folder = await this.convergeChangeDir(path, slug, changeName)
+    const folder = await this.convergeChangeDir(path, layout, slug, changeName)
     await mkdir(join(path, folder), { recursive: true })
 
     const marker = join(path, folder, SCHEMA_MARKER)
@@ -357,16 +399,17 @@ export class WorkspaceManager {
 
   private async convergeChangeDir(
     path: string,
+    layout: SpecLayout,
     slug: string,
     changeName?: string | null,
   ): Promise<string> {
-    const provisional = changeDir(slug)
+    const provisional = changeDir(layout, slug)
     if (!changeName || changeName === slug) return provisional
 
     const standing = await isDirectory(join(path, provisional))
     // Nothing standing under the provisional name means this task already
     // converged; the declared folder is its own, suffix and all.
-    if (!standing) return changeDir(changeName)
+    if (!standing) return changeDir(layout, changeName)
 
     // A name the repository has already used for something else is not this
     // task's to write into, and the two sharing one folder is the failure
@@ -378,8 +421,10 @@ export class WorkspaceManager {
     // artifacts sitting in it, and both folders are then committed — one of
     // them holding nothing but the schema marker, and it the one the task goes
     // on to call its own.
-    const taken = await this.isTracked(path, changeDir(changeName))
-    const declared = taken ? `${changeDir(changeName)}-${slug.slice(-8)}` : changeDir(changeName)
+    const taken = await this.isTracked(path, changeDir(layout, changeName))
+    const declared = taken
+      ? `${changeDir(layout, changeName)}-${slug.slice(-8)}`
+      : changeDir(layout, changeName)
 
     // Renaming a folder already in the history would rewrite paths the stage
     // results and artifact rows point at; the provisional name stands.
@@ -440,18 +485,10 @@ function assertConversationWorkspaceKey(key: string): void {
   }
 }
 
-/** Every markdown file under a directory, or none where the directory is absent. */
-async function walkMarkdown(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  const files: string[] = []
-  for (const entry of entries) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...(await walkMarkdown(full)))
-    } else if (entry.name.endsWith('.md')) {
-      files.push(full)
-    }
+/** A workspace that does not name an existing checkout is not one to run git in. */
+async function assertCheckout(workspace: ProvisionedTree): Promise<void> {
+  const path = workspace?.path
+  if (typeof path !== 'string' || !isAbsolute(path) || !(await pathExists(join(path, '.git')))) {
+    throw new NotACheckoutError(path)
   }
-
-  return files
 }

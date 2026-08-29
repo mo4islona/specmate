@@ -19,7 +19,7 @@ const gates = new Engine({
       Promise.reject(new Error('the API never provisions conversation workspaces')),
     releaseConversation: (task, key) =>
       workspaceService.releaseConversation(task.slug, task.repoUrl, key),
-    discard: (workspace) => workspaceService.discard(workspace),
+    discard: (taskId, workspace) => workspaceService.discard(taskId, workspace),
     release: (taskId) => workspaceService.release(taskId),
   },
   settings: {

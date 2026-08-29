@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { SpecLayout } from '@specmate/core'
 import {
   detectToolchains,
   type EnvironmentResolver,
   Git,
+  type ProvisionRequest,
   resolveWorkspaceConfig,
+  type Workspace,
   WorkspaceManager,
   type WorkspaceOptions,
 } from '../src/index.ts'
@@ -82,6 +85,21 @@ export async function writeFiles(root: string, files: Record<string, string>): P
     await mkdir(dirname(target), { recursive: true })
     await writeFile(target, content)
   }
+}
+
+/**
+ * The two steps `WorkspaceService` takes for a task — provision the tree, then open the
+ * change folder under the layout the task is pinned to — for a test that wants the
+ * workspace rather than the tree.
+ */
+export async function provisionWorkspace(
+  manager: WorkspaceManager,
+  request: ProvisionRequest,
+  options: { layout?: SpecLayout; changeName?: string | null } = {},
+): Promise<Workspace> {
+  const tree = await manager.provision(request)
+
+  return manager.openChangeFolder(tree, options.layout ?? 'repository', options.changeName)
 }
 
 export async function makeManager(

@@ -7,7 +7,13 @@ import {
   mirrorKey,
   type StageRef,
 } from '../src/index.ts'
-import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeManager,
+  makeOrigin,
+  provisionWorkspace,
+  writeFiles,
+} from './fixtures.ts'
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000009',
@@ -26,7 +32,7 @@ describe('conversation workspaces', () => {
   test('start and restart from a clean task snapshot without prior response scratch', async () => {
     const origin = await makeOrigin({ 'src/app.ts': 'export const a = 1\n' })
     const { manager } = await makeManager()
-    const primary = await manager.provision({
+    const primary = await provisionWorkspace(manager, {
       slug: 'conversation-snapshot',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -59,7 +65,7 @@ describe('conversation workspaces', () => {
   test('destroying a snapshot removes response edits and commits without moving the task branch', async () => {
     const origin = await makeOrigin({ 'src/app.ts': 'export const a = 1\n' })
     const { manager } = await makeManager()
-    const primary = await manager.provision({
+    const primary = await provisionWorkspace(manager, {
       slug: 'conversation-disposal',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -102,7 +108,7 @@ describe('conversation workspaces', () => {
   test('rejects keys that could escape the conversation workspace root', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const primary = await manager.provision({
+    const primary = await provisionWorkspace(manager, {
       slug: 'conversation-key',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),

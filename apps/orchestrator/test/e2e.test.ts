@@ -237,7 +237,7 @@ describeDb('the loop against a real repository', () => {
 
     return join(
       worktreePath(resolveWorkspaceConfig({ root }), task.slug),
-      changeDir(task.slug, task.changeName),
+      changeDir(task.changeLayout ?? 'repository', task.slug, task.changeName),
       ...parts,
     )
   }

@@ -1,14 +1,25 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, relative } from 'node:path'
 import {
   type ExecutionEnvironment,
   expectedSuitePath,
   isTerminal,
+  layoutFor,
   type ResolvedToolchain,
   resolveSpecConvention,
   type SpecConvention,
+  type SpecLayout,
   type TaskState,
 } from '@specmate/core'
-import { type Database, events, getSpecConvention, repositories, tasks } from '@specmate/db'
-import { and, eq, isNull } from 'drizzle-orm'
+import {
+  artifacts,
+  type Database,
+  events,
+  getSpecConvention,
+  repositories,
+  tasks,
+} from '@specmate/db'
+import { and, eq, isNull, like } from 'drizzle-orm'
 import {
   capDiffFiles,
   resolveTaskDiffRange,
@@ -16,17 +27,19 @@ import {
   taskFileDiff,
   taskFilesChanged,
 } from './diff.ts'
+import { walkMarkdown } from './fs.ts'
 import { Git } from './git.ts'
 import { type IndexedArtifact, indexChangeFolder } from './index-artifacts.ts'
 import type {
   CommitOutcome,
   ConversationWorkspace,
+  ProvisionedTree,
   ProvisionRequest,
   StageRef,
   Workspace,
   WorkspaceManager,
 } from './manager.ts'
-import { changeDir, type MirrorKey, recordedMirrorKey } from './paths.ts'
+import { changeDir, changeLayoutOf, type MirrorKey, recordedMirrorKey } from './paths.ts'
 import { readSpecConventionTree } from './spec-conventions.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
@@ -62,6 +75,12 @@ export interface DiffTaskRef {
   readonly baseBranch: string | null
   /** Null until planning named the change; the folder then stands under the slug. */
   readonly changeName?: string | null
+  /**
+   * Null until provisioning pinned it. A task whose folder the repository does not
+   * carry has no specification half in its diff, and the group then matches nothing —
+   * which is what it should report (REQ-1707).
+   */
+  readonly changeLayout?: SpecLayout | null
 }
 
 export class TaskNotFoundError extends Error {
@@ -110,18 +129,28 @@ export class WorkspaceService {
     // The folder's name is the task's, not the caller's: a dispatcher holding a
     // snapshot from before planning declared one would re-provision under the
     // provisional name and split the task's work across two folders.
-    const workspace = await this.manager.provision({
+    const tree = await this.manager.provision({
       ...request,
       mirrorKey: await this.mirrorKeyFor(task),
-      changeName: task.changeName,
     })
     // What a task with no base of its own actually ran against, pinned on first
     // provision so publish and the diff read a branch rather than a convention.
     if (task.baseBranch === null) {
-      await this.persistBaseBranch(request.taskId, workspace.baseBranch)
+      await this.persistBaseBranch(request.taskId, tree.baseBranch)
     }
 
-    await this.persistSpecConvention(request.taskId, workspace, task.repoUrl, task.specConvention)
+    const convention = await this.persistSpecConvention(
+      request.taskId,
+      tree,
+      task.repoUrl,
+      task.specConvention,
+    )
+    const layout = await this.persistChangeLayout(request.taskId, task.changeLayout, convention)
+    // The folder's name is the task's, not the caller's: a dispatcher holding a
+    // snapshot from before planning declared one would re-provision under the
+    // provisional name and split the task's work across two folders.
+    const workspace = await this.manager.openChangeFolder(tree, layout, task.changeName)
+    await this.restoreChangeFolder(request.taskId, workspace)
 
     if (task.environment !== null) return workspace
 
@@ -173,20 +202,99 @@ export class WorkspaceService {
     return environment
   }
 
+  /**
+   * The index follows the stage, not the commit (REQ-708): a stage whose only output is
+   * a change folder the repository does not carry commits nothing, and the store is the
+   * only place those artifacts exist.
+   */
   async commitStage(taskId: string, workspace: Workspace, stage: StageRef): Promise<StageCommit> {
     const outcome = await this.manager.commitStage(workspace, stage)
-    if (!outcome.committed) return outcome
-
     const indexed = await indexChangeFolder(this.db, this.git, this.manager.config, {
       taskId,
       workspace,
-      commit: outcome.commit,
+      commit: outcome.committed ? outcome.commit : undefined,
     })
+
     return { ...outcome, indexed }
   }
 
-  provisionConversation(workspace: Workspace, key: string): Promise<ConversationWorkspace> {
-    return this.manager.provisionConversation(workspace, key)
+  async provisionConversation(
+    taskId: string,
+    workspace: Workspace,
+    key: string,
+  ): Promise<ConversationWorkspace> {
+    const conversation = await this.manager.provisionConversation(workspace, key)
+    await this.restoreChangeFolder(taskId, conversation)
+
+    return conversation
+  }
+
+  /**
+   * What a run wrote into a change folder the repository does not carry: `git status`
+   * never reports an excluded path, so the store is what the folder is compared against
+   * (REQ-208, REQ-1303). Only files that differ from what is on record — the folder is
+   * restored from the store before the run, so reporting the whole of it would read
+   * every restored file as this run's work.
+   */
+  async changedArtifacts(taskId: string, workspace: Workspace): Promise<string[]> {
+    if (changeLayoutOf(workspace.changeDir) === 'repository') return []
+
+    const stored = new Map(
+      (await this.storedArtifacts(taskId, workspace)).map((artifact) => [
+        artifact.path,
+        artifact.snapshotMd,
+      ]),
+    )
+    const folder = join(workspace.path, workspace.changeDir)
+    const changed: string[] = []
+    const present = new Set<string>()
+    for (const file of await walkMarkdown(folder)) {
+      const path = `${workspace.changeDir}/${relative(folder, file)}`
+      present.add(path)
+      const content = await readFile(file, 'utf8').catch(() => null)
+      if (content !== null && stored.get(path) !== content) changed.push(path)
+    }
+
+    // A file the store carries and the tree no longer does: deleting an artifact is as
+    // much a write as rewriting one, and `git status` would report it too.
+    for (const path of stored.keys()) {
+      if (!present.has(path)) changed.push(path)
+    }
+
+    return changed
+  }
+
+  /**
+   * REQ-712: where the repository does not carry the change folder, the store is what
+   * the folder is. A tree git just built holds none of it, so every artifact on record
+   * is written back before anything reads it — and a markdown artifact the store does
+   * not carry is removed, which is how a discarded attempt's writes stop existing.
+   */
+  private async restoreChangeFolder(taskId: string, workspace: Workspace): Promise<void> {
+    if (changeLayoutOf(workspace.changeDir) === 'repository') return
+
+    const stored = await this.storedArtifacts(taskId, workspace)
+    const folder = join(workspace.path, workspace.changeDir)
+    const kept = new Set(stored.map((artifact) => artifact.path))
+    for (const file of await walkMarkdown(folder)) {
+      const path = `${workspace.changeDir}/${relative(folder, file)}`
+      if (!kept.has(path)) await rm(file, { force: true })
+    }
+
+    for (const artifact of stored) {
+      if (artifact.snapshotMd === null) continue
+
+      const target = join(workspace.path, artifact.path)
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, artifact.snapshotMd)
+    }
+  }
+
+  private storedArtifacts(taskId: string, workspace: Workspace) {
+    return this.db
+      .select({ path: artifacts.path, snapshotMd: artifacts.snapshotMd })
+      .from(artifacts)
+      .where(and(eq(artifacts.taskId, taskId), like(artifacts.path, `${workspace.changeDir}/%`)))
   }
 
   writeDecisionLog(workspace: Workspace, markdown: string): Promise<void> {
@@ -201,8 +309,14 @@ export class WorkspaceService {
     return this.manager.releaseConversation(slug, recordedMirrorKey(mirrorKey), key)
   }
 
-  discard(workspace: Workspace, commit?: string): Promise<void> {
-    return this.manager.discard(workspace, commit)
+  /**
+   * The commit is what a repository-kept change folder is returned to; a folder the
+   * repository does not carry has no commit behind it, so the store is what it is
+   * returned to instead (REQ-712/AC-748).
+   */
+  async discard(taskId: string, workspace: Workspace, commit?: string): Promise<void> {
+    await this.manager.discard(workspace, commit)
+    await this.restoreChangeFolder(taskId, workspace)
   }
 
   headCommit(workspace: Workspace): Promise<string> {
@@ -229,7 +343,7 @@ export class WorkspaceService {
       ...task,
       mirrorKey: await this.mirrorKeyFor(task),
     })
-    const files = await taskFilesChanged(this.git, range, changeDir(task.slug, task.changeName))
+    const files = await taskFilesChanged(this.git, range, taskChangeDir(task))
 
     return { tip: range.tip, total: files.length, files: capDiffFiles(files) }
   }
@@ -281,20 +395,57 @@ export class WorkspaceService {
    */
   private async persistSpecConvention(
     taskId: string,
-    workspace: Workspace,
+    workspace: ProvisionedTree,
     repoUrl: string,
     current: SpecConvention | null,
-  ): Promise<void> {
+  ): Promise<SpecConvention> {
     const setting = await getSpecConvention(this.db, repoUrl)
     const tree = await readSpecConventionTree(workspace.path, expectedSuitePath(setting))
     const resolved = resolveSpecConvention(tree, setting)
 
-    if (current && sameSpecConvention(current, resolved)) return
+    if (current && sameSpecConvention(current, resolved)) return resolved
 
     await this.db
       .update(tasks)
       .set({ specConvention: resolved, updatedAt: new Date() })
       .where(eq(tasks.id, taskId))
+
+    return resolved
+  }
+
+  /**
+   * Where this task's change folder stands, decided once and read back on every later
+   * provisioning (REQ-1707). The profile is re-resolved above and governs what the task
+   * does next (REQ-1706); moving a folder that already holds artifacts is not that, so
+   * the answer is pinned rather than recomputed.
+   *
+   * Guarded on the column still being null, and re-read where the guard bit: two
+   * provisions racing on a task that has pinned nothing must not walk away with two
+   * different answers.
+   */
+  private async persistChangeLayout(
+    taskId: string,
+    pinned: SpecLayout | null,
+    convention: SpecConvention,
+  ): Promise<SpecLayout> {
+    if (pinned) return pinned
+
+    const layout = layoutFor(convention.profile)
+    const [updated] = await this.db
+      .update(tasks)
+      .set({ changeLayout: layout, updatedAt: new Date() })
+      .where(and(eq(tasks.id, taskId), isNull(tasks.changeLayout)))
+      .returning({ changeLayout: tasks.changeLayout })
+    if (updated?.changeLayout) return updated.changeLayout
+
+    const [current] = await this.db
+      .select({ changeLayout: tasks.changeLayout })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1)
+    if (!current) throw new TaskNotFoundError(taskId)
+
+    return current.changeLayout ?? layout
   }
 
   private async persistInitialEnvironment(
@@ -362,6 +513,14 @@ export class WorkspaceService {
       throw new WorkspaceTaskMismatchError(request.taskId)
     }
   }
+}
+
+/**
+ * The change folder of a task read off its record. A task provisioned before the layout
+ * was pinned kept its folder in the repository, which is what a null reads as.
+ */
+function taskChangeDir(task: DiffTaskRef): string {
+  return changeDir(task.changeLayout ?? 'repository', task.slug, task.changeName)
 }
 
 function sameSpecConvention(a: SpecConvention, b: SpecConvention): boolean {

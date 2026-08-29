@@ -22,9 +22,10 @@ export function createEngineWorkspaces({
 }: EngineWorkspacesDeps): DispatchingWorkspaces {
   return {
     provision: (request) => service.provision({ ...request, image }),
-    provisionConversation: (workspace, key) => service.provisionConversation(workspace, key),
+    provisionConversation: (taskId, workspace, key) =>
+      service.provisionConversation(taskId, workspace, key),
     releaseConversation: (task, key) => service.releaseConversation(task.slug, task.repoUrl, key),
-    discard: (workspace, commit) => service.discard(workspace, commit),
+    discard: (taskId, workspace, commit) => service.discard(taskId, workspace, commit),
     headCommit: (workspace) => service.headCommit(workspace),
     commitStage: (taskId, workspace, stage) => service.commitStage(taskId, workspace, stage),
     renameChangeFolder: (workspace, changeName) =>
