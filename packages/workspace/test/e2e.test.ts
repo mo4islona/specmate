@@ -44,9 +44,12 @@ describeDb('a task from provisioning to release', () => {
   })
 
   test('walks the whole way with a restarted process at every step', async () => {
+    // The suite is what makes the change folder this repository's own content, and
+    // therefore what makes a stage that writes only artifacts commit at all (REQ-1707).
     const origin = await makeOrigin({
       'README.md': '# service\n',
       'src/app.ts': 'export const answer = 41\n',
+      'openspec/specs/answer/spec.md': '# answer Specification\n',
     })
     const root = await tempDir('root')
     const slug = `e2e-${randomUUID().slice(0, 8)}`
