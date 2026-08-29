@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { normalizeRemote } from '@specmate/core'
+import { normalizeRemote, type SpecLayout } from '@specmate/core'
 import type { WorkspaceConfig } from './config.ts'
 
 export const CHANGES_ROOT = 'openspec/changes'
@@ -13,6 +13,16 @@ export const RESULT_FILE = 'RESULT.json'
 export const SCRATCH_DIR = '.specmate'
 /** Conversational run product, kept inside the per-attempt scratch directory. */
 export const CONVERSATION_FILE = 'CONVERSATION.json'
+
+/**
+ * Where each layout keeps a task's change folder, relative to the working tree. The
+ * internal one sits under the scratch directory, so the exclusion that keeps a run's
+ * own files out of a commit already covers it (REQ-707, REQ-1707).
+ */
+export const CHANGE_ROOTS: Readonly<Record<SpecLayout, string>> = {
+  repository: CHANGES_ROOT,
+  internal: `${SCRATCH_DIR}/changes`,
+}
 
 /**
  * A repository's name on disk. Branded rather than a bare `string` because the
@@ -121,6 +131,16 @@ export function taskBranch(slug: string): string {
  * stands under until there is one, and stays the name of a task whose planning
  * never declared it.
  */
-export function changeDir(slug: string, changeName?: string | null): string {
-  return `${CHANGES_ROOT}/${changeName || slug}`
+export function changeDir(layout: SpecLayout, slug: string, changeName?: string | null): string {
+  return `${CHANGE_ROOTS[layout]}/${changeName || slug}`
+}
+
+/** The layout a change folder stands under — `changeDir` read backwards. */
+export function changeLayoutOf(dir: string): SpecLayout {
+  return dir.startsWith(`${CHANGE_ROOTS.internal}/`) ? 'internal' : 'repository'
+}
+
+/** The directory a change folder stands in, for building a sibling's path. */
+export function changeRootOf(dir: string): string {
+  return CHANGE_ROOTS[changeLayoutOf(dir)]
 }

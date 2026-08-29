@@ -18,7 +18,13 @@ import {
   taskFilesChanged,
   withMirrorLock,
 } from '../src/index.ts'
-import { cleanupTempDirs, makeManager, makeOrigin, writeFiles } from './fixtures.ts'
+import {
+  cleanupTempDirs,
+  makeManager,
+  makeOrigin,
+  provisionWorkspace,
+  writeFiles,
+} from './fixtures.ts'
 
 const STAGE: StageRef = {
   stageId: '3f6f0f5e-0f1a-4a3a-9d3c-000000000002',
@@ -33,7 +39,7 @@ describe('task diff range', () => {
   it('resolves the merge-base and tip of a provisioned task branch', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'diff-range',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -72,7 +78,7 @@ describe('task diff range', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'unrelated-history',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -102,7 +108,7 @@ describe('task diff range', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    await manager.provision({
+    await provisionWorkspace(manager, {
       slug: 'lock-order',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -142,7 +148,7 @@ describe('files changed', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'tab-path',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -170,7 +176,7 @@ describe('files changed', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'has-commits',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -203,7 +209,7 @@ describe('files changed', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    await manager.provision({
+    await provisionWorkspace(manager, {
       slug: 'no-commits',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -225,7 +231,7 @@ describe('files changed', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'change-only',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -265,7 +271,7 @@ describe('files changed', () => {
     })
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'deleted-file',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -296,7 +302,7 @@ describe('files changed', () => {
     })
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'type-changed-file',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -374,7 +380,7 @@ describe('one file diff', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'one-file',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -398,7 +404,7 @@ describe('one file diff', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'directory-path',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -428,7 +434,7 @@ describe('one file diff', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'exclude-change-dir',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -456,7 +462,7 @@ describe('a task whose workspace has been released (AC-1037)', () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug: 'released',
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),
@@ -505,7 +511,7 @@ describe('one file diff context width', () => {
     const origin = await makeOrigin({ 'long.txt': original })
     const { manager } = await makeManager()
     const git = new Git(manager.config)
-    const workspace = await manager.provision({
+    const workspace = await provisionWorkspace(manager, {
       slug,
       repoUrl: origin.url,
       mirrorKey: mirrorKey(origin.url),

@@ -95,8 +95,8 @@ describe('the engine’s workspace adapter', () => {
   test('carries the commit a discard rewinds to', async () => {
     const { service, calls } = recordingService()
 
-    await createEngineWorkspaces({ service, image: IMAGE }).discard(WORKSPACE, 'abc1234')
+    await createEngineWorkspaces({ service, image: IMAGE }).discard('t-1', WORKSPACE, 'abc1234')
 
-    expect(calls[0]?.args).toEqual([WORKSPACE, 'abc1234'])
+    expect(calls[0]?.args).toEqual(['t-1', WORKSPACE, 'abc1234'])
   })
 })

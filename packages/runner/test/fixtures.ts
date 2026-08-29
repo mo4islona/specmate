@@ -143,12 +143,13 @@ export async function makeHarness(
 
   const root = await tempDir('root')
   const manager = new WorkspaceManager({ config: { root } })
-  const workspace = await manager.provision({
+  const tree = await manager.provision({
     slug,
     repoUrl: `file://${originDir}`,
     mirrorKey: mirrorKey(`file://${originDir}`),
     baseBranch: 'main',
   })
+  const workspace = await manager.openChangeFolder(tree, 'repository')
   const git = new Git(manager.config)
 
   return {

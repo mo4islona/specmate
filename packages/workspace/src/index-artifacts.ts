@@ -1,24 +1,32 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import type { ArtifactKind } from '@specmate/core'
 import { artifacts, type Database } from '@specmate/db'
 import { and, eq, like, notInArray, sql } from 'drizzle-orm'
 import { artifactKindForPath } from './artifact-kinds.ts'
 import type { WorkspaceConfig } from './config.ts'
+import { walkMarkdown } from './fs.ts'
 import type { Git } from './git.ts'
 import type { Workspace } from './manager.ts'
+import { changeLayoutOf } from './paths.ts'
 
 export interface IndexedArtifact {
   readonly path: string
   readonly kind: ArtifactKind
-  readonly gitSha: string
+  /** Null for an artifact the repository does not carry: there is no commit to name. */
+  readonly gitSha: string | null
 }
 
 /**
- * Re-scans the committed change folder rather than diffing: it holds a handful
- * of files, `ls-tree` reports exactly what is in the commit (so excluded
- * scratch cannot leak in), and the same routine backfills the index after a
- * repair.
+ * Re-scans the change folder rather than diffing: it holds a handful of files, and the
+ * same routine backfills the index after a repair.
+ *
+ * Where the repository carries the folder, the commit is what is read — `ls-tree`
+ * reports exactly what went in, so excluded scratch cannot leak into the index, and git
+ * holds the content the stored copy is only a rendering of. Where it does not
+ * (REQ-1707), there is no commit to read and the working tree is the only statement of
+ * what the stage wrote; the stored copy is then the artifact itself, so it is kept whole
+ * rather than cut to a display ceiling (REQ-301).
  */
 export async function indexChangeFolder(
   db: Database,
@@ -27,30 +35,20 @@ export async function indexChangeFolder(
   params: { taskId: string; workspace: Workspace; commit?: string },
 ): Promise<IndexedArtifact[]> {
   const { taskId, workspace } = params
-  const listing = await git.run(
-    ['ls-tree', '-r', params.commit ?? 'HEAD', '--', workspace.changeDir],
-    { cwd: workspace.path },
-  )
-
-  const indexed: IndexedArtifact[] = []
-  for (const line of listing.stdout.split('\n')) {
-    const [meta, path] = line.split('\t')
-    if (!meta || !path) continue
-    const sha = meta.split(/\s+/)[2]
-    if (!sha) continue
-    const kind = artifactKindForPath(path.slice(workspace.changeDir.length + 1))
-    if (!kind) continue
-    indexed.push({ path, kind, gitSha: sha })
-  }
+  const keptByRepository = changeLayoutOf(workspace.changeDir) === 'repository'
+  const indexed = keptByRepository
+    ? await committedArtifacts(git, workspace, params.commit)
+    : await writtenArtifacts(workspace)
 
   if (indexed.length > 0) {
+    const limit = keptByRepository ? config.snapshotLimitBytes : Number.POSITIVE_INFINITY
     const rows = await Promise.all(
       indexed.map(async (artifact) => ({
         taskId,
         path: artifact.path,
         kind: artifact.kind,
         gitSha: artifact.gitSha,
-        snapshotMd: await snapshot(join(workspace.path, artifact.path), config.snapshotLimitBytes),
+        snapshotMd: await snapshot(join(workspace.path, artifact.path), limit),
       })),
     )
     await db
@@ -67,7 +65,7 @@ export async function indexChangeFolder(
       })
   }
 
-  // Anything still on record under this change folder is gone from the commit.
+  // Anything still on record under this change folder is gone from the stage's output.
   const kept = indexed.map((artifact) => artifact.path)
   await db
     .delete(artifacts)
@@ -82,9 +80,48 @@ export async function indexChangeFolder(
   return indexed
 }
 
-/** The snapshot only feeds the UI; git holds the truth, so truncation is safe. */
+async function committedArtifacts(
+  git: Git,
+  workspace: Workspace,
+  commit?: string,
+): Promise<IndexedArtifact[]> {
+  const listing = await git.run(['ls-tree', '-r', commit ?? 'HEAD', '--', workspace.changeDir], {
+    cwd: workspace.path,
+  })
+
+  const indexed: IndexedArtifact[] = []
+  for (const line of listing.stdout.split('\n')) {
+    const [meta, path] = line.split('\t')
+    if (!meta || !path) continue
+    const sha = meta.split(/\s+/)[2]
+    if (!sha) continue
+    const kind = artifactKindForPath(path.slice(workspace.changeDir.length + 1))
+    if (!kind) continue
+    indexed.push({ path, kind, gitSha: sha })
+  }
+
+  return indexed
+}
+
+async function writtenArtifacts(workspace: Workspace): Promise<IndexedArtifact[]> {
+  const folder = join(workspace.path, workspace.changeDir)
+  const indexed: IndexedArtifact[] = []
+  for (const file of await walkMarkdown(folder)) {
+    const within = relative(folder, file)
+    const kind = artifactKindForPath(within)
+    if (!kind) continue
+    indexed.push({ path: `${workspace.changeDir}/${within}`, kind, gitSha: null })
+  }
+
+  return indexed
+}
+
+/** Cut to a ceiling only where git holds the artifact and this copy is a rendering. */
 async function snapshot(path: string, limitBytes: number): Promise<string | null> {
   const content = await readFile(path).catch(() => null)
   if (!content) return null
-  return content.subarray(0, limitBytes).toString('utf8')
+
+  return Number.isFinite(limitBytes)
+    ? content.subarray(0, limitBytes).toString('utf8')
+    : content.toString('utf8')
 }

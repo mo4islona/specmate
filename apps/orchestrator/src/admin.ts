@@ -84,7 +84,7 @@ const engine = new Engine({
     provisionConversation: () =>
       Promise.reject(new Error('the admin entry never provisions conversation workspaces')),
     releaseConversation: (task, key) => service.releaseConversation(task.slug, task.repoUrl, key),
-    discard: (workspace) => service.discard(workspace),
+    discard: (taskId, workspace) => service.discard(taskId, workspace),
     release: (taskId) => service.release(taskId),
   },
   settings: {

@@ -169,7 +169,9 @@ function workspaceAdapter(harness: Awaited<ReturnType<typeof makeHarness>>): Wor
   return {
     commitStage: (_taskId: string, workspace: typeof harness.workspace, stage: unknown) =>
       harness.manager.commitStage(workspace, stage as never),
-    discard: (workspace: typeof harness.workspace) => harness.manager.discard(workspace),
+    discard: (_taskId: string, workspace: typeof harness.workspace) =>
+      harness.manager.discard(workspace),
+    changedArtifacts: () => Promise.resolve([]),
   } as unknown as WorkspaceService
 }
 
