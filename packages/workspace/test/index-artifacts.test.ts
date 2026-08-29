@@ -180,6 +180,26 @@ describeDb('artifact index', () => {
     ).toBe('# brief\n')
   })
 
+  test('reads what a run changed from the store where git reports nothing — AC-256, AC-1329', async () => {
+    const { task, service, workspace } = await setup({ 'README.md': '# origin\n' })
+    await writeFiles(workspace.path, { [`${workspace.changeDir}/proposal.md`]: '# brief\n' })
+    await service.commitStage(task.id, workspace, STAGE)
+
+    // Nothing has moved since the stage was indexed: an excluded folder full of files
+    // is not a run's work, or every check reading this would fire on every stage.
+    expect(await service.changedArtifacts(task.id, workspace)).toEqual([])
+
+    await writeFiles(workspace.path, { [`${workspace.changeDir}/proposal.md`]: '# rewritten\n' })
+    expect(await service.changedArtifacts(task.id, workspace)).toEqual([
+      `${workspace.changeDir}/proposal.md`,
+    ])
+
+    await rm(join(workspace.path, workspace.changeDir, 'proposal.md'))
+    expect(await service.changedArtifacts(task.id, workspace)).toEqual([
+      `${workspace.changeDir}/proposal.md`,
+    ])
+  })
+
   test('refuses to release a workspace whose task is still going', async () => {
     const { task, service, workspace } = await setup()
 
