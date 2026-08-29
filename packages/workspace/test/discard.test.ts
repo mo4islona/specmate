@@ -2,7 +2,14 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Git, mirrorKey, RESULT_FILE, SCRATCH_DIR, type StageRef } from '../src/index.ts'
+import {
+  Git,
+  mirrorKey,
+  NotACheckoutError,
+  RESULT_FILE,
+  SCRATCH_DIR,
+  type StageRef,
+} from '../src/index.ts'
 import {
   cleanupTempDirs,
   makeManager,
@@ -110,5 +117,15 @@ describe('discard', () => {
     )
     expect(await readFile(join(workspace.path, 'src/app.ts'), 'utf8')).toBe('export const a = 1\n')
     expect(await stat(join(workspace.path, 'src/partial.ts')).catch(() => null)).toBeNull()
+  })
+
+  test('refuses a workspace that names no checkout', async () => {
+    const { manager } = await makeManager()
+
+    // What a caller left on an older signature hands it. `git reset --hard` and
+    // `git clean -fd` take their directory from this, and a string has none.
+    const discard = manager.discard('a-task-id' as unknown as Parameters<typeof manager.discard>[0])
+
+    await expect(discard).rejects.toThrow(NotACheckoutError)
   })
 })

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
-import { createDb, type Database, events, pullRequests, tasks } from '@specmate/db'
+import { artifacts, createDb, type Database, events, pullRequests, tasks } from '@specmate/db'
 import {
   Git,
   type GitSpawn,
@@ -70,6 +70,14 @@ describeDb('publish action', () => {
       repoUrl: 'git@github.com:owner/repo.git',
     })
     created.push(task.id)
+    // The body is the approved summary, and the index is where publication reads it
+    // from now — a path on the branch is not one every task has (REQ-1707).
+    await db.insert(artifacts).values({
+      taskId: task.id,
+      path: `openspec/changes/${task.slug}/summary.md`,
+      kind: 'summary',
+      snapshotMd: '# Summary\n',
+    })
     if (options.existing) {
       await db.insert(pullRequests).values({
         taskId: task.id,
