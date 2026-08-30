@@ -1,6 +1,7 @@
 export * from './artifact-kinds.ts'
 export * from './config.ts'
 export * from './diff.ts'
+export * from './fs.ts'
 export * from './git.ts'
 export * from './index-artifacts.ts'
 export * from './lock.ts'

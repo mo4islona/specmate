@@ -132,6 +132,15 @@ describe('FilesChangedScreen (REQ-916)', () => {
     expect(screen.queryByText(/^Code/)).toBeNull()
   })
 
+  it('shows no specification group where the repository carries no change folder — AC-1722', async () => {
+    listDiffFiles.mockResolvedValue(listing([file(), file({ path: 'src/other.ts' })]))
+
+    renderScreen(<FilesChangedScreen taskId="task-1" />)
+
+    expect(await screen.findByText(/Code · 2/)).toBeTruthy()
+    expect(screen.queryByText(/Specification/)).toBeNull()
+  })
+
   it('keeps code and specification apart when a task has both', async () => {
     listDiffFiles.mockResolvedValue(
       listing([file(), file({ path: 'openspec/changes/x/proposal.md', group: 'spec' })]),

@@ -31,6 +31,7 @@ import {
   setStubEnv,
   tempDir,
   writeFiles,
+  writtenArtifacts,
 } from './fixtures.ts'
 
 afterAll(cleanupTempDirs)
@@ -72,7 +73,8 @@ function workspaceAdapter(harness: Harness): WorkspaceService {
       harness.manager.commitStage(workspace, stage as never),
     discard: (_taskId: string, workspace: typeof harness.workspace) =>
       harness.manager.discard(workspace),
-    changedArtifacts: () => Promise.resolve([]),
+    changedArtifacts: (_taskId: string, workspace: typeof harness.workspace) =>
+      writtenArtifacts(workspace),
   } as unknown as WorkspaceService
 }
 
@@ -367,6 +369,37 @@ describe('stage execution', () => {
     expect(execution.status).toBe('failed')
     expect(execution.failure).toBe('scope_violation')
     expect(execution.detail).toContain('openspec/changes/somewhere-else')
+  })
+
+  it('AC-243: accepts a declaring role under a layout the repository does not carry', async () => {
+    // `git status` reports nothing here — the folder is excluded from commits — so the
+    // check sees this run's work only through what the store is compared against.
+    // Nothing to baseline: under this layout the scaffolding is excluded from commits.
+    const harness = await makeHarness('declared-internal', undefined, 'internal')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'a-better-name',
+    }).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('succeeded')
+  })
+
+  it('AC-250: fails a write outside either folder under that layout too', async () => {
+    // Nothing to baseline: under this layout the scaffolding is excluded from commits.
+    const harness = await makeHarness('undeclared-internal', undefined, 'internal')
+
+    const execution = await makeExecutor(harness, {
+      SPECMATE_STUB_MODE: 'declares-change',
+      SPECMATE_STUB_ROLE: 'planner',
+      SPECMATE_STUB_PLAN_CHANGE: 'a-better-name',
+      SPECMATE_STUB_WRITE_CHANGE: 'somewhere-else',
+    }).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('scope_violation')
+    expect(execution.detail).toContain('.specmate/changes/somewhere-else')
   })
 
   /**
@@ -936,6 +969,22 @@ describe('brief completeness', () => {
     expect(execution.status).toBe('failed')
     expect(execution.failure).toBe('incomplete_brief')
     expect(execution.detail).toContain('missing')
+    expect(await commitCount(harness)).toBe(before)
+  })
+
+  test('AC-1329: fires on a proposal the repository does not carry, and commits nothing', async () => {
+    // Nothing to baseline: under this layout the scaffolding is excluded from commits.
+    const harness = await makeHarness('brief-internal', undefined, 'internal')
+    const before = await commitCount(harness)
+
+    const execution = await makeExecutor(
+      harness,
+      { SPECMATE_STUB_MODE: 'brief-incomplete', SPECMATE_STUB_ROLE: 'planner' },
+      { rolesDir: await plannerRolesDir() },
+    ).execute(request(harness, { role: 'planner' }))
+
+    expect(execution.status).toBe('failed')
+    expect(execution.failure).toBe('incomplete_brief')
     expect(await commitCount(harness)).toBe(before)
   })
 

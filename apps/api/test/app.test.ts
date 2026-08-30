@@ -2771,6 +2771,37 @@ describeDb('api task diff', () => {
     return task.id
   }
 
+  it('lists product code alone where the repository carries no change folder — AC-1722', async () => {
+    const slug = `diff-internal-${crypto.randomUUID().slice(0, 8)}`
+    const taskId = await createDiffTask(slug)
+    await db.update(tasks).set({ changeLayout: 'internal' }).where(eq(tasks.id, taskId))
+    const tree = await manager.provision({
+      slug,
+      repoUrl: originUrl,
+      mirrorKey: mirrorKey(originUrl),
+      baseBranch: 'main',
+    })
+    const workspace = await manager.openChangeFolder(tree, 'internal')
+    await mkdir(join(workspace.path, 'src'), { recursive: true })
+    await writeFile(join(workspace.path, 'src', 'added.ts'), 'export const a = 1\n')
+    await writeFile(join(workspace.path, workspace.changeDir, 'proposal.md'), '# brief\n')
+    await manager.commitStage(workspace, {
+      stageId: crypto.randomUUID(),
+      role: 'implementer',
+      provider: 'claude-code',
+      attempt: 1,
+    })
+
+    const response = await app.request(`/api/v1/tasks/${taskId}/diff/files`, { headers: auth })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      tip: expect.any(String),
+      total: 1,
+      files: [{ path: 'src/added.ts', status: 'added', group: 'code', additions: 1, deletions: 0 }],
+    })
+  })
+
   it('lists changed files with status and line counts (AC-1034)', async () => {
     const slug = `diff-files-${crypto.randomUUID().slice(0, 8)}`
     const taskId = await createDiffTask(slug)

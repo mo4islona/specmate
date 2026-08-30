@@ -39,7 +39,13 @@ import type {
   Workspace,
   WorkspaceManager,
 } from './manager.ts'
-import { changeDir, changeLayoutOf, type MirrorKey, recordedMirrorKey } from './paths.ts'
+import {
+  changeDir,
+  changeLayoutOf,
+  changeRootOf,
+  type MirrorKey,
+  recordedMirrorKey,
+} from './paths.ts'
 import { readSpecConventionTree } from './spec-conventions.ts'
 
 export const ENVIRONMENT_PINNED_EVENT = 'task.environment_pinned'
@@ -245,11 +251,13 @@ export class WorkspaceService {
         artifact.snapshotMd,
       ]),
     )
-    const folder = join(workspace.path, workspace.changeDir)
+    // The whole root rather than the task's own folder: a declaring role writes under
+    // the name its result declares (AC-243), and that folder is this one's sibling.
+    const root = join(workspace.path, changeRootOf(workspace.changeDir))
     const changed: string[] = []
     const present = new Set<string>()
-    for (const file of await walkMarkdown(folder)) {
-      const path = `${workspace.changeDir}/${relative(folder, file)}`
+    for (const file of await walkMarkdown(root)) {
+      const path = `${changeRootOf(workspace.changeDir)}/${relative(root, file)}`
       present.add(path)
       const content = await readFile(file, 'utf8').catch(() => null)
       if (content !== null && stored.get(path) !== content) changed.push(path)
