@@ -1,12 +1,16 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import type { SpecLayout } from '@specmate/core'
 import {
+  changeLayoutOf,
+  changeRootOf,
   Git,
   mirrorKey,
   resolveWorkspaceConfig,
   type Workspace,
   WorkspaceManager,
+  walkMarkdown,
 } from '@specmate/workspace'
 import {
   type ProviderRuntimes,
@@ -114,6 +118,21 @@ export function resolveRunnerConfigFor(providers: ProviderRuntimes): RunnerConfi
   })
 }
 
+/**
+ * What the service reports as written for a task whose store is still empty: under the
+ * internal layout every artifact in the change root is this run's, because there is
+ * nothing on record for it to match. Enough to stand in for the store in a test that
+ * has no database.
+ */
+export async function writtenArtifacts(workspace: Workspace): Promise<string[]> {
+  const root = changeRootOf(workspace.changeDir)
+  if (changeLayoutOf(workspace.changeDir) === 'repository') return []
+
+  const files = await walkMarkdown(join(workspace.path, root))
+
+  return files.map((file) => `${root}/${relative(join(workspace.path, root), file)}`)
+}
+
 export interface Harness {
   readonly workspace: Workspace
   readonly git: Git
@@ -133,6 +152,8 @@ export async function makeHarness(
     'README.md': '# origin\n',
     'src/app.ts': 'export const a = 1\n',
   },
+  /** Which layout the task would have pinned; `internal` is a repository with no suite. */
+  layout: SpecLayout = 'repository',
 ): Promise<Harness> {
   const originDir = await tempDir('origin')
   const originGit = new Git(resolveWorkspaceConfig({ root: originDir }))
@@ -149,7 +170,7 @@ export async function makeHarness(
     mirrorKey: mirrorKey(`file://${originDir}`),
     baseBranch: 'main',
   })
-  const workspace = await manager.openChangeFolder(tree, 'repository')
+  const workspace = await manager.openChangeFolder(tree, layout)
   const git = new Git(manager.config)
 
   return {

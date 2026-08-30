@@ -36,12 +36,18 @@ const mode = await nextMode()
  * directory is the same answer the prompt carries.
  */
 async function changeFolder(): Promise<string> {
-  const root = join(cwd, 'openspec/changes')
-  const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
-  const folders = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
   const slug = process.env.SPECMATE_STUB_SLUG ?? 'unknown'
+  // Either root: a repository that keeps no OpenSpec changes of its own has the task's
+  // folder under the runner's scratch instead, and a real agent is told which (REQ-1707).
+  for (const root of [join(cwd, 'openspec/changes'), join(cwd, '.specmate/changes')]) {
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+    const folders = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+    if (folders.length === 0) continue
 
-  return join(root, folders.includes(slug) ? slug : (folders[0] ?? slug))
+    return join(root, folders.includes(slug) ? slug : (folders[0] ?? slug))
+  }
+
+  return join(cwd, 'openspec/changes', slug)
 }
 
 const CHANGE_FOLDER = await changeFolder()
@@ -678,7 +684,7 @@ switch (mode) {
       process.env.SPECMATE_STUB_WRITE_CHANGE ??
       process.env.SPECMATE_STUB_PLAN_CHANGE ??
       'declared-change'
-    const folder = join(cwd, 'openspec/changes', declared)
+    const folder = join(dirname(CHANGE_FOLDER), declared)
     await mkdir(folder, { recursive: true })
     await writeFile(join(folder, scratchArtifact()), '# written by the stub\n')
     await writeResult(validResult())
