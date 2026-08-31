@@ -48,19 +48,34 @@ beforeEach(() => {
 })
 
 describe('StepDocuments (REQ-907, REQ-913)', () => {
-  test('each document reads as a file: its name, and how much of it there is', async () => {
+  test('each row says what the document is, and how much of it there is', async () => {
     draw([document(), document({ id: 'artifact-2', kind: 'decision_log', path: 'x/decisions.md' })])
 
     expect(await screen.findByText('40 lines')).not.toBeNull()
     // A document with nothing in it says so, rather than being opened to find out.
     expect(await screen.findByText('empty')).not.toBeNull()
-    // The file name leads and is set in the face every other path in the app is.
-    const name = screen.getByText('proposal.md')
-    expect(name.className).toContain('font-mono')
 
-    // The kind is the file name spelled a second way, so the row does not spell it.
-    expect.soft(screen.queryByText('proposal')).toBeNull()
-    expect.soft(screen.queryByText('decision log')).toBeNull()
+    expect(screen.getByText('Proposal')).not.toBeNull()
+    expect(screen.getByText('Decision log')).not.toBeNull()
+
+    // The file name is one spec convention's word for the same thing, so the
+    // row does not spell it a second time.
+    expect.soft(screen.queryByText('proposal.md')).toBeNull()
+    expect.soft(screen.queryByText('decisions.md')).toBeNull()
+  })
+
+  test('a specification carries the capability it is for, which its file name is not', async () => {
+    draw([
+      document({ id: 'artifact-2', kind: 'spec', path: 'openspec/changes/pie/specs/pie/spec.md' }),
+      document({
+        id: 'artifact-3',
+        kind: 'spec',
+        path: 'openspec/changes/pie/specs/heatmap/spec.md',
+      }),
+    ])
+
+    expect(await screen.findByRole('button', { name: /Specification heatmap/ })).not.toBeNull()
+    expect(screen.getByRole('button', { name: /Specification pie/ })).not.toBeNull()
   })
 
   test('a long document is clamped until the owner asks for the whole of it', async () => {
@@ -85,10 +100,10 @@ describe('StepDocuments (REQ-907, REQ-913)', () => {
   test('only one document is open at a time', async () => {
     draw([document(), document({ id: 'artifact-2', kind: 'decision_log', path: 'x/decisions.md' })])
 
-    await userEvent.click(await screen.findByRole('button', { name: /decisions\.md/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Decision log/ }))
 
     const cards = screen.getAllByRole('button', { expanded: true })
     expect(cards).toHaveLength(1)
-    expect(cards[0]?.textContent).toContain('decisions.md')
+    expect(cards[0]?.textContent).toContain('Decision log')
   })
 })

@@ -7,7 +7,6 @@ function file(overrides: Partial<DiffFileSummary> = {}): DiffFileSummary {
   return {
     path: 'src/thing.ts',
     status: 'modified',
-    group: 'code',
     additions: 3,
     deletions: 1,
     ...overrides,

@@ -24,7 +24,6 @@ function file(overrides: Partial<DiffFileSummary> = {}): DiffFileSummary {
   return {
     path: 'src/thing.ts',
     status: 'modified',
-    group: 'code',
     additions: 3,
     deletions: 1,
     ...overrides,
@@ -71,12 +70,15 @@ afterEach(() => {
 })
 
 describe('FilesChangedScreen (REQ-916)', () => {
-  it('shows an explicit empty state rather than a blank list — AC-945', async () => {
+  // A task that has only written its own documents is this same empty case now
+  // that the change folder is withheld — it has committed no code (AC-995).
+  it('shows an explicit empty state rather than a blank list — AC-945, AC-995', async () => {
     listDiffFiles.mockResolvedValue(listing([]))
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
 
-    expect(await screen.findByText(/has not committed any changes yet/)).toBeTruthy()
+    expect(await screen.findByText(/has not committed any code yet/)).toBeTruthy()
+    expect(screen.getByText(/documents are on Docs/)).toBeTruthy()
   })
 
   it('says how much of a truncated comparison it is showing', async () => {
@@ -118,40 +120,6 @@ describe('FilesChangedScreen (REQ-916)', () => {
     expect(screen.queryByText('modified')).toBeNull()
   })
 
-  it('lists a specification-only task under the group that names it — AC-995', async () => {
-    listDiffFiles.mockResolvedValue(
-      listing([
-        file({ path: 'openspec/changes/pie-charts/proposal.md', group: 'spec' }),
-        file({ path: 'openspec/changes/pie-charts/design.md', group: 'spec' }),
-      ]),
-    )
-
-    renderScreen(<FilesChangedScreen taskId="task-1" />)
-
-    expect(await screen.findByText(/Specification · 2/)).toBeTruthy()
-    expect(screen.queryByText(/^Code/)).toBeNull()
-  })
-
-  it('shows no specification group where the repository carries no change folder — AC-1722', async () => {
-    listDiffFiles.mockResolvedValue(listing([file(), file({ path: 'src/other.ts' })]))
-
-    renderScreen(<FilesChangedScreen taskId="task-1" />)
-
-    expect(await screen.findByText(/Code · 2/)).toBeTruthy()
-    expect(screen.queryByText(/Specification/)).toBeNull()
-  })
-
-  it('keeps code and specification apart when a task has both', async () => {
-    listDiffFiles.mockResolvedValue(
-      listing([file(), file({ path: 'openspec/changes/x/proposal.md', group: 'spec' })]),
-    )
-
-    renderScreen(<FilesChangedScreen taskId="task-1" />)
-
-    expect(await screen.findByText(/Code · 1/)).toBeTruthy()
-    expect(screen.getByText(/Specification · 1/)).toBeTruthy()
-  })
-
   it('draws every file at once and reads only the ones that are open — AC-944', async () => {
     const paths = ['a.ts', 'b.ts', 'c.ts', 'd.ts']
     listDiffFiles.mockResolvedValue(listing(paths.map((path) => file({ path }))))
@@ -165,27 +133,15 @@ describe('FilesChangedScreen (REQ-916)', () => {
     expect(getFileDiff.mock.calls.map((call) => call[1])).toEqual(['a.ts', 'b.ts', 'c.ts'])
   })
 
-  it('opens the code first, whatever order the comparison came in', async () => {
-    // git sorts by path, which puts a change folder above `src/` every time —
-    // so the reader would land on the specification and the three cards that
-    // arrive open would all be spec files.
+  it('opens by path, whatever order the comparison came in', async () => {
     listDiffFiles.mockResolvedValue(
-      listing([
-        file({ path: 'openspec/changes/x/proposal.md', group: 'spec' }),
-        file({ path: 'openspec/changes/x/tasks.md', group: 'spec' }),
-        file({ path: 'src/b.ts' }),
-        file({ path: 'src/a.ts' }),
-      ]),
+      listing([file({ path: 'src/b.ts' }), file({ path: 'lib/a.ts' })]),
     )
 
     renderScreen(<FilesChangedScreen taskId="task-1" />)
     await screen.findByLabelText('Filter files')
 
-    expect(getFileDiff.mock.calls.map((call) => call[1])).toEqual([
-      'src/a.ts',
-      'src/b.ts',
-      'openspec/changes/x/proposal.md',
-    ])
+    expect(getFileDiff.mock.calls.map((call) => call[1])).toEqual(['lib/a.ts', 'src/b.ts'])
   })
 
   it('brings a selected file into view without displacing the others — AC-944', async () => {

@@ -167,7 +167,7 @@ describe('files changed', () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        { path: 'src/foo\tbar.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
+        { path: 'src/foo\tbar.ts', status: 'added', additions: 1, deletions: 0 },
       ]),
     )
   })
@@ -198,11 +198,11 @@ describe('files changed', () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        { path: 'src/new-file.ts', status: 'added', group: 'code', additions: 1, deletions: 0 },
-        { path: 'README.md', status: 'modified', group: 'code', additions: 1, deletions: 0 },
+        { path: 'src/new-file.ts', status: 'added', additions: 1, deletions: 0 },
+        { path: 'README.md', status: 'modified', additions: 1, deletions: 0 },
       ]),
     )
-    expect(files.filter((file) => file.group === 'code')).toHaveLength(2)
+    expect(files).toHaveLength(2)
   })
 
   it('returns an empty list before any product-code commit exists (AC-1035)', async () => {
@@ -227,7 +227,7 @@ describe('files changed', () => {
     expect(files).toEqual([])
   })
 
-  it('lists a commit that only touches the change folder, as specification (AC-1060)', async () => {
+  it('withholds the change folder, which the documents surface reads instead (AC-1060)', async () => {
     const origin = await makeOrigin()
     const { manager } = await makeManager()
     const git = new Git(manager.config)
@@ -238,7 +238,8 @@ describe('files changed', () => {
       baseBranch: 'main',
     })
     await writeFiles(workspace.path, {
-      'openspec/changes/change-only/proposal.md': '# proposal\n',
+      [`${workspace.changeDir}/proposal.md`]: '# proposal\n',
+      'src/kept.ts': 'export const kept = 1\n',
     })
     await manager.commitStage(workspace, STAGE)
 
@@ -250,18 +251,32 @@ describe('files changed', () => {
     })
     const files = await taskFilesChanged(git, range, workspace.changeDir)
 
-    expect(files).toEqual(
-      expect.arrayContaining([
-        {
-          path: 'openspec/changes/change-only/proposal.md',
-          status: 'added',
-          group: 'spec',
-          additions: 1,
-          deletions: 0,
-        },
-      ]),
-    )
-    expect(files.every((file) => file.group === 'spec')).toBe(true)
+    expect(files.map((file) => file.path)).toEqual(['src/kept.ts'])
+  })
+
+  it('lists nothing for a task that has only written its own documents (AC-1060)', async () => {
+    const origin = await makeOrigin()
+    const { manager } = await makeManager()
+    const git = new Git(manager.config)
+    const workspace = await provisionWorkspace(manager, {
+      slug: 'docs-only',
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+    })
+    await writeFiles(workspace.path, {
+      [`${workspace.changeDir}/proposal.md`]: '# proposal\n',
+    })
+    await manager.commitStage(workspace, STAGE)
+
+    const range = await resolveTaskDiffRange(git, manager.config, {
+      repoUrl: origin.url,
+      mirrorKey: mirrorKey(origin.url),
+      baseBranch: 'main',
+      slug: 'docs-only',
+    })
+
+    expect(await taskFilesChanged(git, range, workspace.changeDir)).toEqual([])
   })
 
   it('marks a removed file with status "deleted"', async () => {
@@ -290,7 +305,7 @@ describe('files changed', () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        { path: 'src/existing.ts', status: 'deleted', group: 'code', additions: 0, deletions: 1 },
+        { path: 'src/existing.ts', status: 'deleted', additions: 0, deletions: 1 },
       ]),
     )
   })
@@ -329,9 +344,8 @@ describe('files changed', () => {
 })
 
 describe('the file ceiling', () => {
-  const diffFile = (path: string, group: DiffFile['group'] = 'code'): DiffFile => ({
+  const diffFile = (path: string): DiffFile => ({
     path,
-    group,
     status: 'added',
     additions: 1,
     deletions: 0,
@@ -348,23 +362,6 @@ describe('the file ceiling', () => {
 
   it('serves the ceiling and no more', () => {
     expect(capDiffFiles(codeFiles(MAX_DIFF_FILES + 500))).toHaveLength(MAX_DIFF_FILES)
-  })
-
-  it('keeps the specification half whole when the code half runs to thousands', () => {
-    const spec = diffFile('openspec/changes/x/proposal.md', 'spec')
-    // git's own order, which sorts the change folder below `node_modules/`.
-    const kept = capDiffFiles([...codeFiles(MAX_DIFF_FILES + 500), spec])
-
-    expect(kept).toContainEqual(spec)
-    expect(kept).toHaveLength(MAX_DIFF_FILES)
-  })
-
-  it('holds the specification half to the ceiling too', () => {
-    const spec = Array.from({ length: MAX_DIFF_FILES + 10 }, (_, index) =>
-      diffFile(`openspec/changes/x/specs/cap-${index}/spec.md`, 'spec'),
-    )
-
-    expect(capDiffFiles([...spec, ...codeFiles(10)])).toHaveLength(MAX_DIFF_FILES)
   })
 
   it("cuts in the comparison's own order, so what is kept is its first files", () => {

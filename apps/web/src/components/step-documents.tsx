@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useState } from 'react'
 import { type ArtifactSummary, getArtifact } from '../lib/api-client.ts'
 import { queryKeys } from '../lib/query-keys.ts'
+import { namedDocuments } from '../lib/task-documents.ts'
 import { cn, Icon, MicroLabel, QuietLink, TextButton } from '../ui/index.ts'
 import { ArtifactMarkdown } from './artifact-markdown.tsx'
 import { KickoffBrief } from './kickoff-brief.tsx'
@@ -28,10 +29,6 @@ function sizeFact(content: string | null): string {
   return `${lines} ${lines === 1 ? 'line' : 'lines'}`
 }
 
-function fileName(path: string): string {
-  return path.split('/').at(-1) ?? path
-}
-
 /**
  * What the step produced, at the end of the step (REQ-907, REQ-913). A gate
  * that asks for approval and shows nothing to approve is the confusion this
@@ -43,14 +40,15 @@ function fileName(path: string): string {
  * this task yet` on the screen at the same size as the proposal it followed,
  * and pushed the console under the fold to do it — so one opens at a time,
  * clamped. But the tiles that replaced them read as cards of something rather
- * than as documents: the kind was set biggest and brightest and the file name
- * came third, in the page's own face. A file says it is a file with a page
- * glyph and a name in the mono face every other path in this app is set in.
+ * than as documents: three lines apiece where a row of a list would do.
  *
- * The kind does not appear at all, for the same reason: it is derived from the
- * file's own name and every one of them round-trips — `proposal.md` is the
- * `proposal`, `decisions.md` is the `decision log` — so the column printed the
- * name a second time and nothing else.
+ * A row is named for what the document is rather than for the file holding it.
+ * It carried the file name — `proposal.md`, `decisions.md` — until it had to
+ * hold for a repository whose spec convention is not OpenSpec's: `kind` is the
+ * vocabulary every convention is mapped onto, and a shelf reading `proposal.md`
+ * reads something else, or nothing at all, the moment the files are laid out
+ * another way. The path is still what a specification is told apart by, since a
+ * change holds one per capability — so that row, and only that row, carries it.
  */
 export function StepDocuments({ taskId, documents, current }: StepDocumentsProps) {
   const contents = useQueries({
@@ -65,26 +63,33 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
 
   if (documents.length === 0) return null
 
-  const openId = picked === undefined ? (current ? (documents[0]?.id ?? null) : null) : picked
-  const openIndex = documents.findIndex((document) => document.id === openId)
-  const open = openIndex === -1 ? null : documents[openIndex]
-  const openContent =
-    openIndex === -1 ? null : (contents[openIndex]?.data?.artifact.content ?? null)
+  const named = namedDocuments(documents)
+  // The queries are keyed to the props' order; the shelf draws in reading order.
+  const contentById = new Map(
+    documents.map((document, index) => [
+      document.id,
+      contents[index]?.data?.artifact.content ?? null,
+    ]),
+  )
+
+  const openId = picked === undefined ? (current ? (named[0]?.artifact.id ?? null) : null) : picked
+  const open = named.find((document) => document.artifact.id === openId) ?? null
 
   return (
     <section aria-label="What this step produced" className="mt-6">
       <MicroLabel as="h3">Produced here</MicroLabel>
 
       <ul className="mt-2 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
-        {documents.map((document, index) => {
-          const selected = document.id === openId
+        {named.map((document) => {
+          const selected = document.artifact.id === openId
 
           return (
-            <li key={document.id}>
+            <li key={document.artifact.id}>
               <button
                 type="button"
                 aria-expanded={selected}
-                onClick={() => setPicked(selected ? null : document.id)}
+                onClick={() => setPicked(selected ? null : document.artifact.id)}
+                title={document.artifact.path}
                 className={cn(
                   'flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left transition-colors',
                   selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
@@ -94,11 +99,14 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
                   name="file"
                   className={selected ? 'text-foreground' : 'text-muted-foreground'}
                 />
-                <span className="min-w-0 flex-1 truncate font-mono text-[0.74rem] text-foreground">
-                  {fileName(document.path)}
-                </span>
-                <span className="shrink-0 font-mono text-[0.62rem] text-muted-foreground">
-                  {sizeFact(contents[index]?.data?.artifact.content ?? null)}
+                <span className="shrink-0 text-[0.8rem] text-foreground">{document.name}</span>{' '}
+                {document.qualifier !== null && (
+                  <span className="min-w-0 flex-1 truncate font-mono text-[0.66rem] text-muted-foreground">
+                    {document.qualifier}
+                  </span>
+                )}
+                <span className="ml-auto shrink-0 font-mono text-[0.62rem] text-muted-foreground">
+                  {sizeFact(contentById.get(document.artifact.id) ?? null)}
                 </span>
               </button>
             </li>
@@ -107,7 +115,12 @@ export function StepDocuments({ taskId, documents, current }: StepDocumentsProps
       </ul>
 
       {open && (
-        <DocumentReader key={open.id} taskId={taskId} document={open} content={openContent} />
+        <DocumentReader
+          key={open.artifact.id}
+          taskId={taskId}
+          document={open.artifact}
+          content={contentById.get(open.artifact.id) ?? null}
+        />
       )}
     </section>
   )
